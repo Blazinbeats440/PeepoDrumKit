@@ -755,6 +755,16 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.TimelineShowBranchStartLines,
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES"),
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.TimelineShowBranchRangeBackground,
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND"),
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.TimelineScrollInvertMouseWheel,
 							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL"),
 							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL_DESC")),

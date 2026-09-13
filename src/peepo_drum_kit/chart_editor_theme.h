@@ -94,6 +94,8 @@ namespace PeepoDrumKit
 	inline u32 TimelineHorizontalRowLineColor = 0x2D7D7D7D;
 	inline u32 TimelineGridBarLineColor = 0x807D7D7D;
 	inline u32 TimelineGridBeatLineColor = 0x2D7D7D7D;
+	inline u32 TimelineBranchStartLineColor = 0xFF00FFFF;
+	inline u32 TimelineBranchRangeBackgroundColor = 0x1800FFFF;
 	inline u32 TimelineGridSnapLineColor = 0x1A7D7D7D;
 	inline u32 TimelineGridSnapTupletLineColor = 0x1A22BBBC;
 	inline u32 TimelineGridSnapQuintupletLineColor = 0x1AB3BC22;
@@ -126,6 +128,7 @@ namespace PeepoDrumKit
 	inline u32 GameLaneBorderFocusedColor = 0xFF293730;
 	inline u32 GameLaneBorderColor = 0xFF000000;
 	inline u32 GameLaneBarLineColor = 0xBFDADADA;
+	inline u32 GameLaneBranchStartBarLineColor = 0xFF00FFFF;
 	inline u32 GameLaneContentBackgroundColor = 0xFF282828;
 	inline u32 GameLaneContentBackgroundColorGogo = 0x3C3838FF;
 	inline u32 GameLaneFooterBackgroundColor = 0xFF848484;

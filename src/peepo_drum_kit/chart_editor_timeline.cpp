@@ -73,6 +73,8 @@ namespace PeepoDrumKit
 				{ "Timeline Horizontal Row Line", &TimelineHorizontalRowLineColor },
 				{ "Grid Bar Line", &TimelineGridBarLineColor },
 				{ "Grid Beat Line", &TimelineGridBeatLineColor },
+				{ "Branch Start Line", &TimelineBranchStartLineColor },
+				{ "Branch Range Background", &TimelineBranchRangeBackgroundColor },
 				{ "Grid Snap Line", &TimelineGridSnapLineColor },
 				{ "Grid Snap Line (Tuplet)", &TimelineGridSnapTupletLineColor },
 				NamedColorU32Pointer {},
@@ -102,6 +104,7 @@ namespace PeepoDrumKit
 				{ "Game Lane Outline Focused", &GameLaneOutlineFocusedColor },
 				{ "Game Lane Border", &GameLaneBorderColor },
 				{ "Game Lane Bar Line", &GameLaneBarLineColor },
+				{ "Game Lane Branch Start Bar Line", &GameLaneBranchStartBarLineColor },
 				{ "Game Lane Content Background", &GameLaneContentBackgroundColor },
 				{ "Game Lane Footer Background", &GameLaneFooterBackgroundColor },
 				{ "Game Lane Hit Circle Inner Fill", &GameLaneHitCircleInnerFillColor },
@@ -3966,6 +3969,17 @@ namespace PeepoDrumKit
 					}
 				}
 			});
+			if (*Settings.General.TimelineShowBranchStartLines)
+			{
+				for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
+				{
+					const f32 localX = Camera.TimeToLocalSpaceX(context.BeatToTime(branch.GetStart()));
+					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(localX, 0.0f));
+					const vec2 headerScreenSpaceTL = LocalToScreenSpace_ContentHeader(vec2(localX, 0.0f));
+					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), TimelineBranchStartLineColor, 2.0f);
+					DrawListContentHeader->AddLine(headerScreenSpaceTL, headerScreenSpaceTL + vec2(0.0f, Regions.ContentHeader.GetHeight()), TimelineBranchStartLineColor, 2.0f);
+				}
+			}
 			Gui::PopFont();
 		});
 		DrawListContentHeader->PushClipRect(Regions.ContentHeader.TL, Regions.ContentHeader.BR);

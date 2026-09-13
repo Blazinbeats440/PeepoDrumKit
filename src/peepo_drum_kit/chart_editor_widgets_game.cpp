@@ -731,7 +731,7 @@ namespace PeepoDrumKit
 						// clear all selection
 						auto& course = *context.ChartSelectedCourse;
 						for (TimelineRowType rowType = {}; rowType < TimelineRowType::Count; IncrementEnum(rowType)) {
-							if (rowType == TimelineRowType::BranchCommands)
+							if (IsNonGenericTimelineRow(rowType))
 								continue;
 							const GenericList list = TimelineRowToGenericList(rowType, context.ChartSelectedBranch);
 							for (size_t i = 0; i < GetGenericListCount(course, list); ++i)
@@ -892,7 +892,12 @@ namespace PeepoDrumKit
 				{
 					const vec2 tl = Camera.LaneToWorldSpace(laneX, laneY) - Rotate(vec2(0.0f, GameLaneSlice.Content * 0.5f), GetNoteFaceRotationMirror(it.Tempo, it.ScrollSpeed, NoteType::Count).first);
 					const vec2 br = Camera.LaneToWorldSpace(laneX, laneY) + Rotate(vec2(0.0f, GameLaneSlice.Content * 0.5f), GetNoteFaceRotationMirror(it.Tempo, it.ScrollSpeed, NoteType::Count).first);
-					drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), GameLaneBarLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
+					const b8 isBranchStart = std::any_of(course->Branches.begin(), course->Branches.end(), [&](const BranchRange& branchRange)
+					{
+						return branchRange.GetStart() == it.Beat;
+					});
+					const u32 barLineColor = isBranchStart ? GameLaneBranchStartBarLineColor : GameLaneBarLineColor;
+					drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), barLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
 
 					char barLineStr[32];
 					DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(tl + vec2(5.0f, 1.0f), vec2(0.5f)),

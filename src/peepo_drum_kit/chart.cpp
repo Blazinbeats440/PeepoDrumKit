@@ -728,6 +728,10 @@ namespace PeepoDrumKit
 			"3333,\n"
 			"#BRANCHEND\n"
 			"1111,\n"
+			"#E\n"
+			"2222,\n"
+			"#M\n"
+			"3333,\n"
 			"#END\n";
 
 		auto parse = [&](std::string_view text, TJA::ParsedTJA& out)
@@ -743,6 +747,14 @@ namespace PeepoDrumKit
 			return true;
 		};
 		auto fail = [&](cstr message) { outError = message; return false; };
+		const BranchRange forcedNormal = CreateForcedBranchRange(Beat::Zero(), BranchType::Normal);
+		const BranchRange forcedExpert = CreateForcedBranchRange(Beat::Zero(), BranchType::Expert);
+		const BranchRange forcedMaster = CreateForcedBranchRange(Beat::Zero(), BranchType::Master);
+	if (forcedNormal.RequirementExpert != 101 || forcedNormal.RequirementMaster != 102
+		|| forcedExpert.RequirementExpert != -1 || forcedExpert.RequirementMaster != 101
+		|| forcedMaster.RequirementExpert != -2 || forcedMaster.RequirementMaster != -1
+			|| !forcedNormal.EndsBranching || !forcedExpert.EndsBranching || !forcedMaster.EndsBranching)
+			return fail("Forced branch conditions are invalid");
 
 		TJA::ParsedTJA parsed;
 		if (!parse(source, parsed))
@@ -800,8 +812,10 @@ namespace PeepoDrumKit
 				count++;
 			return count;
 		};
-		if (countOccurrences(exportedText, "\n#N\n") != 1 || countOccurrences(exportedText, "\n#E\n") != 1 || countOccurrences(exportedText, "\n#M\n") != 1)
+		if (countOccurrences(exportedText, "\n#N\n") != 2 || countOccurrences(exportedText, "\n#E\n") != 2 || countOccurrences(exportedText, "\n#M\n") != 2)
 			return fail("Zero-length branch unexpectedly exported branch selectors");
+		if (countOccurrences(exportedText, "#BRANCHSTART") != 3 || countOccurrences(exportedText, "#BRANCHEND") != 1)
+			return fail("Implicit or explicit branch endings were not preserved during export");
 
 		TJA::ParsedTJA reparsed;
 		if (!parse(exportedText, reparsed))

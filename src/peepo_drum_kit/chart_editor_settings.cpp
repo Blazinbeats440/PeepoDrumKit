@@ -267,7 +267,7 @@ namespace PeepoDrumKit
 	}
 
 	constexpr size_t SizeOfPersistentAppData = sizeof(PersistentAppData);
-	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 144, "TODO: Add missing ini file handling for newly added PersistentAppData fields");
+	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152, "TODO: Add missing ini file handling for newly added PersistentAppData fields");
 
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, PersistentAppData& out)
 	{
@@ -467,6 +467,8 @@ namespace PeepoDrumKit
 			X(General.DrumrollPreviewRollsPerSecond, "drumroll_preview_rolls_per_second");
 			X(General.DisplayTimeInSongSpace, "display_time_in_song_space");
 			X(General.ShowForcedBranchButtons, "show_forced_branch_buttons");
+			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
+			X(General.TimelineShowBranchRangeBackground, "timeline_show_branch_range_background");
 			X(General.TimelineScrollInvertMouseWheel, "timeline_scroll_invert_mouse_wheel");
 			X(General.TimelineScrollDistancePerMouseWheelTick, "timeline_scroll_distance_per_mouse_wheel_tick");
 			X(General.TimelineScrollDistancePerMouseWheelTickFast, "timeline_scroll_distance_per_mouse_wheel_tick_fast");

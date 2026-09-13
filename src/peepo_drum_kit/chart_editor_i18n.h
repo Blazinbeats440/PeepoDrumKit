@@ -93,6 +93,11 @@ X("TEMPLATE_OVERWRITE",							"Overwrite") \
 X("BRANCH_COMMAND_SECTION",						"Section") \
 X("BRANCH_COMMAND_START",							"Branch Start") \
 X("BRANCH_COMMAND_END",							"Branch End") \
+X("BRANCH_COMMAND_LEVELHOLD",					"Level Hold") \
+X("BRANCH_FORCED",								"Forced Branch") \
+X("BRANCH_FORCED_NORMAL",						"Normal") \
+X("BRANCH_FORCED_EXPERT",						"Expert") \
+X("BRANCH_FORCED_MASTER",						"Master") \
 X("TEMPO_AUTOMATIC_MEASUREMENT",					"Automatic measurement") \
 X("TEMPO_ANALYZE_AUDIO",							"Analyze audio") \
 X("TEMPO_ANALYZING_AUDIO",							"Analyzing audio...") \
@@ -142,6 +147,12 @@ X("SETTINGS_GENERAL_DRUMROLL_PREVIEW", "General: Drumroll Preview Rolls per Seco
 X("SETTINGS_GENERAL_DRUMROLL_PREVIEW_DESC", "The number of drumroll hit sounds previewed per second.") \
 X("SETTINGS_GENERAL_TIME_DISPLAY", "General: Time Display Space") \
 X("SETTINGS_GENERAL_TIME_DISPLAY_DESC", "Display time in either Chart Space (normalized starting at 00:00.000) or in Song Space (relative to song offset).") \
+X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Branch Buttons") \
+X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing the Normal, Expert, or Master branch in the Chart Branches window.") \
+X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
+X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
+X("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND", "Timeline: Show Branch Range Background") \
+X("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND_DESC", "Highlight the background of branching ranges on the timeline.") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL", "Timeline: Invert Scroll Wheel Direction") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL_DESC", "Invert the mouse wheel scroll direction so that scrolling downwards results in moving forward through the timeline.") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY", "Timeline: Scroll Wheel Sensitivity") \
@@ -323,6 +334,7 @@ X("EVENT_TIME_SIGNATURE_UPPER",						"Upper Time Signature") \
 X("EVENT_TIME_SIGNATURE_LOWER",						"Lower Time Signature") \
 X("EVENT_NOTES",									"Notes") \
 X("EVENT_BRANCH_COMMANDS",                         "Branch Commands") \
+X("EVENT_BRANCH_LEVEL_HOLD",						"#LEVELHOLD") \
 X("EVENT_NOTES_NORMAL",                            "Notes (Normal)") \
 X("EVENT_NOTES_EXPERT",								"Notes (Expert)") \
 X("EVENT_NOTES_MASTER",								"Notes (Master)") \
