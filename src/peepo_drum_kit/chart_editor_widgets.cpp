@@ -1375,8 +1375,11 @@ namespace PeepoDrumKit
 
 		Gui::UpdateSmoothScrollWindow();
 
-		if (Gui::BeginPopupContextWindow("StatsContextMenu", 0))
+		if (Gui::BeginPopupContextWindow("StatsContextMenu", ImGuiMouseButton_Right))
 		{
+			if (Gui::MenuItem(UI_Str("STATS_SHOW_BASIC_INFO"), nullptr, ShowBasicInfo))
+				ShowBasicInfo = !ShowBasicInfo;
+			Gui::Separator();
 			if (Gui::MenuItem(UI_Str("STATS_FONT_SIZE_ZOOM_IN"), nullptr, false, FontScale < 2.0f))
 				FontScale = Min(FontScale + 0.1f, 2.0f);
 			if (Gui::MenuItem(UI_Str("STATS_FONT_SIZE_ZOOM_OUT"), nullptr, false, FontScale > 0.5f))
@@ -1395,6 +1398,7 @@ namespace PeepoDrumKit
 		Gui::PushFont(FontMain, statsFontSize(FontBaseSizes::Large));
 		{
 			// Header with chart main information
+			if (ShowBasicInfo)
 			{
 				Gui::PushStyleColor(ImGuiCol_Text, colors.GreenDark);
 				Gui::PushFont(FontMain, statsFontSize(FontBaseSizes::Large));
@@ -3312,18 +3316,21 @@ namespace PeepoDrumKit
 		const Beat cursorBeat = context.GetCursorBeat();
 		if (Gui::Property::BeginTable(ImGuiTableFlags_BordersInner))
 		{
-			auto commandButton = [&](cstr commandName, b8 existsAtCursor, auto add, auto remove)
+			auto commandButton = [&](cstr commandName, b8 existsAtCursor, auto add, auto remove, b8 canAdd = true)
 			{
 				Gui::PushID(commandName);
 				const cstr localizedCommandName = strcmp(commandName, "#SECTION") == 0 ? UI_Str("BRANCH_COMMAND_SECTION")
-					: strcmp(commandName, "#BRANCHSTART") == 0 ? UI_Str("BRANCH_COMMAND_START") : UI_Str("BRANCH_COMMAND_END");
+					: strcmp(commandName, "#BRANCHSTART") == 0 ? UI_Str("BRANCH_COMMAND_START")
+					: strcmp(commandName, "#BRANCHEND") == 0 ? UI_Str("BRANCH_COMMAND_END") : UI_Str("BRANCH_COMMAND_LEVELHOLD");
 				Gui::Property::PropertyTextValueFunc(localizedCommandName, [&]
 				{
+					Gui::BeginDisabled(!existsAtCursor && !canAdd);
 					if (Gui::Button(UI_StrRuntime(existsAtCursor ? "ACT_EVENT_REMOVE" : "ACT_EVENT_ADD"), vec2(-1.0f, 0.0f)))
 					{
 						if (existsAtCursor) remove(); else add();
 						context.Undo.NotifyChangesWereMade();
 					}
+					Gui::EndDisabled();
 				});
 				Gui::PopID();
 			};
@@ -3343,22 +3350,76 @@ namespace PeepoDrumKit
 					course.ScrollChanges_Expert = course.ScrollChanges_Normal;
 					course.ScrollChanges_Master = course.ScrollChanges_Normal;
 				}
-				course.Branches.push_back(BranchRange { cursorBeat, Beat::Zero(), TJA::BranchCondition::Precise, 70, 80 });
+				auto previousOpenBranch = std::find_if(course.Branches.rbegin(), course.Branches.rend(), [&](const BranchRange& branch)
+				{
+					return !branch.EndsBranching && branch.GetStart() < cursorBeat;
+				});
+				if (previousOpenBranch != course.Branches.rend())
+					previousOpenBranch->BeatDuration = cursorBeat - previousOpenBranch->BeatTime;
+				course.Branches.push_back(BranchRange { cursorBeat, Beat::Zero(), TJA::BranchCondition::Precise, 70, 80, false });
 				std::sort(course.Branches.begin(), course.Branches.end(), [](const BranchRange& a, const BranchRange& b) { return a.BeatTime < b.BeatTime; });
 			}, [&] { course.Branches.erase(branchStartAtCursor); });
 
-			auto branchEndAtCursor = std::find_if(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch) { return branch.BeatDuration > Beat::Zero() && branch.GetEnd() == cursorBeat; });
-			auto openBranch = std::find_if(course.Branches.rbegin(), course.Branches.rend(), [&](const BranchRange& branch) { return branch.GetStart() <= cursorBeat && branch.BeatDuration == Beat::Zero(); });
+			auto branchEndAtCursor = std::find_if(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch) { return branch.EndsBranching && branch.GetEnd() == cursorBeat; });
+			auto openBranch = std::find_if(course.Branches.rbegin(), course.Branches.rend(), [&](const BranchRange& branch) { return !branch.EndsBranching && branch.GetStart() <= cursorBeat; });
 			commandButton("#BRANCHEND", branchEndAtCursor != course.Branches.end(), [&]
 			{
 				if (openBranch != course.Branches.rend())
+				{
 					openBranch->BeatDuration = cursorBeat - openBranch->BeatTime;
+					openBranch->EndsBranching = true;
+				}
 			}, [&]
 			{
-				branchEndAtCursor->BeatDuration = Beat::Zero();
+				branchEndAtCursor->EndsBranching = false;
 			});
 
+			const Beat levelHoldBeat = snapRangeToBars(cursorBeat, cursorBeat).first;
+			auto levelHoldAtCursor = std::find_if(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
+			{
+				return levelHold.BeatTime == levelHoldBeat && levelHold.Branch == context.ChartSelectedBranch;
+			});
+			const b8 canAddLevelHold = std::any_of(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch)
+			{
+				return levelHoldBeat >= branch.GetStart() && levelHoldBeat < branch.GetEnd();
+			});
+			commandButton("#LEVELHOLD", levelHoldAtCursor != course.BranchLevelHolds.end(), [&]
+			{
+				course.BranchLevelHolds.push_back({ levelHoldBeat, context.ChartSelectedBranch });
+				std::sort(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [](const BranchLevelHold& a, const BranchLevelHold& b)
+				{
+					return a.BeatTime != b.BeatTime ? a.BeatTime < b.BeatTime : a.Branch < b.Branch;
+				});
+			}, [&] { course.BranchLevelHolds.erase(levelHoldAtCursor); }, canAddLevelHold);
+
 			Gui::Property::EndTable();
+		}
+
+		if (*Settings.General.ShowForcedBranchButtons)
+		{
+			Gui::Separator();
+			Gui::AlignTextToFramePadding();
+			Gui::TextUnformatted(UI_Str("BRANCH_FORCED"));
+			const b8 hasBranchStartAtCursor = std::any_of(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch) { return branch.GetStart() == cursorBeat; });
+			const cstr forcedBranchButtonLabels[] = { UI_Str("BRANCH_FORCED_NORMAL"), UI_Str("BRANCH_FORCED_EXPERT"), UI_Str("BRANCH_FORCED_MASTER") };
+			Gui::BeginDisabled(hasBranchStartAtCursor);
+			for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+			{
+				if (branch != BranchType::Normal)
+					Gui::SameLine();
+				if (Gui::Button(forcedBranchButtonLabels[EnumToIndex(branch)]))
+				{
+					if (course.Branches.empty())
+					{
+						course.ScrollChanges_Expert = course.ScrollChanges_Normal;
+						course.ScrollChanges_Master = course.ScrollChanges_Normal;
+					}
+					course.Branches.push_back(CreateForcedBranchRange(cursorBeat, branch));
+					std::sort(course.Branches.begin(), course.Branches.end(), [](const BranchRange& a, const BranchRange& b) { return a.BeatTime < b.BeatTime; });
+					context.Undo.NotifyChangesWereMade();
+				}
+			}
+			Gui::EndDisabled();
 		}
 
 		size_t branchToRemove = SIZE_MAX;
@@ -3406,19 +3467,6 @@ namespace PeepoDrumKit
 		if (branchToRemove != SIZE_MAX)
 		{
 			course.Branches.erase(course.Branches.begin() + branchToRemove);
-			context.Undo.NotifyChangesWereMade();
-		}
-
-		if (Gui::Button(UI_Str("ACT_BRANCH_TOGGLE_LEVELHOLD_AT_CURSOR"), vec2(-1.0f, 0.0f)))
-		{
-			const Beat beat = snapRangeToBars(context.GetCursorBeat(), context.GetCursorBeat()).first;
-			if (auto it = std::find(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), beat); it == course.BranchLevelHolds.end())
-			{
-				course.BranchLevelHolds.push_back(beat);
-				std::sort(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end());
-			}
-			else
-				course.BranchLevelHolds.erase(it);
 			context.Undo.NotifyChangesWereMade();
 		}
 	}

@@ -605,6 +605,15 @@ namespace TJA
 		BranchCondition Condition = BranchCondition::Precise;
 		i32 RequirementExpert = 101;
 		i32 RequirementMaster = 101;
+		b8 EndsBranching = true;
+	};
+
+	enum class ConvertedBranchPath : u8 { Normal, Expert, Master, Count };
+
+	struct ConvertedBranchLevelHold
+	{
+		Beat BeatTime;
+		ConvertedBranchPath Branch = ConvertedBranchPath::Normal;
 	};
 
 	// TODO: Handle multi player tracks and branches ?!
@@ -621,7 +630,7 @@ namespace TJA
 		std::vector<ConvertedMeasure> Measures_Master;
 		std::vector<ConvertedGoGoRange> GoGoRanges;
 		std::vector<ConvertedBranch> Branches;
-		std::vector<Beat> BranchLevelHolds;
+		std::vector<ConvertedBranchLevelHold> BranchLevelHolds;
 	};
 
 	void ConvertConvertedMeasuresToParsedCommands(const std::vector<TJA::ConvertedMeasure>& inMeasures, std::vector<TJA::ParsedChartCommand>& outCommands);

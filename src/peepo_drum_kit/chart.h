@@ -425,10 +425,28 @@ namespace PeepoDrumKit
 		TJA::BranchCondition Condition = TJA::BranchCondition::Precise;
 		i32 RequirementExpert = 101;
 		i32 RequirementMaster = 101;
+		b8 EndsBranching = true;
 
 		constexpr Beat GetStart() const { return BeatTime; }
 		constexpr Beat GetEnd() const { return BeatTime + BeatDuration; }
 	};
+
+	struct BranchLevelHold
+	{
+		Beat BeatTime;
+		BranchType Branch = BranchType::Normal;
+	};
+
+	constexpr BranchRange CreateForcedBranchRange(Beat beat, BranchType branch)
+	{
+		switch (branch)
+		{
+		case BranchType::Normal: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, 101, 102, true };
+		case BranchType::Expert: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, -1, 101, true };
+		case BranchType::Master: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, -2, -1, true };
+		default: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, 101, 101, true };
+		}
+	}
 
 	using SortedNotesList = BeatSortedList<Note>;
 	using SortedScrollChangesList = BeatSortedList<ScrollChange>;
@@ -483,7 +501,7 @@ namespace PeepoDrumKit
 
 		std::vector<BranchRange> Branches;
 		std::vector<Beat> BranchSections;
-		std::vector<Beat> BranchLevelHolds;
+		std::vector<BranchLevelHold> BranchLevelHolds;
 
 		// i32 ScoreInit = 0;
 		// i32 ScoreDiff = 0;

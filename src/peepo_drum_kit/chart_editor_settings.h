@@ -101,6 +101,7 @@ namespace PeepoDrumKit
 			b8 ShowWindow_Template = false;
 			b8 ShowWindow_ChartStats = true;
 			f32 ChartStatsFontScale = 1.0f;
+			b8 ShowChartStatsBasicInfo = true;
 			b8 ShowWindow_ChartBranches = true;
 			b8 ShowWindow_Lyrics = true;
 			b8 ShowWindow_Settings = true;
@@ -128,6 +129,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> IncludePeepoDrumKitComment = true;
 			WithDefault<f32> DrumrollPreviewRollsPerSecond = 8.0f;
 			WithDefault<b8> DisplayTimeInSongSpace = false;
+			WithDefault<b8> ShowForcedBranchButtons = true;
 			WithDefault<b8> TimelineScrollInvertMouseWheel = false;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTick = 100.0f;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTickFast = 250.0f;
@@ -167,6 +169,12 @@ namespace PeepoDrumKit
 			WithDefault<f32> MetronomeVolume = 1.0f;
 			WithDefault<i32> BufferFrameSize = 0;
 		} Audio;
+
+		struct AppearanceData
+		{
+			WithDefault<u32> BranchStartLineColor = 0xDC75AD85;
+			WithDefault<u32> BranchAreaBackgroundColor = 0x283F7A2B;
+		} Appearance;
 
 		struct AnimationData
 		{

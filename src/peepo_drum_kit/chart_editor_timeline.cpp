@@ -256,6 +256,7 @@ namespace PeepoDrumKit
 		{
 			const b8 hasBranches = !course.Branches.empty();
 			if ((rowType == TimelineRowType::BranchCommands && !hasBranches && course.BranchSections.empty()) ||
+				(rowType == TimelineRowType::BranchLevelHold && course.BranchLevelHolds.empty()) ||
 				(IsBranchNoteRow(rowType) && !hasBranches))
 				continue;
 			const b8 isNotesRow = rowType == TimelineRowType::Notes || IsBranchNoteRow(rowType);
@@ -689,7 +690,7 @@ namespace PeepoDrumKit
 			const vec2 localTop = { param.Timeline.Camera.TimeToLocalSpaceX(time), rowIt.LocalY };
 			const vec2 localBottom = localTop + vec2(0.0f, rowIt.LocalHeight);
 			const vec2 textPosition = param.Timeline.LocalToScreenSpace(localTop + vec2(3.0f, (rowIt.LocalHeight - textHeight) * 0.5f));
-			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), TimelineDefaultLineColor);
+			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), *Settings.Appearance.BranchStartLineColor);
 			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize(text), TimelineBackgroundColor);
 			Gui::AddTextWithDropShadow(param.DrawListContent, textPosition, TimelineItemTextColor, text, TimelineItemTextColorShadow);
 		};
@@ -706,16 +707,37 @@ namespace PeepoDrumKit
 			appendCommand(sectionBeat, "#SECTION");
 		for (const BranchRange& branch : course.Branches)
 		{
-			if (branch.GetStart() == branch.GetEnd())
+			if (branch.GetStart() == branch.GetEnd() && branch.EndsBranching)
 				appendCommand(branch.GetStart(), "#BRANCHSTART  #BRANCHEND");
 			else
 			{
 				appendCommand(branch.GetStart(), "#BRANCHSTART");
-				appendCommand(branch.GetEnd(), "#BRANCHEND");
+				if (branch.EndsBranching)
+					appendCommand(branch.GetEnd(), "#BRANCHEND");
 			}
 		}
 		for (const auto& command : commands)
 			drawCommand(command.first, command.second.c_str());
+	}
+
+	static void DrawTimelineBranchLevelHolds(DrawTimelineContentItemRowParam param, const ForEachRowData& rowIt)
+	{
+		const ChartCourse& course = *param.Context.ChartSelectedCourse;
+		const f32 textHeight = Gui::GetFontSize();
+		for (const BranchLevelHold& levelHold : course.BranchLevelHolds)
+		{
+			if (levelHold.Branch != param.Context.ChartSelectedBranch)
+				continue;
+			const Time time = param.Context.BeatToTime(levelHold.BeatTime);
+			if (time < param.VisibleTime.Min || time > param.VisibleTime.Max)
+				continue;
+			const vec2 localTop = { param.Timeline.Camera.TimeToLocalSpaceX(time), rowIt.LocalY };
+			const vec2 localBottom = localTop + vec2(0.0f, rowIt.LocalHeight);
+			const vec2 textPosition = param.Timeline.LocalToScreenSpace(localTop + vec2(3.0f, (rowIt.LocalHeight - textHeight) * 0.5f));
+			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), TimelineDefaultLineColor);
+			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize("#LEVELHOLD"), TimelineBackgroundColor);
+			Gui::AddTextWithDropShadow(param.DrawListContent, textPosition, TimelineItemTextColor, "#LEVELHOLD", TimelineItemTextColorShadow);
+		}
 	}
 
 	template <typename T, TimelineRowType RowType>
@@ -2522,7 +2544,7 @@ namespace PeepoDrumKit
 				{
 					ForEachTimelineRow(*this, selectedCourse, [&](const ForEachRowData& rowIt)
 					{
-						if (rowIt.RowType == TimelineRowType::BranchCommands)
+						if (IsNonGenericTimelineRow(rowIt.RowType))
 							return;
 						const GenericList list = TimelineRowToGenericList(rowIt.RowType, context.ChartSelectedBranch);
 						const b8 isNotesRow = IsNotesList(list);
@@ -3346,7 +3368,7 @@ namespace PeepoDrumKit
 
 						ForEachTimelineRow(*this, *context.ChartSelectedCourse, [&](const ForEachRowData& rowIt)
 						{
-							if (rowIt.RowType == TimelineRowType::BranchCommands)
+							if (IsNonGenericTimelineRow(rowIt.RowType))
 								return;
 							const GenericList list = TimelineRowToGenericList(rowIt.RowType, context.ChartSelectedBranch);
 							const b8 isNotesRow = IsNotesList(list);
@@ -3800,6 +3822,7 @@ namespace PeepoDrumKit
 					case TimelineRowType::TimeSignature: DrawTimelineContentItemRowT<TimeSignatureChange, TimelineRowType::TimeSignature>(rowParam, rowIt, context.ChartSelectedCourse->TempoMap.Signature); break;
 					case TimelineRowType::Notes: DrawTimelineContentItemRowT<Note, TimelineRowType::Notes>(rowParam, rowIt, context.ChartSelectedCourse->Notes_Normal); break;
 					case TimelineRowType::BranchCommands: DrawTimelineBranchCommands(rowParam, rowIt); break;
+					case TimelineRowType::BranchLevelHold: DrawTimelineBranchLevelHolds(rowParam, rowIt); break;
 					case TimelineRowType::Notes_Normal: DrawTimelineContentItemRowT<Note, TimelineRowType::Notes_Normal>(rowParam, rowIt, context.ChartSelectedCourse->Notes_Normal); break;
 					case TimelineRowType::Notes_Expert: DrawTimelineContentItemRowT<Note, TimelineRowType::Notes_Expert>(rowParam, rowIt, context.ChartSelectedCourse->Notes_Expert); break;
 					case TimelineRowType::Notes_Master: DrawTimelineContentItemRowT<Note, TimelineRowType::Notes_Master>(rowParam, rowIt, context.ChartSelectedCourse->Notes_Master); break;
@@ -3823,6 +3846,16 @@ namespace PeepoDrumKit
 			DrawListContent->ChannelsSetCurrent(0);
 			static constexpr f32 borders = 1.0f;
 			DrawListContent->AddRectFilled(Regions.Content.TL + vec2(borders), Regions.Content.BR - vec2(borders), TimelineBackgroundColor);
+			for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
+			{
+				const Time startTime = context.BeatToTime(branch.GetStart());
+				const Time endTime = context.BeatToTime(branch.GetEnd());
+				const f32 xStart = Camera.TimeToLocalSpaceX(startTime);
+				const f32 xEnd = Camera.TimeToLocalSpaceX(endTime);
+				const vec2 topLeft = LocalToScreenSpace(vec2(xStart, 0.0f));
+				const vec2 bottomRight = LocalToScreenSpace(vec2(xEnd, Regions.Content.GetHeight()));
+				DrawListContent->AddRectFilled(topLeft, bottomRight, *Settings.Appearance.BranchAreaBackgroundColor);
+			}
 		}
 
 		// NOTE: Bar Line Drag Logic

@@ -162,7 +162,7 @@ namespace PeepoDrumKit
 		}, course);
 		for (const BranchRange& branch : course.Branches) maxBeat = Max(maxBeat, branch.GetEnd());
 		for (Beat beat : course.BranchSections) maxBeat = Max(maxBeat, beat);
-		for (Beat beat : course.BranchLevelHolds) maxBeat = Max(maxBeat, beat);
+		for (const BranchLevelHold& levelHold : course.BranchLevelHolds) maxBeat = Max(maxBeat, levelHold.BeatTime);
 		return maxBeat;
 	}
 
@@ -179,7 +179,7 @@ namespace PeepoDrumKit
 		}, course);
 		for (const BranchRange& branch : course.Branches) maxBeat = Max(maxBeat, branch.GetEnd());
 		for (Beat beat : course.BranchSections) maxBeat = Max(maxBeat, beat);
-		for (Beat beat : course.BranchLevelHolds) maxBeat = Max(maxBeat, beat);
+		for (const BranchLevelHold& levelHold : course.BranchLevelHolds) maxBeat = Max(maxBeat, levelHold.BeatTime);
 		return maxBeat;
 	}
 
@@ -332,8 +332,9 @@ namespace PeepoDrumKit
 					outCourse.BranchSections.push_back(inMeasure.StartTime + sectionTime);
 
 			for (const TJA::ConvertedBranch& inBranch : inCourse.Branches)
-				outCourse.Branches.push_back(BranchRange { inBranch.StartTime, inBranch.EndTime - inBranch.StartTime, inBranch.Condition, inBranch.RequirementExpert, inBranch.RequirementMaster });
-			outCourse.BranchLevelHolds = inCourse.BranchLevelHolds;
+				outCourse.Branches.push_back(BranchRange { inBranch.StartTime, inBranch.EndTime - inBranch.StartTime, inBranch.Condition, inBranch.RequirementExpert, inBranch.RequirementMaster, inBranch.EndsBranching });
+			for (const TJA::ConvertedBranchLevelHold& levelHold : inCourse.BranchLevelHolds)
+				outCourse.BranchLevelHolds.push_back({ levelHold.BeatTime, static_cast<BranchType>(levelHold.Branch) });
 
 			//outCourse.TempoMap.SetTempoChange(TempoChange());
 			//outCourse.TempoMap = inCourse.GoGoRanges;
@@ -627,16 +628,16 @@ namespace PeepoDrumKit
 
 			std::vector<BranchRange> branches = inCourse.Branches;
 			std::sort(branches.begin(), branches.end(), [](const BranchRange& a, const BranchRange& b) { return a.BeatTime < b.BeatTime; });
-			std::vector<Beat> levelHolds = inCourse.BranchLevelHolds;
-			std::sort(levelHolds.begin(), levelHolds.end());
-			size_t levelHoldIndex = 0;
-			auto appendLevelHoldsAt = [&](Beat beat)
+			std::vector<BranchLevelHold> levelHolds = inCourse.BranchLevelHolds;
+			std::sort(levelHolds.begin(), levelHolds.end(), [](const BranchLevelHold& a, const BranchLevelHold& b)
 			{
-				while (levelHoldIndex < levelHolds.size() && levelHolds[levelHoldIndex] <= beat)
-				{
-					outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::BranchLevelHold });
-					levelHoldIndex++;
-				}
+				return a.BeatTime != b.BeatTime ? a.BeatTime < b.BeatTime : a.Branch < b.Branch;
+			});
+			auto appendLevelHoldsAt = [&](Beat beat, BranchType branch)
+			{
+				for (const BranchLevelHold& levelHold : levelHolds)
+					if (levelHold.BeatTime == beat && levelHold.Branch == branch)
+						outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::BranchLevelHold });
 			};
 			auto appendMeasureGroup = [&](BranchType branch, size_t measureIndex)
 			{
@@ -656,11 +657,9 @@ namespace PeepoDrumKit
 
 				for (; currentMeasureIndex < startMeasureIndex; currentMeasureIndex++)
 				{
-					appendLevelHoldsAt(outConvertedMeasures[currentMeasureIndex].StartTime);
+					appendLevelHoldsAt(outConvertedMeasures[currentMeasureIndex].StartTime, BranchType::Normal);
 					appendMeasureGroup(BranchType::Normal, currentMeasureIndex);
 				}
-				appendLevelHoldsAt(branch.GetStart());
-
 				TJA::ParsedChartCommand branchStart { TJA::ParsedChartCommandType::BranchStart };
 				branchStart.Param.BranchStart = { branch.Condition, branch.RequirementExpert, branch.RequirementMaster };
 				outCourse.ChartCommands.push_back(branchStart);
@@ -673,22 +672,21 @@ namespace PeepoDrumKit
 							: TJA::ParsedChartCommandType::BranchMaster;
 						outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { selector });
 						for (size_t measureIndex = startMeasureIndex; measureIndex < endMeasureIndex; measureIndex++)
+						{
+							appendLevelHoldsAt(outConvertedMeasures[measureIndex].StartTime, branchType);
 							appendMeasureGroup(branchType, measureIndex);
+						}
 					}
 				}
-				outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::BranchEnd });
+				if (branch.EndsBranching)
+					outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::BranchEnd });
 				currentMeasureIndex = endMeasureIndex;
 			}
 
 			for (; currentMeasureIndex < outConvertedMeasures.size(); currentMeasureIndex++)
 			{
-				appendLevelHoldsAt(outConvertedMeasures[currentMeasureIndex].StartTime);
+				appendLevelHoldsAt(outConvertedMeasures[currentMeasureIndex].StartTime, BranchType::Normal);
 				appendMeasureGroup(BranchType::Normal, currentMeasureIndex);
-			}
-			while (levelHoldIndex < levelHolds.size())
-			{
-				outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::BranchLevelHold });
-				levelHoldIndex++;
 			}
 		}
 
@@ -708,17 +706,26 @@ namespace PeepoDrumKit
 			"#START\n"
 			"1111,\n"
 			"#SECTION\n"
-			"#LEVELHOLD\n"
 			"#BRANCHSTART p,70,80\n"
 			"#N\n"
+			"#LEVELHOLD\n"
 			"#SCROLL 1.25\n"
 			"7008,\n"
 			"#E\n"
+			"#LEVELHOLD\n"
 			"#SCROLL 1.5\n"
 			"2000,\n"
 			"#M\n"
+			"#LEVELHOLD\n"
 			"#SCROLL 2\n"
 			"3000,\n"
+			"#BRANCHSTART r,10,20\n"
+			"#N\n"
+			"1111,\n"
+			"#E\n"
+			"2222,\n"
+			"#M\n"
+			"3333,\n"
 			"#BRANCHEND\n"
 			"1111,\n"
 			"#END\n";
@@ -745,10 +752,17 @@ namespace PeepoDrumKit
 			return fail("Failed to create a single-course branch chart");
 
 		ChartCourse& course = *chart.Courses.front();
-		if (course.Branches.size() != 1 || course.BranchSections.size() != 1 || course.BranchLevelHolds.size() != 1)
+		if (course.Branches.size() != 2 || course.BranchSections.size() != 1 || course.BranchLevelHolds.size() != 3)
 			return fail("Branch range, #SECTION, or #LEVELHOLD was not imported");
+		for (BranchType branch : { BranchType::Normal, BranchType::Expert, BranchType::Master })
+			if (std::none_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
+				{ return levelHold.BeatTime == Beat::FromBars(1) && levelHold.Branch == branch; }))
+				return fail("Branch-specific #LEVELHOLD was not imported");
 		if (course.Branches[0].Condition != TJA::BranchCondition::Precise || course.Branches[0].RequirementExpert != 70 || course.Branches[0].RequirementMaster != 80)
 			return fail("Branch condition was not imported");
+		if (course.Branches[0].GetEnd() != Beat::FromBars(2) || course.Branches[0].EndsBranching
+			|| course.Branches[1].GetStart() != Beat::FromBars(2) || course.Branches[1].GetEnd() != Beat::FromBars(3) || !course.Branches[1].EndsBranching)
+			return fail("Consecutive #BRANCHSTART commands were not imported as adjacent branch ranges");
 
 		const Beat branchStart = Beat::FromBars(1);
 		const Note* normal = course.Notes_Normal.TryFindExactAtBeat(branchStart);
@@ -793,11 +807,17 @@ namespace PeepoDrumKit
 		if (!parse(exportedText, reparsed))
 			return false;
 		ChartProject roundTripped;
-		if (!CreateChartProjectFromTJA(reparsed, roundTripped) || roundTripped.Courses.size() != 1 || roundTripped.Courses[0]->Branches.size() != 2)
+		if (!CreateChartProjectFromTJA(reparsed, roundTripped) || roundTripped.Courses.size() != 1 || roundTripped.Courses[0]->Branches.size() != 3)
 			return fail("Exported branch chart could not be imported again");
 		if (roundTripped.Courses[0]->BranchSections.size() != 1)
 			return fail("#SECTION was lost during round trip");
-		if (roundTripped.Courses[0]->Branches[1].GetStart() != zeroLengthBranchBeat || roundTripped.Courses[0]->Branches[1].BeatDuration != Beat::Zero())
+		if (roundTripped.Courses[0]->BranchLevelHolds.size() != 3)
+			return fail("Branch-specific #LEVELHOLD was lost during round trip");
+		for (BranchType branch : { BranchType::Normal, BranchType::Expert, BranchType::Master })
+			if (std::none_of(roundTripped.Courses[0]->BranchLevelHolds.begin(), roundTripped.Courses[0]->BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
+				{ return levelHold.BeatTime == Beat::FromBars(1) && levelHold.Branch == branch; }))
+				return fail("Branch-specific #LEVELHOLD was assigned to the wrong branch during round trip");
+		if (roundTripped.Courses[0]->Branches[2].GetStart() != zeroLengthBranchBeat || roundTripped.Courses[0]->Branches[2].BeatDuration != Beat::Zero() || !roundTripped.Courses[0]->Branches[2].EndsBranching)
 			return fail("Zero-length branch was lost during round trip");
 		if (roundTripped.Courses[0]->Notes_Expert.TryFindExactAtBeat(branchStart) == nullptr || roundTripped.Courses[0]->Notes_Master.TryFindExactAtBeat(branchStart) == nullptr)
 			return fail("Branch notes were lost during round trip");

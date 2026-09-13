@@ -1094,8 +1094,10 @@ namespace PeepoDrumKit
 			if (Gui::Begin(UI_WindowName("TAB_CHART_STATS"), &PersistentApp.LastSession.ShowWindow_ChartStats, ImGuiWindowFlags_None))
 			{
 				chartStatsWindow.FontScale = PersistentApp.LastSession.ChartStatsFontScale;
+				chartStatsWindow.ShowBasicInfo = PersistentApp.LastSession.ShowChartStatsBasicInfo;
 				chartStatsWindow.DrawGui(context);
 				PersistentApp.LastSession.ChartStatsFontScale = chartStatsWindow.FontScale;
+				PersistentApp.LastSession.ShowChartStatsBasicInfo = chartStatsWindow.ShowBasicInfo;
 			}
 			if (focusChartStatsWindowNextFrame) { focusChartStatsWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();

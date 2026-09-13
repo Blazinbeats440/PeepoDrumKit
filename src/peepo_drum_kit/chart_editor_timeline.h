@@ -78,6 +78,7 @@ namespace PeepoDrumKit
 		TimeSignature,
 		Notes,
 		BranchCommands,
+		BranchLevelHold,
 		Notes_Normal,
 		Notes_Expert,
 		Notes_Master,
@@ -100,6 +101,7 @@ namespace PeepoDrumKit
 		"EVENT_TIME_SIGNATURE",
 		"EVENT_NOTES",
 		"EVENT_BRANCH_COMMANDS",
+		"EVENT_BRANCH_LEVEL_HOLD",
 		"EVENT_NOTES_NORMAL",
 		"EVENT_NOTES_EXPERT",
 		"EVENT_NOTES_MASTER",
@@ -173,6 +175,11 @@ namespace PeepoDrumKit
 	constexpr b8 IsBranchNoteRow(TimelineRowType rowType)
 	{
 		return rowType >= TimelineRowType::NoteBranches_First && rowType <= TimelineRowType::NoteBranches_Last;
+	}
+
+	constexpr b8 IsNonGenericTimelineRow(TimelineRowType rowType)
+	{
+		return rowType == TimelineRowType::BranchCommands || rowType == TimelineRowType::BranchLevelHold;
 	}
 
 	struct TimelineRegion : Rect

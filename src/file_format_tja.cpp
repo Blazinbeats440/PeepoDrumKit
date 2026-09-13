@@ -1819,7 +1819,6 @@ namespace TJA
 
 	ConvertedCourse ConvertParsedToConvertedCourse(const ParsedTJA& inContent, const ParsedCourse& inCourse)
 	{
-		enum class ConvertedBranchPath : u8 { Normal, Expert, Master, Count };
 		struct BranchMeasureRange
 		{
 			size_t StartMeasureIndex;
@@ -1827,41 +1826,52 @@ namespace TJA
 			BranchCondition Condition;
 			i32 RequirementExpert;
 			i32 RequirementMaster;
+			b8 EndsBranching;
 		};
 
 		std::array<std::vector<ParsedChartCommand>, 3> commandsByBranch;
 		std::vector<BranchMeasureRange> branchMeasureRanges;
-		std::vector<size_t> levelHoldMeasureIndices;
+		std::vector<std::pair<size_t, ConvertedBranchPath>> levelHoldMeasureIndices;
 		b8 isInsideBranch = false;
 		ConvertedBranchPath selectedBranch = ConvertedBranchPath::Count;
 		size_t normalMeasureCount = 0;
+		std::array<size_t, 3> branchMeasureCounts {};
 
 		for (const ParsedChartCommand& command : inCourse.ChartCommands)
 		{
 			switch (command.Type)
 			{
 			case ParsedChartCommandType::BranchStart:
+				if (isInsideBranch && !branchMeasureRanges.empty())
+					branchMeasureRanges.back().EndMeasureIndex = normalMeasureCount;
 				branchMeasureRanges.push_back({
 					normalMeasureCount,
 					normalMeasureCount,
 					command.Param.BranchStart.Condition,
 					command.Param.BranchStart.RequirementExpert,
 					command.Param.BranchStart.RequirementMaster,
+					false,
 				});
 				isInsideBranch = true;
 				selectedBranch = ConvertedBranchPath::Count;
+				branchMeasureCounts.fill(normalMeasureCount);
 				continue;
 			case ParsedChartCommandType::BranchNormal: selectedBranch = ConvertedBranchPath::Normal; continue;
 			case ParsedChartCommandType::BranchExpert: selectedBranch = ConvertedBranchPath::Expert; continue;
 			case ParsedChartCommandType::BranchMaster: selectedBranch = ConvertedBranchPath::Master; continue;
 			case ParsedChartCommandType::BranchEnd:
-				if (!branchMeasureRanges.empty())
+				if (isInsideBranch && !branchMeasureRanges.empty())
+				{
 					branchMeasureRanges.back().EndMeasureIndex = normalMeasureCount;
+					branchMeasureRanges.back().EndsBranching = true;
+				}
 				isInsideBranch = false;
 				selectedBranch = ConvertedBranchPath::Count;
 				continue;
 			case ParsedChartCommandType::BranchLevelHold:
-				levelHoldMeasureIndices.push_back(normalMeasureCount);
+				levelHoldMeasureIndices.emplace_back(
+					selectedBranch < ConvertedBranchPath::Count ? branchMeasureCounts[EnumToIndex(selectedBranch)] : normalMeasureCount,
+					selectedBranch < ConvertedBranchPath::Count ? selectedBranch : ConvertedBranchPath::Normal);
 				continue;
 			default:
 				break;
@@ -1877,10 +1887,16 @@ namespace TJA
 				commandsByBranch[EnumToIndex(selectedBranch)].push_back(command);
 			}
 
-			if (command.Type == ParsedChartCommandType::MeasureEnd &&
-				(!isInsideBranch || selectedBranch == ConvertedBranchPath::Normal || selectedBranch == ConvertedBranchPath::Count))
-				normalMeasureCount++;
+			if (command.Type == ParsedChartCommandType::MeasureEnd)
+			{
+				if (isInsideBranch && selectedBranch < ConvertedBranchPath::Count)
+					branchMeasureCounts[EnumToIndex(selectedBranch)]++;
+				if (!isInsideBranch || selectedBranch == ConvertedBranchPath::Normal || selectedBranch == ConvertedBranchPath::Count)
+					normalMeasureCount++;
+			}
 		}
+		if (isInsideBranch && !branchMeasureRanges.empty())
+			branchMeasureRanges.back().EndMeasureIndex = normalMeasureCount;
 
 		ConvertedCourse out = ConvertParsedToConvertedCourseSingle(inContent, inCourse, commandsByBranch[EnumToIndex(ConvertedBranchPath::Normal)]);
 		if (branchMeasureRanges.empty())
@@ -1909,10 +1925,11 @@ namespace TJA
 				branch.Condition,
 				branch.RequirementExpert,
 				branch.RequirementMaster,
+				branch.EndsBranching,
 			});
 		}
-		for (size_t measureIndex : levelHoldMeasureIndices)
-			out.BranchLevelHolds.push_back(measureIndexToBeat(measureIndex));
+		for (const auto& [measureIndex, branch] : levelHoldMeasureIndices)
+			out.BranchLevelHolds.push_back({ measureIndexToBeat(measureIndex), branch });
 
 		return out;
 	}
