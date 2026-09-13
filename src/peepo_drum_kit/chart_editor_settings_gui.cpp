@@ -807,6 +807,95 @@ namespace PeepoDrumKit
 				Gui::EndTabItem();
 			}
 
+			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_AUDIO")))
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
+				{
+					SettingsGui::SettingsEntry settingsEntriesAudio[] =
+					{
+						SettingsGui::SettingsEntry(
+							settings.Audio.MasterVolume,
+							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME"),
+							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME_DESC"),
+							SettingsGui::WidgetType::F32_AudioMasterVolume),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.BalloonVolume,
+							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME"),
+							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME_DESC"),
+							SettingsGui::WidgetType::F32_AudioMasterVolume),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.MetronomeVolume,
+							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME"),
+							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME_DESC"),
+							SettingsGui::WidgetType::F32_AudioMasterVolume),
+
+						SettingsGui::SettingsEntry(
+							settings.General.DrumrollPreviewRollsPerSecond,
+							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW"),
+							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW_DESC"),
+							SettingsGui::WidgetType::F32_DrumrollRollsPerSecond),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.OpenDeviceOnStartup,
+							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP"),
+							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.CloseDeviceOnIdleFocusLoss,
+							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS"),
+							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.RequestExclusiveDeviceAccess,
+							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE"),
+							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE_DESC"),
+							SettingsGui::WidgetType::B8_ExclusiveAudioComboBox),
+
+						SettingsGui::SettingsEntry(
+							settings.Audio.BufferFrameSize,
+							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE"),
+							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE_DESC"),
+							SettingsGui::WidgetType::I32_AudioBufferFrameSize),
+					};
+
+					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup);
+				}
+				Gui::PopStyleVar();
+				Gui::EndTabItem();
+			}
+
+			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_APPEARANCE")))
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
+				{
+					static constexpr ImGuiColorEditFlags colorEditFlags = ImGuiColorEditFlags_AlphaPreviewHalf;
+					auto drawColorSetting = [&](cstr label, WithDefault<u32>& setting)
+					{
+						u32& color = setting.Value;
+						Gui::PushID(label);
+						Gui::AlignTextToFramePadding();
+						Gui::TextUnformatted(label);
+						if (setting.HasValue)
+						{
+							Gui::SameLine();
+							if (Gui::SmallButton(UI_Str("SETTINGS_RESET_DEFAULT")))
+								setting.ResetToDefault();
+						}
+						Gui::SetNextItemWidth(-1.0f);
+						changesWereMade |= Gui::ColorEdit4_U32("##Color", &color, colorEditFlags);
+						setting.SetHasValueIfNotDefault();
+						Gui::PopID();
+					};
+
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR"), settings.Appearance.BranchStartLineColor);
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
+				}
+				Gui::PopStyleVar();
+				Gui::EndTabItem();
+			}
+
 			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_INPUT_BINDINGS")))
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
@@ -941,65 +1030,6 @@ namespace PeepoDrumKit
 					};
 
 					changesWereMade |= SettingsGui::DrawInputEntriesListTableGui(settingsEntriesInput, ArrayCount(settingsEntriesInput), &settingsFilterInput, inputState);
-				}
-				Gui::PopStyleVar();
-				Gui::EndTabItem();
-			}
-
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_AUDIO")))
-			{
-				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
-				{
-					SettingsGui::SettingsEntry settingsEntriesAudio[] =
-					{
-						SettingsGui::SettingsEntry(
-							settings.Audio.MasterVolume,
-							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME"),
-							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME_DESC"),
-							SettingsGui::WidgetType::F32_AudioMasterVolume),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.BalloonVolume,
-							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME"),
-							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME_DESC"),
-							SettingsGui::WidgetType::F32_AudioMasterVolume),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.MetronomeVolume,
-							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME"),
-							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME_DESC"),
-							SettingsGui::WidgetType::F32_AudioMasterVolume),
-
-						SettingsGui::SettingsEntry(
-							settings.General.DrumrollPreviewRollsPerSecond,
-							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW"),
-							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW_DESC"),
-							SettingsGui::WidgetType::F32_DrumrollRollsPerSecond),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.OpenDeviceOnStartup,
-							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP"),
-							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.CloseDeviceOnIdleFocusLoss,
-							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS"),
-							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.RequestExclusiveDeviceAccess,
-							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE"),
-							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE_DESC"),
-							SettingsGui::WidgetType::B8_ExclusiveAudioComboBox),
-
-						SettingsGui::SettingsEntry(
-							settings.Audio.BufferFrameSize,
-							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE"),
-							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE_DESC"),
-							SettingsGui::WidgetType::I32_AudioBufferFrameSize),
-					};
-
-					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup);
 				}
 				Gui::PopStyleVar();
 				Gui::EndTabItem();

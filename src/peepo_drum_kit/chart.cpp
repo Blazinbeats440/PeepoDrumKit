@@ -726,6 +726,12 @@ namespace PeepoDrumKit
 			"2222,\n"
 			"#M\n"
 			"3333,\n"
+			"#BRANCHEND\n"
+			"1111,\n"
+			"#E\n"
+			"2222,\n"
+			"#M\n"
+			"3333,\n"
 			"#END\n";
 
 		auto parse = [&](std::string_view text, TJA::ParsedTJA& out)
@@ -760,14 +766,14 @@ namespace PeepoDrumKit
 		ChartCourse& course = *chart.Courses.front();
 		if (course.Branches.size() != 2 || course.BranchSections.size() != 1 || course.BranchLevelHolds.size() != 3)
 			return fail("Branch range, #SECTION, or #LEVELHOLD was not imported");
-		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		for (BranchType branch : { BranchType::Normal, BranchType::Expert, BranchType::Master })
 			if (std::none_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
 				{ return levelHold.BeatTime == Beat::FromBars(1) && levelHold.Branch == branch; }))
 				return fail("Branch-specific #LEVELHOLD was not imported");
 		if (course.Branches[0].Condition != TJA::BranchCondition::Precise || course.Branches[0].RequirementExpert != 70 || course.Branches[0].RequirementMaster != 80)
 			return fail("Branch condition was not imported");
 		if (course.Branches[0].GetEnd() != Beat::FromBars(2) || course.Branches[0].EndsBranching
-			|| course.Branches[1].GetStart() != Beat::FromBars(2) || course.Branches[1].GetEnd() != Beat::FromBars(3) || course.Branches[1].EndsBranching)
+			|| course.Branches[1].GetStart() != Beat::FromBars(2) || course.Branches[1].GetEnd() != Beat::FromBars(3) || !course.Branches[1].EndsBranching)
 			return fail("Consecutive #BRANCHSTART commands were not imported as adjacent branch ranges");
 
 		const Beat branchStart = Beat::FromBars(1);
@@ -821,6 +827,10 @@ namespace PeepoDrumKit
 			return fail("#SECTION was lost during round trip");
 		if (roundTripped.Courses[0]->BranchLevelHolds.size() != 3)
 			return fail("Branch-specific #LEVELHOLD was lost during round trip");
+		for (BranchType branch : { BranchType::Normal, BranchType::Expert, BranchType::Master })
+			if (std::none_of(roundTripped.Courses[0]->BranchLevelHolds.begin(), roundTripped.Courses[0]->BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
+				{ return levelHold.BeatTime == Beat::FromBars(1) && levelHold.Branch == branch; }))
+				return fail("Branch-specific #LEVELHOLD was assigned to the wrong branch during round trip");
 		if (roundTripped.Courses[0]->Branches[2].GetStart() != zeroLengthBranchBeat || roundTripped.Courses[0]->Branches[2].BeatDuration != Beat::Zero() || !roundTripped.Courses[0]->Branches[2].EndsBranching)
 			return fail("Zero-length branch was lost during round trip");
 		if (roundTripped.Courses[0]->Notes_Expert.TryFindExactAtBeat(branchStart) == nullptr || roundTripped.Courses[0]->Notes_Master.TryFindExactAtBeat(branchStart) == nullptr)

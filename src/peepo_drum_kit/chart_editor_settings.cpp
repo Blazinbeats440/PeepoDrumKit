@@ -89,6 +89,16 @@ namespace PeepoDrumKit
 			char b[32]; stringToAppendTo += std::string_view(b, sprintf_s(b, "%d", in));
 		}
 
+		static IniMemberParseResult FromString(std::string_view stringToParse, u32& out)
+		{
+			return ASCII::TryParse(stringToParse, out) ? IniMemberParseResult {} : MemberParseError("Invalid unsigned int");
+		}
+
+		static void ToString(const u32& in, std::string& stringToAppendTo)
+		{
+			char b[32]; stringToAppendTo += std::string_view(b, sprintf_s(b, "%u", in));
+		}
+
 		static IniMemberParseResult FromString(std::string_view stringToParse, f32& out)
 		{
 			return ASCII::TryParse(stringToParse, out) ? IniMemberParseResult {} : MemberParseError("Invalid float");
@@ -257,7 +267,7 @@ namespace PeepoDrumKit
 	}
 
 	constexpr size_t SizeOfPersistentAppData = sizeof(PersistentAppData);
-	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 144, "TODO: Add missing ini file handling for newly added PersistentAppData fields");
+	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152, "TODO: Add missing ini file handling for newly added PersistentAppData fields");
 
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, PersistentAppData& out)
 	{
@@ -292,6 +302,7 @@ namespace PeepoDrumKit
 				else if (it.Key == "show_window_template") { if (!BoolFromString(in, out.LastSession.ShowWindow_Template)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_chart_stats") { if (!BoolFromString(in, out.LastSession.ShowWindow_ChartStats)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "chart_stats_font_scale") { if (f32 v = out.LastSession.ChartStatsFontScale; ASCII::TryParse(in, v)) out.LastSession.ChartStatsFontScale = Clamp(v, 0.5f, 2.0f); else return parser.Error_InvalidFloat(); }
+				else if (it.Key == "show_chart_stats_basic_info") { if (!BoolFromString(in, out.LastSession.ShowChartStatsBasicInfo)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_chart_branches") { if (!BoolFromString(in, out.LastSession.ShowWindow_ChartBranches)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_lyrics") { if (!BoolFromString(in, out.LastSession.ShowWindow_Lyrics)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_settings") { if (!BoolFromString(in, out.LastSession.ShowWindow_Settings)) return parser.Error_InvalidBool(); }
@@ -337,6 +348,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("show_window_template", BoolToString(in.LastSession.ShowWindow_Template));
 		writer.LineKeyValue_Str("show_window_chart_stats", BoolToString(in.LastSession.ShowWindow_ChartStats));
 		writer.LineKeyValue_F32("chart_stats_font_scale", in.LastSession.ChartStatsFontScale);
+		writer.LineKeyValue_Str("show_chart_stats_basic_info", BoolToString(in.LastSession.ShowChartStatsBasicInfo));
 		writer.LineKeyValue_Str("show_window_chart_branches", BoolToString(in.LastSession.ShowWindow_ChartBranches));
 		writer.LineKeyValue_Str("show_window_lyrics", BoolToString(in.LastSession.ShowWindow_Lyrics));
 		writer.LineKeyValue_Str("show_window_settings", BoolToString(in.LastSession.ShowWindow_Settings));
@@ -489,6 +501,10 @@ namespace PeepoDrumKit
 			X(Audio.BalloonVolume, "balloon_volume");
 			X(Audio.MetronomeVolume, "metronome_volume");
 			X(Audio.BufferFrameSize, "buffer_frame_size");
+
+			SECTION("appearance");
+			X(Appearance.BranchStartLineColor, "branch_start_line_color");
+			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");
 
 			SECTION("animation");
 			X(Animation.EnableGuiScaleAnimation, "enable_gui_scale_animation");

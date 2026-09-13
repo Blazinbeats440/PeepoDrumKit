@@ -693,7 +693,7 @@ namespace PeepoDrumKit
 			const vec2 localTop = { param.Timeline.Camera.TimeToLocalSpaceX(time), rowIt.LocalY };
 			const vec2 localBottom = localTop + vec2(0.0f, rowIt.LocalHeight);
 			const vec2 textPosition = param.Timeline.LocalToScreenSpace(localTop + vec2(3.0f, (rowIt.LocalHeight - textHeight) * 0.5f));
-			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), TimelineDefaultLineColor);
+			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), *Settings.Appearance.BranchStartLineColor);
 			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize(text), TimelineBackgroundColor);
 			Gui::AddTextWithDropShadow(param.DrawListContent, textPosition, TimelineItemTextColor, text, TimelineItemTextColorShadow);
 		};
@@ -3849,16 +3849,15 @@ namespace PeepoDrumKit
 			DrawListContent->ChannelsSetCurrent(0);
 			static constexpr f32 borders = 1.0f;
 			DrawListContent->AddRectFilled(Regions.Content.TL + vec2(borders), Regions.Content.BR - vec2(borders), TimelineBackgroundColor);
-			if (*Settings.General.TimelineShowBranchRangeBackground)
+			for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
 			{
-				for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
-				{
-					if (branch.BeatDuration <= Beat::Zero())
-						continue;
-					const f32 startX = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(branch.GetStart())), 0.0f)).x;
-					const f32 endX = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(branch.GetEnd())), 0.0f)).x;
-					DrawListContent->AddRectFilled(vec2(startX, Regions.Content.TL.y), vec2(endX, Regions.Content.BR.y), TimelineBranchRangeBackgroundColor);
-				}
+				const Time startTime = context.BeatToTime(branch.GetStart());
+				const Time endTime = context.BeatToTime(branch.GetEnd());
+				const f32 xStart = Camera.TimeToLocalSpaceX(startTime);
+				const f32 xEnd = Camera.TimeToLocalSpaceX(endTime);
+				const vec2 topLeft = LocalToScreenSpace(vec2(xStart, 0.0f));
+				const vec2 bottomRight = LocalToScreenSpace(vec2(xEnd, Regions.Content.GetHeight()));
+				DrawListContent->AddRectFilled(topLeft, bottomRight, *Settings.Appearance.BranchAreaBackgroundColor);
 			}
 		}
 

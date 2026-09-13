@@ -1375,8 +1375,11 @@ namespace PeepoDrumKit
 
 		Gui::UpdateSmoothScrollWindow();
 
-		if (Gui::BeginPopupContextWindow("StatsContextMenu", 0))
+		if (Gui::BeginPopupContextWindow("StatsContextMenu", ImGuiMouseButton_Right))
 		{
+			if (Gui::MenuItem(UI_Str("STATS_SHOW_BASIC_INFO"), nullptr, ShowBasicInfo))
+				ShowBasicInfo = !ShowBasicInfo;
+			Gui::Separator();
 			if (Gui::MenuItem(UI_Str("STATS_FONT_SIZE_ZOOM_IN"), nullptr, false, FontScale < 2.0f))
 				FontScale = Min(FontScale + 0.1f, 2.0f);
 			if (Gui::MenuItem(UI_Str("STATS_FONT_SIZE_ZOOM_OUT"), nullptr, false, FontScale > 0.5f))
@@ -1395,6 +1398,7 @@ namespace PeepoDrumKit
 		Gui::PushFont(FontMain, statsFontSize(FontBaseSizes::Large));
 		{
 			// Header with chart main information
+			if (ShowBasicInfo)
 			{
 				Gui::PushStyleColor(ImGuiCol_Text, colors.GreenDark);
 				Gui::PushFont(FontMain, statsFontSize(FontBaseSizes::Large));
@@ -3465,7 +3469,6 @@ namespace PeepoDrumKit
 			course.Branches.erase(course.Branches.begin() + branchToRemove);
 			context.Undo.NotifyChangesWereMade();
 		}
-
 	}
 
 	template <typename TValue, typename... TLables>

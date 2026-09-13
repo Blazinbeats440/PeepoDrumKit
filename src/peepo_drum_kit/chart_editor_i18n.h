@@ -126,11 +126,15 @@ X("STATS_BOMB",									"Bomb: %d") \
 X("TAB_TJA_EXPORT_DEBUG_VIEW",						"TJA Export Debug View") \
 X("TAB_TJA_IMPORT_TEST",							"TJA Import Test") \
 X("TAB_AUDIO_TEST",									"Audio Test") \
+X("STATS_SHOW_BASIC_INFO", "Show Basic Info") \
 /* settings window */ \
-X("SETTINGS_TAB_GENERAL", "General Settings") \
-X("SETTINGS_TAB_INPUT_BINDINGS", "Input Bindings") \
-X("SETTINGS_TAB_AUDIO", "Audio Settings") \
-X("SETTINGS_TAB_LANGUAGE", "Language Settings") \
+X("SETTINGS_TAB_GENERAL", "General") \
+X("SETTINGS_TAB_INPUT_BINDINGS", "Keys") \
+X("SETTINGS_TAB_AUDIO", "Audio") \
+X("SETTINGS_TAB_APPEARANCE", "Appearance") \
+X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
+X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
+X("SETTINGS_TAB_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES", "Export Builtin Locale Files") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR", "General: Default Creator Name") \
@@ -191,6 +195,14 @@ X("SETTINGS_REVERT_CHANGES", "Revert Changes") \
 X("SETTINGS_UP", "Up") \
 X("SETTINGS_DOWN", "Down") \
 X("SETTINGS_REMOVE", "Remove") \
+X("BRANCH_FORCED", "Forced Branch") \
+X("BRANCH_FORCED_NORMAL", "Normal") \
+X("BRANCH_FORCED_EXPERT", "Expert") \
+X("BRANCH_FORCED_MASTER", "Master") \
+X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Branch Buttons") \
+X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing a chart branch to Normal, Expert, or Master in the Chart Branches window.") \
+X("BRANCH_COMMAND_LEVELHOLD", "Level Hold") \
+X("EVENT_BRANCH_LEVEL_HOLD", "#LEVELHOLD") \
 /* menu names */ \
 X("MENU_FILE",										"File") \
 X("MENU_EDIT",										"Edit") \

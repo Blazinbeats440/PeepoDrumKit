@@ -101,6 +101,7 @@ namespace PeepoDrumKit
 			b8 ShowWindow_Template = false;
 			b8 ShowWindow_ChartStats = true;
 			f32 ChartStatsFontScale = 1.0f;
+			b8 ShowChartStatsBasicInfo = true;
 			b8 ShowWindow_ChartBranches = true;
 			b8 ShowWindow_Lyrics = true;
 			b8 ShowWindow_Settings = true;
@@ -170,6 +171,12 @@ namespace PeepoDrumKit
 			WithDefault<f32> MetronomeVolume = 1.0f;
 			WithDefault<i32> BufferFrameSize = 0;
 		} Audio;
+
+		struct AppearanceData
+		{
+			WithDefault<u32> BranchStartLineColor = 0xDC75AD85;
+			WithDefault<u32> BranchAreaBackgroundColor = 0x283F7A2B;
+		} Appearance;
 
 		struct AnimationData
 		{

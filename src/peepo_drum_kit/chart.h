@@ -441,9 +441,9 @@ namespace PeepoDrumKit
 	{
 		switch (branch)
 		{
-	case BranchType::Normal: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, 101, 102, true };
+		case BranchType::Normal: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, 101, 102, true };
 		case BranchType::Expert: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, -1, 101, true };
-	case BranchType::Master: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, -2, -1, true };
+		case BranchType::Master: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, -2, -1, true };
 		default: return BranchRange { beat, Beat::Zero(), TJA::BranchCondition::Precise, 101, 101, true };
 		}
 	}

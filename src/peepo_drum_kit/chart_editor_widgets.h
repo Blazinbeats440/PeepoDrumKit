@@ -106,6 +106,7 @@ namespace PeepoDrumKit
 	struct ChartChartStatsWindow
 	{
 		f32 FontScale = 1.0f;
+		b8 ShowBasicInfo = true;
 		void DrawGui(ChartContext& context);
 	};
 
