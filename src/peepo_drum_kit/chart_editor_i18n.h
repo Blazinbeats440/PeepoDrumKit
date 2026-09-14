@@ -47,6 +47,14 @@ X("TAB_USAGE_GUIDE",								"Usage Guide") \
 X("TAB_UPDATE_NOTES",								"Update Notes") \
 X("TAB_CHART_STATS",								"Stats") \
 X("TAB_TEMPLATE",								"Templates") \
+X("TAB_TEXT_EDITOR",							"Text Editor") \
+X("TEXT_EDITOR_WRITE",							"Write") \
+X("TEXT_EDITOR_READ",							"Read") \
+X("TEXT_EDITOR_STATUS_LOADED",					"Loaded the selected chart") \
+X("TEXT_EDITOR_STATUS_WRITTEN",				"Wrote to the selected chart") \
+X("TEXT_EDITOR_ERROR_INVALID",					"Could not read the text. Fix the marked errors and try again.") \
+X("TEXT_EDITOR_ERROR_ONE_CHART",				"The text must contain exactly one chart.") \
+X("TEXT_EDITOR_ERROR_BODY_ONLY",				"The text must contain only one #START to #END block.") \
 X("TEMPLATE_SAVE_SECTION",						"Save") \
 X("TEMPLATE_RECALL_SECTION",					"Recall") \
 X("TEMPLATE_CATEGORY",							"Category") \

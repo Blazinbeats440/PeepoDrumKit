@@ -916,6 +916,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Editor_OpenUpdateNotes, "Editor: Open Update Notes", },
 						{ &settings.Input.Editor_OpenChartStats, "Editor: Open Chart Stats", },
 						{ &settings.Input.Editor_OpenLyrics, "Editor: Open Chart Lyrics", },
+						{ &settings.Input.Editor_OpenTextEditor, "Editor: Open Text Editor", },
 						{ &settings.Input.Editor_OpenSettings, "Editor: Open Settings", },
 						{ &settings.Input.Editor_OpenTemplate, "Editor: Open Templates", },
 						{ &settings.Input.Editor_OpenChartBranches, "Editor: Open Chart Branches", },

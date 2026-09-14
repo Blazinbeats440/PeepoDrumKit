@@ -305,6 +305,7 @@ namespace PeepoDrumKit
 				else if (it.Key == "show_chart_stats_basic_info") { if (!BoolFromString(in, out.LastSession.ShowChartStatsBasicInfo)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_chart_branches") { if (!BoolFromString(in, out.LastSession.ShowWindow_ChartBranches)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_lyrics") { if (!BoolFromString(in, out.LastSession.ShowWindow_Lyrics)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_window_text_editor") { if (!BoolFromString(in, out.LastSession.ShowWindow_TextEditor)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_settings") { if (!BoolFromString(in, out.LastSession.ShowWindow_Settings)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_audio_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_AudioTest)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_tja_import_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_TJAImportTest)) return parser.Error_InvalidBool(); }
@@ -351,6 +352,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("show_chart_stats_basic_info", BoolToString(in.LastSession.ShowChartStatsBasicInfo));
 		writer.LineKeyValue_Str("show_window_chart_branches", BoolToString(in.LastSession.ShowWindow_ChartBranches));
 		writer.LineKeyValue_Str("show_window_lyrics", BoolToString(in.LastSession.ShowWindow_Lyrics));
+		writer.LineKeyValue_Str("show_window_text_editor", BoolToString(in.LastSession.ShowWindow_TextEditor));
 		writer.LineKeyValue_Str("show_window_settings", BoolToString(in.LastSession.ShowWindow_Settings));
 		writer.LineKeyValue_Str("show_window_audio_test", BoolToString(in.LastSession.ShowWindow_AudioTest));
 		writer.LineKeyValue_Str("show_window_tja_import_test", BoolToString(in.LastSession.ShowWindow_TJAImportTest));
@@ -533,6 +535,7 @@ namespace PeepoDrumKit
 			X(Input.Editor_OpenUpdateNotes, "editor_open_update_notes");
 			X(Input.Editor_OpenChartStats, "editor_open_chart_stats");
 			X(Input.Editor_OpenLyrics, "editor_open_lyrics");
+			X(Input.Editor_OpenTextEditor, "editor_open_text_editor");
 			X(Input.Editor_OpenSettings, "editor_open_settings");
 			X(Input.Editor_OpenTemplate, "editor_open_template");
 			X(Input.Editor_OpenChartBranches, "editor_open_chart_branches");

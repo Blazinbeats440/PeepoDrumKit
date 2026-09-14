@@ -104,6 +104,7 @@ namespace PeepoDrumKit
 			b8 ShowChartStatsBasicInfo = true;
 			b8 ShowWindow_ChartBranches = true;
 			b8 ShowWindow_Lyrics = true;
+			b8 ShowWindow_TextEditor = false;
 			b8 ShowWindow_Settings = true;
 			b8 ShowWindow_AudioTest = false;
 			b8 ShowWindow_TJAImportTest = false;
@@ -209,6 +210,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenUpdateNotes = { KeyBinding(ImGuiKey_F2) };
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
+			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_OpenTemplate = {};
 			WithDefault<MultiInputBinding> Editor_OpenChartBranches = {};
