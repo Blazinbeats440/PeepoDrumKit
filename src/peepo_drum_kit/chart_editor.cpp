@@ -112,6 +112,7 @@ namespace PeepoDrumKit
 	static b8 FindTJAChartBodyLineRange(const std::vector<TJA::Token>& tokens, size_t& outStartLine, size_t& outEndLine)
 	{
 		size_t startCount = 0, endCount = 0;
+		b8 betweenStartAndEnd = false;
 		outStartLine = outEndLine = 0;
 		for (const TJA::Token& token : tokens)
 		{
@@ -120,11 +121,14 @@ namespace PeepoDrumKit
 				outStartLine = token.LineIndex;
 				startCount++;
 			}
-			else if (token.Key == TJA::Key::Chart_END && !token.KeyString.empty())
+			else if (token.Key == TJA::Key::Chart_END && betweenStartAndEnd)
 			{
 				outEndLine = token.LineIndex;
 				endCount++;
+				betweenStartAndEnd = false;
 			}
+			if (token.Key == TJA::Key::Chart_START)
+				betweenStartAndEnd = true;
 		}
 		return startCount == 1 && endCount == 1 && outStartLine < outEndLine;
 	}
@@ -155,8 +159,11 @@ namespace PeepoDrumKit
 		std::string fullText;
 		if (!ConvertSelectedCourseToText(context, fullText))
 			return;
+		std::string_view fullTextView = fullText;
+		if (UTF8::HasBOM(fullTextView))
+			fullTextView = UTF8::TrimBOM(fullTextView);
 
-		const std::vector<std::string_view> lines = TJA::SplitLines(fullText);
+		const std::vector<std::string_view> lines = TJA::SplitLines(fullTextView);
 		const std::vector<TJA::Token> tokens = TJA::TokenizeLines(lines);
 		size_t startLine, endLine;
 		if (!FindTJAChartBodyLineRange(tokens, startLine, endLine))
@@ -177,7 +184,9 @@ namespace PeepoDrumKit
 
 	void ChartEditor::WriteTextEditorToSelectedCourse()
 	{
-		const std::string text = textEditorWindow.Editor.GetText();
+		std::string text = textEditorWindow.Editor.GetText();
+		if (UTF8::HasBOM(text))
+			text.erase(0, sizeof(UTF8::BOM_UTF8));
 		const std::vector<std::string_view> lines = TJA::SplitLines(text);
 		const std::vector<TJA::Token> tokens = TJA::TokenizeLines(lines);
 		size_t editorStartLine, editorEndLine;
@@ -191,7 +200,9 @@ namespace PeepoDrumKit
 		for (const TJA::Token& token : tokens)
 		{
 			const b8 outsideChartBody = token.LineIndex < editorStartLine || token.LineIndex > editorEndLine;
-			if (outsideChartBody && token.Type != TJA::TokenType::EmptyLine && token.Type != TJA::TokenType::Comment)
+			const b8 isImplicitEnd = token.Type == TJA::TokenType::HashChartCommand
+				&& token.Key == TJA::Key::Chart_END && token.KeyString.empty();
+			if (outsideChartBody && !isImplicitEnd && token.Type != TJA::TokenType::EmptyLine && token.Type != TJA::TokenType::Comment)
 			{
 				textEditorWindow.Editor.SetErrorMarkers({});
 				textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_ERROR_BODY_ONLY");
@@ -203,7 +214,10 @@ namespace PeepoDrumKit
 		std::string currentFullText;
 		if (!ConvertSelectedCourseToText(context, currentFullText))
 			return;
-		const std::vector<std::string_view> currentLines = TJA::SplitLines(currentFullText);
+		std::string_view currentFullTextView = currentFullText;
+		if (UTF8::HasBOM(currentFullTextView))
+			currentFullTextView = UTF8::TrimBOM(currentFullTextView);
+		const std::vector<std::string_view> currentLines = TJA::SplitLines(currentFullTextView);
 		const std::vector<TJA::Token> currentTokens = TJA::TokenizeLines(currentLines);
 		size_t currentStartLine, currentEndLine;
 		if (!FindTJAChartBodyLineRange(currentTokens, currentStartLine, currentEndLine))
