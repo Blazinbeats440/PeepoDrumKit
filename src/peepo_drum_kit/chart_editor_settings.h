@@ -104,6 +104,7 @@ namespace PeepoDrumKit
 			b8 ShowChartStatsBasicInfo = true;
 			b8 ShowWindow_ChartBranches = true;
 			b8 ShowWindow_Lyrics = true;
+			b8 ShowWindow_TextEditor = false;
 			b8 ShowWindow_Settings = true;
 			b8 ShowWindow_AudioTest = false;
 			b8 ShowWindow_TJAImportTest = false;
@@ -126,12 +127,17 @@ namespace PeepoDrumKit
 		{
 			WithDefault<std::string> DefaultCreatorName = {};
 			WithDefault<i32> TJAFileSaveFormat = 0;
+			WithDefault<b8> WarnTaikojiroIncompatibleCharts = false;
 			WithDefault<b8> IncludePeepoDrumKitComment = true;
 			WithDefault<f32> DrumrollPreviewRollsPerSecond = 8.0f;
+			WithDefault<f32> BalloonExpectedHitsPerSecond = 16.0f;
 			WithDefault<b8> DisplayTimeInSongSpace = false;
 			WithDefault<b8> ShowForcedBranchButtons = true;
+			WithDefault<b8> ShowChartTitleLocalized = false;
+			WithDefault<b8> ShowChartSubtitleLocalized = false;
+			WithDefault<b8> ShowChartOtherMetadata = false;
+			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
-			WithDefault<b8> TimelineShowBranchRangeBackground = true;
 			WithDefault<b8> TimelineScrollInvertMouseWheel = false;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTick = 100.0f;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTickFast = 250.0f;
@@ -174,8 +180,10 @@ namespace PeepoDrumKit
 
 		struct AppearanceData
 		{
-			WithDefault<u32> BranchStartLineColor = 0xDC75AD85;
-			WithDefault<u32> BranchAreaBackgroundColor = 0x283F7A2B;
+			WithDefault<u32> BranchStartLineColor = 0xFF00FFFF;
+			WithDefault<u32> BranchAreaBackgroundColor = 0x2800FFFF;
+			WithDefault<u32> PreviewBranchExpertLaneBackgroundColor = 0x3CFF9C0B;
+			WithDefault<u32> PreviewBranchMasterLaneBackgroundColor = 0x3CCA0BFF;
 		} Appearance;
 
 		struct AnimationData
@@ -209,6 +217,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenUpdateNotes = { KeyBinding(ImGuiKey_F2) };
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
+			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_OpenTemplate = {};
 			WithDefault<MultiInputBinding> Editor_OpenChartBranches = {};

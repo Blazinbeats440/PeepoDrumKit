@@ -138,7 +138,7 @@ namespace PeepoDrumKit
 
 		enum class WidgetType : u32 {
 			Default,
-			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_AudioMasterVolume,
+			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat,
 			I32_AudioBufferFrameSize,
 		};
@@ -270,6 +270,13 @@ namespace PeepoDrumKit
 					{
 						Gui::SetNextItemWidth(-1.0f);
 						changesWereMade |= Gui::InputFloat("##", &inOutF32->Value, 1.0f, 10.0f, "%.2f rolls/s");
+						if (changesWereMade)
+							inOutF32->Value = Clamp(inOutF32->Value, 0.1f, 100.0f);
+					}
+					else if (in.Widget == WidgetType::F32_BalloonExpectedHitsPerSecond)
+					{
+						Gui::SetNextItemWidth(-1.0f);
+						changesWereMade |= Gui::InputFloat("##", &inOutF32->Value, 1.0f, 10.0f, "%.2f hits/s");
 						if (changesWereMade)
 							inOutF32->Value = Clamp(inOutF32->Value, 0.1f, 100.0f);
 					}
@@ -739,6 +746,11 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_TJAFileSaveFormat),
 
 						SettingsGui::SettingsEntry(
+							settings.General.WarnTaikojiroIncompatibleCharts,
+							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE"),
+							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.IncludePeepoDrumKitComment,
 							UI_Str("SETTINGS_TJA_INCLUDE_HEADER"),
 							UI_Str("SETTINGS_TJA_INCLUDE_HEADER_DESC")),
@@ -750,6 +762,32 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::B8_ChartSongSpaceComboBox),
 
 						SettingsGui::SettingsEntry(
+							settings.General.BalloonExpectedHitsPerSecond,
+							UI_Str("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS"),
+							UI_Str("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS_DESC"),
+							SettingsGui::WidgetType::F32_BalloonExpectedHitsPerSecond),
+
+						SettingsGui::SettingsEntry(
+							settings.General.ShowChartTitleLocalized,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.ShowChartSubtitleLocalized,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.ShowChartOtherMetadata,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.ShowCourseOtherMetadata,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.ShowForcedBranchButtons,
 							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS"),
 							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC")),
@@ -758,11 +796,6 @@ namespace PeepoDrumKit
 							settings.General.TimelineShowBranchStartLines,
 							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES"),
 							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineShowBranchRangeBackground,
-							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND"),
-							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND_DESC")),
 
 						SettingsGui::SettingsEntry(
 							settings.General.TimelineScrollInvertMouseWheel,
@@ -891,6 +924,8 @@ namespace PeepoDrumKit
 
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR"), settings.Appearance.BranchStartLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR"), settings.Appearance.PreviewBranchExpertLaneBackgroundColor);
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR"), settings.Appearance.PreviewBranchMasterLaneBackgroundColor);
 				}
 				Gui::PopStyleVar();
 				Gui::EndTabItem();
@@ -916,6 +951,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Editor_OpenUpdateNotes, "Editor: Open Update Notes", },
 						{ &settings.Input.Editor_OpenChartStats, "Editor: Open Chart Stats", },
 						{ &settings.Input.Editor_OpenLyrics, "Editor: Open Chart Lyrics", },
+						{ &settings.Input.Editor_OpenTextEditor, "Editor: Open Text Editor", },
 						{ &settings.Input.Editor_OpenSettings, "Editor: Open Settings", },
 						{ &settings.Input.Editor_OpenTemplate, "Editor: Open Templates", },
 						{ &settings.Input.Editor_OpenChartBranches, "Editor: Open Chart Branches", },

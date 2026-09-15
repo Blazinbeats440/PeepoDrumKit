@@ -802,11 +802,19 @@ namespace PeepoDrumKit
 					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + GameLaneSlice.Content)),
 					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
 					GameLaneBorderColor);
-				drawList->AddRectFilled( // NOTE: Content
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
-					GameLaneContentBackgroundColor);
-				if (gogoLaneAlpha > 0) {
+					drawList->AddRectFilled( // NOTE: Content
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
+						GameLaneContentBackgroundColor);
+					const u32 branchLaneBackgroundColor = branch == BranchType::Expert ? *Settings.Appearance.PreviewBranchExpertLaneBackgroundColor
+						: branch == BranchType::Master ? *Settings.Appearance.PreviewBranchMasterLaneBackgroundColor
+						: 0;
+					if (branchLaneBackgroundColor != 0)
+						drawList->AddRectFilled(
+							Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
+							Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
+							branchLaneBackgroundColor);
+					if (gogoLaneAlpha > 0) {
 					f32 worldHeightZoomOffset = GameLaneSlice.Content / 2 * (1 - gogoLaneZoom);
 					drawList->AddRectFilled( // NOTE: Gogo layer
 						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + worldHeightZoomOffset)),

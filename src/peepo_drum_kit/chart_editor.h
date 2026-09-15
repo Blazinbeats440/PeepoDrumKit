@@ -75,6 +75,9 @@ namespace PeepoDrumKit
 
 		void CheckOpenSaveConfirmationPopupThenCall(std::function<void()> onSuccess);
 		void InternalUpdateAsyncLoading();
+		void ReadSelectedCourseIntoTextEditor();
+		void WriteTextEditorToSelectedCourse();
+		void DrawTextEditorWindow();
 
 	private:
 		ChartContext context = {};
@@ -94,6 +97,7 @@ namespace PeepoDrumKit
 		b8 focusUpdateNotesWindowNextFrame = false;
 		b8 focusChartStatsWindowNextFrame = false;
 		b8 focusLyricsWindowNextFrame = false;
+		b8 focusTextEditorWindowNextFrame = false;
 		b8 focusSettingsWindowNextFrame = false;
 
 		ChartHelpWindow helpWindow = {};
@@ -109,6 +113,13 @@ namespace PeepoDrumKit
 		ChartSettingsWindow settingsWindow = {};
 		AudioTestWindow audioTestWindow = {};
 		TJATestWindow tjaTestWindow = {};
+
+		struct TextEditorWindowData
+		{
+			::TextEditor Editor = CreateImGuiColorTextEditWithNiceTheme();
+			std::string StatusText;
+			b8 StatusIsError = false;
+		} textEditorWindow = {};
 
 		struct ZoomPopupData
 		{

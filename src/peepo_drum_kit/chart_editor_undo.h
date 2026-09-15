@@ -8,6 +8,20 @@ namespace PeepoDrumKit
 	// NOTE: General chart commands
 	namespace Commands
 	{
+		struct ReplaceChartCourse : Undo::Command
+		{
+			ReplaceChartCourse(ChartCourse* course, ChartCourse newValue)
+				: Course(course), NewValue(std::move(newValue)), OldValue(*course) { }
+
+			void Undo() override { *Course = OldValue; }
+			void Redo() override { *Course = NewValue; }
+			Undo::MergeResult TryMerge(Undo::Command&) override { return Undo::MergeResult::Failed; }
+			Undo::CommandInfo GetInfo() const override { return { "Write Text Chart" }; }
+
+			ChartCourse* Course;
+			ChartCourse NewValue, OldValue;
+		};
+
 		// Generic definitions
 
 		constexpr std::string_view ActionPrefixChange = "Change ";

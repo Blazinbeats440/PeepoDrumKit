@@ -47,6 +47,14 @@ X("TAB_USAGE_GUIDE",								"Usage Guide") \
 X("TAB_UPDATE_NOTES",								"Update Notes") \
 X("TAB_CHART_STATS",								"Stats") \
 X("TAB_TEMPLATE",								"Templates") \
+X("TAB_TEXT_EDITOR",							"Text Editor") \
+X("TEXT_EDITOR_WRITE",							"Write") \
+X("TEXT_EDITOR_READ",							"Read") \
+X("TEXT_EDITOR_STATUS_LOADED",					"Loaded the selected chart") \
+X("TEXT_EDITOR_STATUS_WRITTEN",				"Wrote to the selected chart") \
+X("TEXT_EDITOR_ERROR_INVALID",					"Could not read the text. Fix the marked errors and try again.") \
+X("TEXT_EDITOR_ERROR_ONE_CHART",				"The text must contain exactly one chart.") \
+X("TEXT_EDITOR_ERROR_BODY_ONLY",				"The text must contain only one #START to #END block.") \
 X("TEMPLATE_SAVE_SECTION",						"Save") \
 X("TEMPLATE_RECALL_SECTION",					"Recall") \
 X("TEMPLATE_CATEGORY",							"Category") \
@@ -128,31 +136,52 @@ X("TAB_TJA_IMPORT_TEST",							"TJA Import Test") \
 X("TAB_AUDIO_TEST",									"Audio Test") \
 X("STATS_SHOW_BASIC_INFO", "Show Basic Info") \
 /* settings window */ \
+X("EVENT_PROP_BALLOON_DURATION", "Balloon Duration") \
+X("EVENT_PROP_BALLOON_HITS_PER_SECOND", "Expected Hits per Second") \
+X("ACT_BALLOON_CALCULATE_POP_COUNT", "Calculate Pop Count") \
 X("SETTINGS_TAB_GENERAL", "General") \
 X("SETTINGS_TAB_INPUT_BINDINGS", "Keys") \
 X("SETTINGS_TAB_AUDIO", "Audio") \
 X("SETTINGS_TAB_APPEARANCE", "Appearance") \
 X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR", "Chart Preview: Expert Branch Lane Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR", "Chart Preview: Master Branch Lane Color") \
 X("SETTINGS_TAB_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES", "Export Builtin Locale Files") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR", "General: Default Creator Name") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC", "The name that is automatically filled in when creating a new chart.") \
+X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS", "General: Balloon Expected Hits per Second") \
+X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS_DESC", "The default expected number of balloon hits per second used by the Inspector.") \
 X("SETTINGS_TJA_SAVE_FORMAT", "TJA: File Save Format") \
 X("SETTINGS_TJA_SAVE_FORMAT_DESC", "Select the encoding and line ending used when saving TJA files.") \
+X("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE", "TJA: Warn about Taikojiro-incompatible charts") \
+X("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE_DESC", "Show a warning before saving charts that may not play in Taikojiro. The chart can still be saved.") \
 X("SETTINGS_TJA_INCLUDE_HEADER", "TJA: Include PeepoDrumKit Header") \
 X("SETTINGS_TJA_INCLUDE_HEADER_DESC", "Include the PeepoDrumKit identification comment when saving TJA files.") \
+X("SAVE_TAIKOJIRO_COMPAT_WARNING_TITLE", "Taikojiro Compatibility Warning") \
+X("SAVE_TAIKOJIRO_COMPAT_WARNING_DESC", "The saved chart may not play correctly in Taikojiro. It will still be saved.") \
+X("SAVE_TAIKOJIRO_WARN_BRANCH_SCROLL", "#BRANCHEND is used together with #SCROLL away from a bar line.") \
+X("SAVE_TAIKOJIRO_WARN_MEASURE_LENGTH", "A measure contains 512 or more note characters.") \
+X("SAVE_TAIKOJIRO_WARN_TITLE_LENGTH", "TITLE contains 128 or more characters.") \
+X("SAVE_TAIKOJIRO_WARN_UTF8_JAPANESE_TITLE", "The UTF-8 (BOM), LF format is selected and TITLE or SUBTITLE contains double-byte characters.") \
 X("SETTINGS_GENERAL_DRUMROLL_PREVIEW", "General: Drumroll Preview Rolls per Second") \
 X("SETTINGS_GENERAL_DRUMROLL_PREVIEW_DESC", "The number of drumroll hit sounds previewed per second.") \
 X("SETTINGS_GENERAL_TIME_DISPLAY", "General: Time Display Space") \
 X("SETTINGS_GENERAL_TIME_DISPLAY_DESC", "Display time in either Chart Space (normalized starting at 00:00.000) or in Song Space (relative to song offset).") \
+X("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS", "Properties: Show Title Translations") \
+X("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS_DESC", "Show the localized title fields in Chart Properties.") \
+X("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS", "Properties: Show Subtitle Translations") \
+X("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC", "Show the localized subtitle fields in Chart Properties.") \
+X("SETTINGS_PROPERTIES_SHOW_CHART_METADATA", "Properties: Show Other Song Headers") \
+X("SETTINGS_PROPERTIES_SHOW_CHART_METADATA_DESC", "Show additional song header fields in Chart Properties.") \
+X("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA", "Properties: Show Other Course Headers") \
+X("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA_DESC", "Show additional course header fields in Chart Properties.") \
 X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Branch Buttons") \
 X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing the Normal, Expert, or Master branch in the Chart Branches window.") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
-X("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND", "Timeline: Show Branch Range Background") \
-X("SETTINGS_TIMELINE_SHOW_BRANCH_RANGE_BACKGROUND_DESC", "Highlight the background of branching ranges on the timeline.") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL", "Timeline: Invert Scroll Wheel Direction") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL_DESC", "Invert the mouse wheel scroll direction so that scrolling downwards results in moving forward through the timeline.") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY", "Timeline: Scroll Wheel Sensitivity") \

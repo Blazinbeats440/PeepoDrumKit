@@ -58,6 +58,7 @@ namespace PeepoDrumKit
 
 	ChartEditor::ChartEditor()
 	{
+		timeline.BalloonExpectedHitsPerSecond = Settings.General.BalloonExpectedHitsPerSecond.Value;
 		context.Gfx.StartAsyncLoading();
 		context.SongVoice = Audio::Engine.AddVoice(Audio::SourceHandle::Invalid, "ChartEditor SongVoice", false, 1.0f, 0, true);
 		context.SfxVoicePool.StartAsyncLoadingAndAddVoices();
@@ -90,6 +91,192 @@ namespace PeepoDrumKit
 	ChartEditor::~ChartEditor()
 	{
 		context.SfxVoicePool.UnloadAllSourcesAndVoices();
+	}
+
+	static void SetTextEditorErrorMarkers(::TextEditor& editor, const TJA::ErrorList& errors, i32 lineOffset = 0, i32 lineCount = I32Max)
+	{
+		::TextEditor::ErrorMarkers markers;
+		for (const TJA::ErrorList::ErrorLine& error : errors.Errors)
+		{
+			const i32 editorLineIndex = error.LineIndex - lineOffset;
+			if (editorLineIndex < 0 || editorLineIndex >= lineCount)
+				continue;
+			std::string& marker = markers[editorLineIndex + 1];
+			if (!marker.empty())
+				marker += '\n';
+			marker += error.Description;
+		}
+		editor.SetErrorMarkers(markers);
+	}
+
+	static b8 FindTJAChartBodyLineRange(const std::vector<TJA::Token>& tokens, size_t& outStartLine, size_t& outEndLine)
+	{
+		size_t startCount = 0, endCount = 0;
+		outStartLine = outEndLine = 0;
+		for (const TJA::Token& token : tokens)
+		{
+			if (token.Key == TJA::Key::Chart_START)
+			{
+				outStartLine = token.LineIndex;
+				startCount++;
+			}
+			else if (token.Key == TJA::Key::Chart_END && !token.KeyString.empty())
+			{
+				outEndLine = token.LineIndex;
+				endCount++;
+			}
+		}
+		return startCount == 1 && endCount == 1 && outStartLine < outEndLine;
+	}
+
+	static b8 ConvertSelectedCourseToText(const ChartContext& context, std::string& outText)
+	{
+		TJA::ParsedTJA parsed;
+		if (!ConvertChartProjectToTJA(context.Chart, parsed))
+			return false;
+
+		size_t selectedCourseIndex = context.Chart.Courses.size();
+		for (size_t i = 0; i < context.Chart.Courses.size(); i++)
+			if (context.Chart.Courses[i].get() == context.ChartSelectedCourse)
+				selectedCourseIndex = i;
+		assert(selectedCourseIndex < parsed.Courses.size());
+		if (selectedCourseIndex >= parsed.Courses.size())
+			return false;
+
+		TJA::ParsedCourse selectedCourse = std::move(parsed.Courses[selectedCourseIndex]);
+		parsed.Courses.clear();
+		parsed.Courses.push_back(std::move(selectedCourse));
+		TJA::ConvertParsedToText(parsed, outText, TJA::SaveFormat::Current);
+		return true;
+	}
+
+	void ChartEditor::ReadSelectedCourseIntoTextEditor()
+	{
+		std::string fullText;
+		if (!ConvertSelectedCourseToText(context, fullText))
+			return;
+
+		const std::vector<std::string_view> lines = TJA::SplitLines(fullText);
+		const std::vector<TJA::Token> tokens = TJA::TokenizeLines(lines);
+		size_t startLine, endLine;
+		if (!FindTJAChartBodyLineRange(tokens, startLine, endLine))
+			return;
+
+		std::string text;
+		for (size_t i = startLine; i <= endLine; i++)
+		{
+			if (!text.empty())
+				text += '\n';
+			text += lines[i];
+		}
+		textEditorWindow.Editor.SetText(text);
+		textEditorWindow.Editor.SetErrorMarkers({});
+		textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_STATUS_LOADED");
+		textEditorWindow.StatusIsError = false;
+	}
+
+	void ChartEditor::WriteTextEditorToSelectedCourse()
+	{
+		const std::string text = textEditorWindow.Editor.GetText();
+		const std::vector<std::string_view> lines = TJA::SplitLines(text);
+		const std::vector<TJA::Token> tokens = TJA::TokenizeLines(lines);
+		size_t editorStartLine, editorEndLine;
+		if (!FindTJAChartBodyLineRange(tokens, editorStartLine, editorEndLine))
+		{
+			textEditorWindow.Editor.SetErrorMarkers({});
+			textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_ERROR_BODY_ONLY");
+			textEditorWindow.StatusIsError = true;
+			return;
+		}
+		for (const TJA::Token& token : tokens)
+		{
+			const b8 outsideChartBody = token.LineIndex < editorStartLine || token.LineIndex > editorEndLine;
+			if (outsideChartBody && token.Type != TJA::TokenType::EmptyLine && token.Type != TJA::TokenType::Comment)
+			{
+				textEditorWindow.Editor.SetErrorMarkers({});
+				textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_ERROR_BODY_ONLY");
+				textEditorWindow.StatusIsError = true;
+				return;
+			}
+		}
+
+		std::string currentFullText;
+		if (!ConvertSelectedCourseToText(context, currentFullText))
+			return;
+		const std::vector<std::string_view> currentLines = TJA::SplitLines(currentFullText);
+		const std::vector<TJA::Token> currentTokens = TJA::TokenizeLines(currentLines);
+		size_t currentStartLine, currentEndLine;
+		if (!FindTJAChartBodyLineRange(currentTokens, currentStartLine, currentEndLine))
+			return;
+
+		std::string combinedText;
+		auto appendLine = [&](std::string_view line)
+		{
+			if (!combinedText.empty())
+				combinedText += '\n';
+			combinedText += line;
+		};
+		for (size_t i = 0; i < currentStartLine; i++)
+			appendLine(currentLines[i]);
+		const i32 editorLineOffset = static_cast<i32>(currentStartLine);
+		for (std::string_view line : lines)
+			appendLine(line);
+		for (size_t i = currentEndLine + 1; i < currentLines.size(); i++)
+			appendLine(currentLines[i]);
+
+		const std::vector<std::string_view> combinedLines = TJA::SplitLines(combinedText);
+		const std::vector<TJA::Token> combinedTokens = TJA::TokenizeLines(combinedLines);
+		TJA::ErrorList errors;
+		const TJA::ParsedTJA parsed = TJA::ParseTokens(combinedTokens, errors);
+		SetTextEditorErrorMarkers(textEditorWindow.Editor, errors, editorLineOffset, static_cast<i32>(lines.size()));
+
+		if (!errors.Errors.empty())
+		{
+			textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_ERROR_INVALID");
+			textEditorWindow.StatusIsError = true;
+			return;
+		}
+
+		ChartProject converted;
+		if (!CreateChartProjectFromTJA(parsed, converted) || converted.Courses.size() != 1)
+		{
+			textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_ERROR_ONE_CHART");
+			textEditorWindow.StatusIsError = true;
+			return;
+		}
+
+		const Time cursorTime = context.GetCursorTime();
+		context.Undo.Execute<Commands::ReplaceChartCourse>(context.ChartSelectedCourse, std::move(*converted.Courses[0]));
+		context.SetCursorTime(cursorTime);
+		textEditorWindow.StatusText = UI_Str("TEXT_EDITOR_STATUS_WRITTEN");
+		textEditorWindow.StatusIsError = false;
+	}
+
+	void ChartEditor::DrawTextEditorWindow()
+	{
+		const f32 buttonHeight = Gui::GetFrameHeight();
+		const f32 statusHeight = textEditorWindow.StatusText.empty() ? 0.0f : Gui::GetTextLineHeightWithSpacing();
+		const f32 editorHeight = ClampBot(1.0f, Gui::GetContentRegionAvail().y - buttonHeight - Gui::GetStyle().ItemSpacing.y - statusHeight);
+
+		textEditorWindow.Editor.SetReadOnly(false);
+		textEditorWindow.Editor.Render("SelectedChartTextEditor", vec2(Gui::GetContentRegionAvail().x, editorHeight), false);
+
+		const auto buttons = Gui::SameLineMultiWidget(2, [&](const Gui::MultiWidgetIt& item)
+		{
+			return Gui::Button((item.Index == 0) ? UI_Str("TEXT_EDITOR_WRITE") : UI_Str("TEXT_EDITOR_READ"), { Gui::CalcItemWidth(), buttonHeight });
+		});
+		if (buttons.ChangedIndex == 0)
+			WriteTextEditorToSelectedCourse();
+		else if (buttons.ChangedIndex == 1)
+			ReadSelectedCourseIntoTextEditor();
+
+		if (!textEditorWindow.StatusText.empty())
+		{
+			if (textEditorWindow.StatusIsError)
+				Gui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", textEditorWindow.StatusText.c_str());
+			else
+				Gui::TextUnformatted(textEditorWindow.StatusText.c_str());
+		}
 	}
 
 	void ChartEditor::DrawFullscreenMenuBar()
@@ -447,6 +634,8 @@ namespace PeepoDrumKit
 				Gui::MenuItem(UI_Str("TAB_CHART_BRANCHES"), nullptr, &PersistentApp.LastSession.ShowWindow_ChartBranches);
 				if (Gui::MenuItem(UI_Str("TAB_LYRICS"), ToShortcutString(*Settings.Input.Editor_OpenLyrics).Data, &PersistentApp.LastSession.ShowWindow_Lyrics))
 					focusLyricsWindowNextFrame = true;
+				if (Gui::MenuItem(UI_Str("TAB_TEXT_EDITOR"), ToShortcutString(*Settings.Input.Editor_OpenTextEditor).Data, &PersistentApp.LastSession.ShowWindow_TextEditor))
+					focusTextEditorWindowNextFrame = true;
 				if (Gui::MenuItem(UI_Str("TAB_CHART_STATS"), ToShortcutString(*Settings.Input.Editor_OpenChartStats).Data)) { PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true; }
 				if (Gui::MenuItem(UI_Str("TAB_SETTINGS"), ToShortcutString(*Settings.Input.Editor_OpenSettings).Data)) { PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true; }
 
@@ -946,6 +1135,7 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenUpdateNotes, true)) PersistentApp.LastSession.ShowWindow_UpdateNotes = focusUpdateNotesWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenChartStats, true)) PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenLyrics, true)) PersistentApp.LastSession.ShowWindow_Lyrics = focusLyricsWindowNextFrame = true;
+				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTextEditor, true)) PersistentApp.LastSession.ShowWindow_TextEditor = focusTextEditorWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenSettings, true)) PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTemplate, false)) PersistentApp.LastSession.ShowWindow_Template = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenChartBranches, false)) PersistentApp.LastSession.ShowWindow_ChartBranches = true;
@@ -1049,6 +1239,14 @@ namespace PeepoDrumKit
 				lyricsWindow.DrawGui(context, timeline);
 			}
 			if (focusLyricsWindowNextFrame) { focusLyricsWindowNextFrame = false; Gui::SetWindowFocus(); }
+			Gui::End();
+		}
+
+		if (PersistentApp.LastSession.ShowWindow_TextEditor)
+		{
+			if (Gui::Begin(UI_WindowName("TAB_TEXT_EDITOR"), &PersistentApp.LastSession.ShowWindow_TextEditor, ImGuiWindowFlags_None))
+				DrawTextEditorWindow();
+			if (focusTextEditorWindowNextFrame) { focusTextEditorWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();
 		}
 
@@ -1466,6 +1664,104 @@ namespace PeepoDrumKit
 		context.SetSelectedChart(context.Chart.Courses.emplace_back(std::move(course)).get(), BranchType::Normal);
 	}
 
+	static b8 HasOffBarLineScrollChange(const ChartCourse& course)
+	{
+		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		{
+			const SortedScrollChangesList& scrollChanges = course.GetScrollChanges(branch);
+			size_t scrollIndex = 0;
+			b8 hasOffBarLineChange = false;
+			course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& beatBar)
+			{
+				while (scrollIndex < scrollChanges.size() && scrollChanges[scrollIndex].BeatTime < beatBar.Beat)
+				{
+					hasOffBarLineChange = true;
+					++scrollIndex;
+				}
+				if (beatBar.IsBar)
+					while (scrollIndex < scrollChanges.size() && scrollChanges[scrollIndex].BeatTime == beatBar.Beat)
+						++scrollIndex;
+
+				return (hasOffBarLineChange || scrollIndex == scrollChanges.size()) ? ControlFlow::Break : ControlFlow::Fallthrough;
+			});
+			if (hasOffBarLineChange || scrollIndex < scrollChanges.size())
+				return true;
+		}
+		return false;
+	}
+
+	static b8 HasMeasureWithAtLeast512Characters(const TJA::ParsedTJA& tja)
+	{
+		for (const TJA::ParsedCourse& course : tja.Courses)
+		{
+			size_t measureCharacterCount = 0;
+			for (const TJA::ParsedChartCommand& command : course.ChartCommands)
+			{
+				if (command.Type == TJA::ParsedChartCommandType::MeasureNotes)
+					measureCharacterCount += command.Param.MeasureNotes.Notes.size();
+				else if (command.Type == TJA::ParsedChartCommandType::MeasureEnd)
+				{
+					if (measureCharacterCount >= 512)
+						return true;
+					measureCharacterCount = 0;
+				}
+			}
+			if (measureCharacterCount >= 512)
+				return true;
+		}
+		return false;
+	}
+
+	static size_t CountUTF8Characters(std::string_view text)
+	{
+		size_t count = 0;
+		for (unsigned char byte : text)
+			if ((byte & 0xC0) != 0x80)
+				++count;
+		return count;
+	}
+
+	static b8 ContainsShiftJISDoubleByteCharacter(std::string_view text)
+	{
+		const std::string shiftJISText = ShiftJIS::FromUTF8(text);
+		for (unsigned char byte : shiftJISText)
+			if ((byte >= 0x81 && byte <= 0x9F) || (byte >= 0xE0 && byte <= 0xFC))
+				return true;
+		return false;
+	}
+
+	static std::string GetTaikojiroCompatibilityWarnings(const ChartProject& chart, const TJA::ParsedTJA& tja, TJA::SaveFormat saveFormat)
+	{
+		std::string warnings;
+		const auto appendWarning = [&](std::string_view warning)
+		{
+			if (!warnings.empty())
+				warnings += '\n';
+			warnings += "- ";
+			warnings += warning;
+		};
+
+		for (const std::unique_ptr<ChartCourse>& course : chart.Courses)
+		{
+			const b8 hasBranchEnd = std::any_of(course->Branches.begin(), course->Branches.end(), [](const BranchRange& branch) { return branch.EndsBranching; });
+			if (hasBranchEnd && HasOffBarLineScrollChange(*course))
+			{
+				appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_BRANCH_SCROLL"));
+				break;
+			}
+		}
+
+		if (HasMeasureWithAtLeast512Characters(tja))
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_MEASURE_LENGTH"));
+		if (CountUTF8Characters(tja.Metadata.TITLE) >= 128)
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_TITLE_LENGTH"));
+		if (saveFormat == TJA::SaveFormat::Current
+			&& (ContainsShiftJISDoubleByteCharacter(tja.Metadata.TITLE) || ContainsShiftJISDoubleByteCharacter(tja.Metadata.SUBTITLE)))
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_UTF8_JAPANESE_TITLE"));
+
+		return warnings;
+	}
+
 	void ChartEditor::SaveChart(ChartContext& context, std::string_view filePath)
 	{
 		if (filePath.empty())
@@ -1489,6 +1785,22 @@ namespace PeepoDrumKit
 				? TJA::SaveFormat::ANSI_CRLF
 				: TJA::SaveFormat::Current;
 			TJA::ConvertParsedToText(tja, tjaText, saveFormat);
+			if (*Settings.General.WarnTaikojiroIncompatibleCharts)
+			{
+				const std::string warnings = GetTaikojiroCompatibilityWarnings(context.Chart, tja, saveFormat);
+				if (!warnings.empty())
+				{
+					std::string message = UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_DESC");
+					message += "\n\n";
+					message += warnings;
+					Shell::ShowMessageBox(
+						message,
+						UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_TITLE"),
+						Shell::MessageBoxButtons::OK,
+						Shell::MessageBoxIcon::Warning,
+						ApplicationHost::GlobalState.NativeWindowHandle);
+				}
+			}
 
 			// TODO: Proper async file saving by copying in-memory
 			if (createBackupOfOriginalTJABeforeOverwriteSave)
