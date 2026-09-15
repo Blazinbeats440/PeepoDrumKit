@@ -400,6 +400,7 @@ namespace PeepoDrumKit
 		});
 
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
+		out.General.BalloonExpectedHitsPerSecond.Value = Clamp(out.General.BalloonExpectedHitsPerSecond.Value, 0.1f, 100.0f);
 		out.Audio.MasterVolume.Value = Clamp(out.Audio.MasterVolume.Value, 0.0f, 1.0f);
 		out.Audio.BalloonVolume.Value = Clamp(out.Audio.BalloonVolume.Value, 0.0f, 1.0f);
 		out.Audio.MetronomeVolume.Value = Clamp(out.Audio.MetronomeVolume.Value, 0.0f, 1.0f);
@@ -465,12 +466,17 @@ namespace PeepoDrumKit
 			SECTION("general");
 			X(General.DefaultCreatorName, "default_creator_name");
 			X(General.TJAFileSaveFormat, "tja_file_save_format");
+			X(General.WarnTaikojiroIncompatibleCharts, "warn_taikojiro_incompatible_charts");
 			X(General.IncludePeepoDrumKitComment, "include_peepo_drum_kit_comment");
 			X(General.DrumrollPreviewRollsPerSecond, "drumroll_preview_rolls_per_second");
+			X(General.BalloonExpectedHitsPerSecond, "balloon_expected_hits_per_second");
 			X(General.DisplayTimeInSongSpace, "display_time_in_song_space");
 			X(General.ShowForcedBranchButtons, "show_forced_branch_buttons");
+			X(General.ShowChartTitleLocalized, "show_chart_title_localized");
+			X(General.ShowChartSubtitleLocalized, "show_chart_subtitle_localized");
+			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
+			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
-			X(General.TimelineShowBranchRangeBackground, "timeline_show_branch_range_background");
 			X(General.TimelineScrollInvertMouseWheel, "timeline_scroll_invert_mouse_wheel");
 			X(General.TimelineScrollDistancePerMouseWheelTick, "timeline_scroll_distance_per_mouse_wheel_tick");
 			X(General.TimelineScrollDistancePerMouseWheelTickFast, "timeline_scroll_distance_per_mouse_wheel_tick_fast");
@@ -507,6 +513,8 @@ namespace PeepoDrumKit
 			SECTION("appearance");
 			X(Appearance.BranchStartLineColor, "branch_start_line_color");
 			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");
+			X(Appearance.PreviewBranchExpertLaneBackgroundColor, "preview_branch_expert_lane_background_color");
+			X(Appearance.PreviewBranchMasterLaneBackgroundColor, "preview_branch_master_lane_background_color");
 
 			SECTION("animation");
 			X(Animation.EnableGuiScaleAnimation, "enable_gui_scale_animation");

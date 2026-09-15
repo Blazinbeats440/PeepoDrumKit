@@ -58,6 +58,7 @@ namespace PeepoDrumKit
 
 	ChartEditor::ChartEditor()
 	{
+		timeline.BalloonExpectedHitsPerSecond = Settings.General.BalloonExpectedHitsPerSecond.Value;
 		context.Gfx.StartAsyncLoading();
 		context.SongVoice = Audio::Engine.AddVoice(Audio::SourceHandle::Invalid, "ChartEditor SongVoice", false, 1.0f, 0, true);
 		context.SfxVoicePool.StartAsyncLoadingAndAddVoices();
@@ -1663,6 +1664,104 @@ namespace PeepoDrumKit
 		context.SetSelectedChart(context.Chart.Courses.emplace_back(std::move(course)).get(), BranchType::Normal);
 	}
 
+	static b8 HasOffBarLineScrollChange(const ChartCourse& course)
+	{
+		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		{
+			const SortedScrollChangesList& scrollChanges = course.GetScrollChanges(branch);
+			size_t scrollIndex = 0;
+			b8 hasOffBarLineChange = false;
+			course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& beatBar)
+			{
+				while (scrollIndex < scrollChanges.size() && scrollChanges[scrollIndex].BeatTime < beatBar.Beat)
+				{
+					hasOffBarLineChange = true;
+					++scrollIndex;
+				}
+				if (beatBar.IsBar)
+					while (scrollIndex < scrollChanges.size() && scrollChanges[scrollIndex].BeatTime == beatBar.Beat)
+						++scrollIndex;
+
+				return (hasOffBarLineChange || scrollIndex == scrollChanges.size()) ? ControlFlow::Break : ControlFlow::Fallthrough;
+			});
+			if (hasOffBarLineChange || scrollIndex < scrollChanges.size())
+				return true;
+		}
+		return false;
+	}
+
+	static b8 HasMeasureWithAtLeast512Characters(const TJA::ParsedTJA& tja)
+	{
+		for (const TJA::ParsedCourse& course : tja.Courses)
+		{
+			size_t measureCharacterCount = 0;
+			for (const TJA::ParsedChartCommand& command : course.ChartCommands)
+			{
+				if (command.Type == TJA::ParsedChartCommandType::MeasureNotes)
+					measureCharacterCount += command.Param.MeasureNotes.Notes.size();
+				else if (command.Type == TJA::ParsedChartCommandType::MeasureEnd)
+				{
+					if (measureCharacterCount >= 512)
+						return true;
+					measureCharacterCount = 0;
+				}
+			}
+			if (measureCharacterCount >= 512)
+				return true;
+		}
+		return false;
+	}
+
+	static size_t CountUTF8Characters(std::string_view text)
+	{
+		size_t count = 0;
+		for (unsigned char byte : text)
+			if ((byte & 0xC0) != 0x80)
+				++count;
+		return count;
+	}
+
+	static b8 ContainsShiftJISDoubleByteCharacter(std::string_view text)
+	{
+		const std::string shiftJISText = ShiftJIS::FromUTF8(text);
+		for (unsigned char byte : shiftJISText)
+			if ((byte >= 0x81 && byte <= 0x9F) || (byte >= 0xE0 && byte <= 0xFC))
+				return true;
+		return false;
+	}
+
+	static std::string GetTaikojiroCompatibilityWarnings(const ChartProject& chart, const TJA::ParsedTJA& tja, TJA::SaveFormat saveFormat)
+	{
+		std::string warnings;
+		const auto appendWarning = [&](std::string_view warning)
+		{
+			if (!warnings.empty())
+				warnings += '\n';
+			warnings += "- ";
+			warnings += warning;
+		};
+
+		for (const std::unique_ptr<ChartCourse>& course : chart.Courses)
+		{
+			const b8 hasBranchEnd = std::any_of(course->Branches.begin(), course->Branches.end(), [](const BranchRange& branch) { return branch.EndsBranching; });
+			if (hasBranchEnd && HasOffBarLineScrollChange(*course))
+			{
+				appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_BRANCH_SCROLL"));
+				break;
+			}
+		}
+
+		if (HasMeasureWithAtLeast512Characters(tja))
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_MEASURE_LENGTH"));
+		if (CountUTF8Characters(tja.Metadata.TITLE) >= 128)
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_TITLE_LENGTH"));
+		if (saveFormat == TJA::SaveFormat::Current
+			&& (ContainsShiftJISDoubleByteCharacter(tja.Metadata.TITLE) || ContainsShiftJISDoubleByteCharacter(tja.Metadata.SUBTITLE)))
+			appendWarning(UI_Str("SAVE_TAIKOJIRO_WARN_UTF8_JAPANESE_TITLE"));
+
+		return warnings;
+	}
+
 	void ChartEditor::SaveChart(ChartContext& context, std::string_view filePath)
 	{
 		if (filePath.empty())
@@ -1686,6 +1785,22 @@ namespace PeepoDrumKit
 				? TJA::SaveFormat::ANSI_CRLF
 				: TJA::SaveFormat::Current;
 			TJA::ConvertParsedToText(tja, tjaText, saveFormat);
+			if (*Settings.General.WarnTaikojiroIncompatibleCharts)
+			{
+				const std::string warnings = GetTaikojiroCompatibilityWarnings(context.Chart, tja, saveFormat);
+				if (!warnings.empty())
+				{
+					std::string message = UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_DESC");
+					message += "\n\n";
+					message += warnings;
+					Shell::ShowMessageBox(
+						message,
+						UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_TITLE"),
+						Shell::MessageBoxButtons::OK,
+						Shell::MessageBoxIcon::Warning,
+						ApplicationHost::GlobalState.NativeWindowHandle);
+				}
+			}
 
 			// TODO: Proper async file saving by copying in-memory
 			if (createBackupOfOriginalTJABeforeOverwriteSave)

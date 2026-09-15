@@ -246,6 +246,7 @@ namespace PeepoDrumKit
 
 		// NOTE: Defined as a fraction of a 4/4 bar
 		i32 CurrentGridBarDivision = 16;
+		f32 BalloonExpectedHitsPerSecond = 16.0f;
 
 		vec2 MousePosThisFrame = {};
 		vec2 MousePosLastFrame = {};

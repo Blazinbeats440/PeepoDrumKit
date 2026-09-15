@@ -5,6 +5,11 @@
 
 namespace PeepoDrumKit
 {
+	static i32 CalculateBalloonPopCount(Time duration, f32 hitsPerSecond)
+	{
+		return Clamp(static_cast<i32>(Round(duration.ToSec() * hitsPerSecond)), MinBalloonCount, MaxBalloonCount);
+	}
+
 	static void DrawTimelineDebugWindowContent(ChartTimeline& timeline, ChartContext& context)
 	{
 		static constexpr ImGuiColorEditFlags colorEditFlags = ImGuiColorEditFlags_AlphaPreviewHalf;
@@ -848,7 +853,11 @@ namespace PeepoDrumKit
 				DrawTimelineNote(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), 1.0f, timeline.LongNotePlacement.NoteType, 0.7f);
 
 				if (IsBalloonNote(timeline.LongNotePlacement.NoteType))
-					DrawTimelineNoteBalloonPopCount(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), 1.0f, DefaultBalloonPopCount(maxBeat - minBeatAfter, timeline.CurrentGridBarDivision));
+				{
+					const Time duration = context.BeatToTime(maxBeat) - context.BeatToTime(minBeatAfter);
+					DrawTimelineNoteBalloonPopCount(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), 1.0f,
+						CalculateBalloonPopCount(duration, timeline.BalloonExpectedHitsPerSecond));
+				}
 			}
 		}
 		else if constexpr (std::is_same_v<T, GoGoRange>)
@@ -3273,7 +3282,11 @@ namespace PeepoDrumKit
 				Note newLongNote {};
 				newLongNote.BeatTime = minBeatAfter;
 				newLongNote.BeatDuration = (maxBeat - minBeatAfter);
-				newLongNote.BalloonPopCount = IsBalloonNote(longNoteType) ? DefaultBalloonPopCount(newLongNote.BeatDuration, CurrentGridBarDivision) : 0;
+				if (IsBalloonNote(longNoteType))
+				{
+					const Time duration = context.BeatToTime(maxBeat) - context.BeatToTime(minBeatAfter);
+					newLongNote.BalloonPopCount = CalculateBalloonPopCount(duration, BalloonExpectedHitsPerSecond);
+				}
 				newLongNote.Type = longNoteType;
 				newLongNote.ClickAnimationTimeRemaining = newLongNote.ClickAnimationTimeDuration = NoteHitAnimationDuration;
 				context.Undo.Execute<Commands::AddSingleLongNote>(&course, &notes, newLongNote, std::move(notesToRemove));
@@ -3976,8 +3989,8 @@ namespace PeepoDrumKit
 					const f32 localX = Camera.TimeToLocalSpaceX(context.BeatToTime(branch.GetStart()));
 					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(localX, 0.0f));
 					const vec2 headerScreenSpaceTL = LocalToScreenSpace_ContentHeader(vec2(localX, 0.0f));
-					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), TimelineBranchStartLineColor, 2.0f);
-					DrawListContentHeader->AddLine(headerScreenSpaceTL, headerScreenSpaceTL + vec2(0.0f, Regions.ContentHeader.GetHeight()), TimelineBranchStartLineColor, 2.0f);
+					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), *Settings.Appearance.BranchStartLineColor, 2.0f);
+					DrawListContentHeader->AddLine(headerScreenSpaceTL, headerScreenSpaceTL + vec2(0.0f, Regions.ContentHeader.GetHeight()), *Settings.Appearance.BranchStartLineColor, 2.0f);
 				}
 			}
 			Gui::PopFont();

@@ -2209,7 +2209,7 @@ namespace PeepoDrumKit
 		};
 	}
 
-	void ChartInspectorWindow::DrawGui(ChartContext& context, const ChartTimeline& timeline)
+	void ChartInspectorWindow::DrawGui(ChartContext& context, ChartTimeline& timeline)
 	{
 		Gui::UpdateSmoothScrollWindow();
 
@@ -2479,6 +2479,60 @@ namespace PeepoDrumKit
 						} break;
 						case GenericMember::I32_BalloonPopCount:
 						{
+							if (isAnyBalloonNoteSelected)
+							{
+								f64 minDurationSeconds = F64Max;
+								f64 maxDurationSeconds = 0.0;
+								size_t balloonCount = 0;
+								for (const TempChartItem& selectedItem : SelectedItems)
+								{
+									if (!IsBalloonNote(selectedItem.MemberValues.NoteType()))
+										continue;
+									const Beat startBeat = selectedItem.MemberValues.BeatStart();
+									const Beat endBeat = startBeat + selectedItem.MemberValues.BeatDuration();
+									const f64 durationSeconds = (course.TempoMap.BeatToTime(endBeat) - course.TempoMap.BeatToTime(startBeat)).Seconds;
+									minDurationSeconds = Min(minDurationSeconds, durationSeconds);
+									maxDurationSeconds = Max(maxDurationSeconds, durationSeconds);
+									++balloonCount;
+								}
+
+								Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_PROP_BALLOON_DURATION"), [&]
+								{
+									if (balloonCount == 1 || minDurationSeconds == maxDurationSeconds)
+										Gui::Text("%.3f s", minDurationSeconds);
+									else
+										Gui::Text("%.3f - %.3f s", minDurationSeconds, maxDurationSeconds);
+								});
+
+								Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_PROP_BALLOON_HITS_PER_SECOND"), [&]
+								{
+									Gui::SetNextItemWidth(Gui::GetContentRegionAvail().x * 0.6f);
+									Gui::SpinFloat("##BalloonExpectedHitsPerSecond", &timeline.BalloonExpectedHitsPerSecond, 0.1f, 1.0f, "%g hits/s");
+									timeline.BalloonExpectedHitsPerSecond = Clamp(timeline.BalloonExpectedHitsPerSecond, 0.1f, 100.0f);
+									Gui::SameLine();
+									if (Gui::Button(UI_Str("ACT_BALLOON_CALCULATE_POP_COUNT")))
+									{
+										for (TempChartItem& selectedItem : SelectedItems)
+										{
+											if (!IsBalloonNote(selectedItem.MemberValues.NoteType()))
+												continue;
+											const Beat startBeat = selectedItem.MemberValues.BeatStart();
+											const Beat endBeat = startBeat + selectedItem.MemberValues.BeatDuration();
+											const f64 durationSeconds = (course.TempoMap.BeatToTime(endBeat) - course.TempoMap.BeatToTime(startBeat)).Seconds;
+											const i32 popCount = static_cast<i32>(Clamp(std::round(durationSeconds * timeline.BalloonExpectedHitsPerSecond),
+												static_cast<f64>(MinBalloonCount), static_cast<f64>(MaxBalloonCount)));
+											auto& currentPopCount = selectedItem.MemberValues.BalloonPopCount();
+											if (currentPopCount != popCount)
+											{
+												currentPopCount = popCount;
+												valueWasChanged = true;
+												}
+										}
+										disableChangePropertiesCommandMerge = true;
+									}
+								});
+							}
+
 							cstr label = UI_Str("EVENT_PROP_BALLOON_POP_COUNT");
 							MultiEditWidgetParam widgetIn = {};
 							widgetIn.DataType = ImGuiDataType_S32;
@@ -3106,7 +3160,8 @@ namespace PeepoDrumKit
 						context.Undo.NotifyChangesWereMade();
 				});
 				static std::string newTitleLocale = "";
-				LocalizedPropertyCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_TITLE_LOCALIZED"), chart.ChartTitleLocalized, &newTitleLocale);
+				if (*Settings.General.ShowChartTitleLocalized)
+					LocalizedPropertyCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_TITLE_LOCALIZED"), chart.ChartTitleLocalized, &newTitleLocale);
 				Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_SUBTITLE"), [&]
 				{
 					Gui::SetNextItemWidth(-1.0f);
@@ -3114,7 +3169,8 @@ namespace PeepoDrumKit
 						context.Undo.NotifyChangesWereMade();
 				});
 				static std::string newSubtitleLocale = "";
-				LocalizedPropertyCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_SUBTITLE_LOCALIZED"), chart.ChartSubtitleLocalized, &newSubtitleLocale);
+				if (*Settings.General.ShowChartSubtitleLocalized)
+					LocalizedPropertyCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_SUBTITLE_LOCALIZED"), chart.ChartSubtitleLocalized, &newSubtitleLocale);
 				Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_CREATOR"), [&]
 				{
 					Gui::SetNextItemWidth(-1.0f);
@@ -3183,7 +3239,8 @@ namespace PeepoDrumKit
 					}
 				});
 				static std::string newChartMetadataKey = "";
-				OtherMetadataCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_OTHER_METADATA"), chart.OtherMetadata, &newChartMetadataKey);
+				if (*Settings.General.ShowChartOtherMetadata)
+					OtherMetadataCollapsingHeader(context, UI_Str("DETAILS_CHART_PROP_OTHER_METADATA"), chart.OtherMetadata, &newChartMetadataKey);
 				Gui::Property::EndTable();
 			}
 		}
@@ -3270,7 +3327,8 @@ namespace PeepoDrumKit
 				});
 
 				static std::string newCourseMetadataKey = "";
-				OtherMetadataCollapsingHeader(context, UI_Str("DETAILS_COURSE_PROP_OTHER_METADATA"), course.OtherMetadata, &newCourseMetadataKey);
+				if (*Settings.General.ShowCourseOtherMetadata)
+					OtherMetadataCollapsingHeader(context, UI_Str("DETAILS_COURSE_PROP_OTHER_METADATA"), course.OtherMetadata, &newCourseMetadataKey);
 
 				Gui::Property::EndTable();
 			}
