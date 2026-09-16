@@ -182,6 +182,16 @@ X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Bra
 X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing the Normal, Expert, or Master branch in the Chart Branches window.") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
+X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
+X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
+X("SETTINGS_EVENT_SHOW_SUDDEN", "Chart Events: Show Sudden") \
+X("SETTINGS_EVENT_SHOW_SUDDEN_DESC", "Show the Sudden field in the Chart Events window. It is always shown when the chart contains #SUDDEN.") \
+X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \
+X("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC", "Show the JPOS Scroll field in the Chart Events window. It is always shown when the chart contains #JPOSSCROLL.") \
+X("SETTINGS_EVENT_SHOW_SCROLL_TYPE", "Chart Events: Show Scroll Type") \
+X("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC", "Show the Scroll Type field in the Chart Events window. It is always shown when the chart contains #NMSCROLL, #HBSCROLL, or #BMSCROLL.") \
+X("SETTINGS_SCROLL_SPEED_VIEW_TYPE", "Timeline: Scroll Speed View Type") \
+X("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC", "Select how complex scroll speeds are displayed on the timeline.") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL", "Timeline: Invert Scroll Wheel Direction") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL_DESC", "Invert the mouse wheel scroll direction so that scrolling downwards results in moving forward through the timeline.") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY", "Timeline: Scroll Wheel Sensitivity") \

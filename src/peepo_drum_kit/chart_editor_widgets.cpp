@@ -2196,6 +2196,12 @@ namespace PeepoDrumKit
 			Gui::IsAnyPressed(binding, false);
 	}
 
+	static b8 IsChartEventRangeSelectionShortcutPressed(const MultiInputBinding& binding)
+	{
+		return Gui::IsWindowFocused() && Gui::GetActiveID() == 0 &&
+			Gui::IsAnyPressed(binding, false);
+	}
+
 	auto GetRangeSelectToTimeTailButtonDrawer(const ChartContext& context, const ChartTimeline& timeline) {
 		return [&](Gui::InputScalarWithButtonsResult* result, auto type, MultiEditDataUnion* v)
 		{
@@ -3661,6 +3667,9 @@ namespace PeepoDrumKit
 				// NOTE: Specifically to prevent ugly "flashing" between add/remove labels during playback
 				const b8 disallowRemoveButton = (cursorBeat.Ticks < 0) || context.GetIsPlayback();
 				const b8 disableEditingAtPlayCursor = disableWidgetsBeacuseOfSelection || (cursorBeat.Ticks < 0);
+				const b8 showScrollType = *Settings.General.EventShowScrollType || !course.ScrollTypes.Sorted.empty();
+				const b8 showJPOSScroll = *Settings.General.EventShowJPOSScroll || !course.JPOSScrollChanges.Sorted.empty();
+				const b8 showSudden = *Settings.General.EventShowSudden || !course.SuddenChanges.Sorted.empty();
 
 				const TempoChange* tempoChangeAtCursor = course.TempoMap.Tempo.TryFindLastAtBeat(cursorBeat);
 				const Tempo tempoAtCursor = (tempoChangeAtCursor != nullptr) ? tempoChangeAtCursor->Tempo : FallbackEvent<TempoChange>.Tempo;
@@ -3735,7 +3744,8 @@ namespace PeepoDrumKit
 					Gui::PushID(&course.TempoMap.Signature);
 					Gui::SameLine(0, Gui::GetStyle().ItemInnerSpacing.x);
 					Gui::BeginDisabled(!hasRangeSelection);
-					if (SpriteButton(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() }))
+					if (SpriteButton(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() })
+						|| IsChartEventRangeSelectionShortcutPressed(*Settings.Input.Timeline_SetTimeSignatureFromRangeSelection))
 					{
 						insertOrUpdateCursorSignatureChange(TimeSignature(context.RangeSelection.GetDuration().Ticks, Beat::FromBars(1).Ticks).GetSimplified(4));
 					}
@@ -3873,7 +3883,7 @@ namespace PeepoDrumKit
 					Gui::PopID();
 				});
 
-				Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_SCROLL_TYPE"), [&]
+				if (showScrollType) Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_SCROLL_TYPE"), [&]
 				{
 						const ScrollType* ScrollTypeAtCursor = course.ScrollTypes.TryFindLastAtBeat(cursorBeat);
 						auto insertOrUpdateCursorScrollType = [&](ScrollMethod newMethod)
@@ -3911,6 +3921,8 @@ namespace PeepoDrumKit
 						Gui::PopID();
 				});
 
+				if (showJPOSScroll)
+				{
 				const JPOSScrollChange* JPOSScrollChangeAtCursor = course.JPOSScrollChanges.TryFindLastAtBeat(cursorBeat);
 				const Complex JPOSScrollMoveAtCursor = (JPOSScrollChangeAtCursor != nullptr) ? JPOSScrollChangeAtCursor->Move : FallbackEvent<JPOSScrollChange>.Move;
 				const f32 JPOSScrollDurationAtCursor = (JPOSScrollChangeAtCursor != nullptr) ? JPOSScrollChangeAtCursor->Duration : FallbackEvent<JPOSScrollChange>.Duration;
@@ -3967,7 +3979,8 @@ namespace PeepoDrumKit
 						Gui::PushID(&course.JPOSScrollChanges);
 						Gui::SameLine(0, Gui::GetStyle().ItemInnerSpacing.x);
 						Gui::BeginDisabled(!hasRangeSelection);
-						if (SpriteButton(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() }))
+						if (SpriteButton(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() })
+							|| IsChartEventRangeSelectionShortcutPressed(*Settings.Input.Timeline_SetJPOSScrollDurationFromRangeSelection))
 						{
 							insertOrUpdateCursorJPOSScrollChange(
 								JPOSScrollMoveAtCursor, Clamp(context.GetRangeSelectionDuration().ToSec_F32(), MinJPOSScrollDuration, MaxJPOSScrollDuration)
@@ -3994,8 +4007,9 @@ namespace PeepoDrumKit
 							timeline.ExecuteConvertSelectionToEvents<GenericList::JPOSScroll>(context);
 						Gui::EndDisabled();
 
-						Gui::PopID();
+					Gui::PopID();
 					});
+				}
 
 				const SuddenChange* SuddenChangeAtCursor = course.SuddenChanges.TryFindLastAtBeat(cursorBeat);
 				const Time SuddenAppearanceOffsetAtCursor = (SuddenChangeAtCursor != nullptr) ? SuddenChangeAtCursor->AppearanceOffset : FallbackEvent<SuddenChange>.AppearanceOffset;
@@ -4009,6 +4023,8 @@ namespace PeepoDrumKit
 						context.Undo.Execute<Commands::UpdateSudden>(&course, &course.SuddenChanges, SuddenChange{ cursorBeat, newAppearanceOffset, newMovementOffset, newHideRoll });
 				};
 
+				if (showSudden)
+				{
 				Gui::Property::Property([&]
 				{
 					Gui::BeginDisabled(disableEditingAtPlayCursor);
@@ -4035,6 +4051,7 @@ namespace PeepoDrumKit
 					Gui::BeginDisabled(!hasRangeSelection);
 					if (SpriteButton((UI_Str("ACT_EVENT_SET_FROM_RANGE_SELECTION") + std::string("##SuddenAppearanceOffsetSetFromRange")).c_str(),
 						context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() })
+						|| IsChartEventRangeSelectionShortcutPressed(*Settings.Input.Timeline_SetSuddenAppearanceOffsetFromRangeSelection)
 						) {
 						insertOrUpdateCursorSudden(context.GetRangeSelectionDuration(), SuddenMovementOffsetAtCursor, SuddenHideRollAtCursor);
 					}
@@ -4053,6 +4070,7 @@ namespace PeepoDrumKit
 					Gui::BeginDisabled(!hasRangeSelection);
 					if (SpriteButton((UI_Str("ACT_EVENT_SET_FROM_RANGE_SELECTION") + std::string("##SuddenMovementOffsetSetFromRange")).c_str(),
 						context, SprID::Timeline_Icon_SetFromRangeSelection, { Gui::GetFrameHeight(), Gui::GetFrameHeight() })
+						|| IsChartEventRangeSelectionShortcutPressed(*Settings.Input.Timeline_SetSuddenMovementOffsetFromRangeSelection)
 						) {
 						insertOrUpdateCursorSudden(SuddenAppearanceOffsetAtCursor, context.GetRangeSelectionDuration(), SuddenHideRollAtCursor);
 					}
@@ -4084,6 +4102,7 @@ namespace PeepoDrumKit
 
 					Gui::PopID();
 				});
+				}
 
 				Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_GO_GO_TIME"), [&]
 				{
@@ -4092,7 +4111,8 @@ namespace PeepoDrumKit
 
 					Gui::PushID(&course.GoGoRanges);
 					Gui::BeginDisabled(!hasRangeSelection);
-					if (Gui::Button(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), { getInsertButtonWidth(), 0.0f }))
+					if (Gui::Button(UI_WindowName("ACT_EVENT_SET_FROM_RANGE_SELECTION"), { getInsertButtonWidth(), 0.0f })
+						|| IsChartEventRangeSelectionShortcutPressed(*Settings.Input.Timeline_SetGoGoRangeFromRangeSelection))
 					{
 						const Beat rangeSelectionMin = context.RangeSelection.GetMin();
 						const Beat rangeSelectionMax = context.RangeSelection.GetMax();

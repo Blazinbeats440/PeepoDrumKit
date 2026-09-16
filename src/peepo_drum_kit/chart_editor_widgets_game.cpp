@@ -888,7 +888,7 @@ namespace PeepoDrumKit
 				drawList->AddText(posTxtJPos, 0xFFFFFFFF, str.c_str(), str.c_str() + str.length());
 			}
 
-			const auto scrollSpeedToView = GetScrollSpeedToView(context.Chart.ScrollSpeedViewType);
+			const auto scrollSpeedToView = GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(*Settings.General.ScrollSpeedViewType));
 			const auto pxWorldPer4Beats = GetPx720pScrollDistanceView4Beats(context.Chart.ScrollDistance4BeatsType) * GameCamera::ScaleFrom720p;
 			drawList->ChannelsSetCurrent(2);
 			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](const ForEachBarLaneData& it)

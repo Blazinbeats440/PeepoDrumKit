@@ -140,7 +140,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat,
-			I32_AudioBufferFrameSize,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType,
 		};
 
 		struct SettingsEntry
@@ -258,6 +258,20 @@ namespace PeepoDrumKit
 						changesWereMade |= Gui::InputScalar("##NewBufferSize", ImGuiDataType_U32, &inOutI32->Value, PtrArg<u32>(8), PtrArg<u32>(64), "%u Frames (Request)");
 						if (changesWereMade)
 							inOutI32->Value = std::clamp(inOutI32->Value, 0, i32{ Audio::Engine.MaxBufferFrameCount });
+					}
+					else if (in.Widget == WidgetType::I32_ScrollSpeedViewType)
+					{
+						inOutI32->Value = std::clamp(inOutI32->Value, 0, static_cast<i32>(EnumCount<EScrollSpeedViewType>) - 1);
+						if (Gui::BeginCombo("##", strScrollSpeedViewType[inOutI32->Value], ImGuiComboFlags_None))
+						{
+							for (i32 it = 0; it < static_cast<i32>(EnumCount<EScrollSpeedViewType>); it++)
+							{
+								const b8 isSelected = (it == inOutI32->Value);
+								if (Gui::Selectable(strScrollSpeedViewType[it], isSelected)) { inOutI32->Value = it; changesWereMade = true; }
+								if (isSelected) Gui::SetItemDefaultFocus();
+							}
+							Gui::EndCombo();
+						}
 					}
 					else
 					{
@@ -798,6 +812,32 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.TimelineLoopPlayback,
+							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK"),
+							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.EventShowSudden,
+							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN"),
+							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.EventShowJPOSScroll,
+							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL"),
+							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.EventShowScrollType,
+							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE"),
+							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC")),
+
+						SettingsGui::SettingsEntry(
+							settings.General.ScrollSpeedViewType,
+							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
+							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
+							SettingsGui::WidgetType::I32_ScrollSpeedViewType),
+
+						SettingsGui::SettingsEntry(
 							settings.General.TimelineScrollInvertMouseWheel,
 							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL"),
 							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL_DESC")),
@@ -1001,6 +1041,11 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_InsertSuddenAtSelectedItems, "Timeline: Insert Sudden at Selected Items", },
 						{ &settings.Input.Timeline_InsertGoGoRangeAtSelectedItems, "Timeline: Insert Go-Go Range at Selected Items", },
 						{ &settings.Input.Timeline_InsertLyricAtSelectedItems, "Timeline: Insert Lyric at Selected Items", },
+						{ &settings.Input.Timeline_SetTimeSignatureFromRangeSelection, "Timeline: Set Time Signature from Range Selection", },
+						{ &settings.Input.Timeline_SetJPOSScrollDurationFromRangeSelection, "Timeline: Set JPOS Scroll Duration from Range Selection", },
+						{ &settings.Input.Timeline_SetSuddenAppearanceOffsetFromRangeSelection, "Timeline: Set Sudden Appearance Offset from Range Selection", },
+						{ &settings.Input.Timeline_SetSuddenMovementOffsetFromRangeSelection, "Timeline: Set Sudden Movement Offset from Range Selection", },
+						{ &settings.Input.Timeline_SetGoGoRangeFromRangeSelection, "Timeline: Set Go-Go Range from Range Selection", },
 						{ &settings.Input.Timeline_ConvertSelectionToScrollChanges, "Timeline: Convert Selection to Scroll Changes", },
 						{ &settings.Input.Timeline_FlipNoteType, "Timeline: Flip Note Type", },
 						{ &settings.Input.Timeline_ToggleNoteSize, "Timeline: Toggle Note Size", },
@@ -1053,6 +1098,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_SetPlaybackSpeed_50, "Timeline: Set Playback Speed 50%", },
 						{ &settings.Input.Timeline_SetPlaybackSpeed_25, "Timeline: Set Playback Speed 25%", },
 						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
+						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
 						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
 						{},
 						{ &settings.Input.TempoCalculator_Tap, "Tempo Calculator: Tap", },

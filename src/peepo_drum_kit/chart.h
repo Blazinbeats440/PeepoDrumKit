@@ -1319,6 +1319,11 @@ namespace PeepoDrumKit
 	// course list attribute query functions
 	constexpr b8 IsNotesList(GenericList list) { return (list == GenericList::Notes_Normal) || (list == GenericList::Notes_Expert) || (list == GenericList::Notes_Master); }
 	constexpr b8 IsScrollChangesList(GenericList list) { return (list == GenericList::ScrollChanges_Normal) || (list == GenericList::ScrollChanges_Expert) || (list == GenericList::ScrollChanges_Master); }
+	constexpr GenericList BranchTypeToNotesList(BranchType branch)
+	{
+		assert(branch < BranchType::Count);
+		return static_cast<GenericList>(EnumToIndex(GenericList::Notes_Normal) + EnumToIndex(branch));
+	}
 	constexpr GenericList BranchTypeToScrollChangesList(BranchType branch)
 	{
 		assert(branch < BranchType::Count);

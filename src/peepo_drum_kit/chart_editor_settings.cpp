@@ -477,6 +477,11 @@ namespace PeepoDrumKit
 			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
+			X(General.TimelineLoopPlayback, "timeline_loop_playback");
+			X(General.EventShowSudden, "event_show_sudden");
+			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
+			X(General.EventShowScrollType, "event_show_scroll_type");
+			X(General.ScrollSpeedViewType, "scroll_speed_view_type");
 			X(General.TimelineScrollInvertMouseWheel, "timeline_scroll_invert_mouse_wheel");
 			X(General.TimelineScrollDistancePerMouseWheelTick, "timeline_scroll_distance_per_mouse_wheel_tick");
 			X(General.TimelineScrollDistancePerMouseWheelTickFast, "timeline_scroll_distance_per_mouse_wheel_tick_fast");
@@ -592,6 +597,11 @@ namespace PeepoDrumKit
 			X(Input.Timeline_InsertSuddenAtSelectedItems, "timeline_insert_sudden_at_selected_items");
 			X(Input.Timeline_InsertGoGoRangeAtSelectedItems, "timeline_insert_gogo_range_at_selected_items");
 			X(Input.Timeline_InsertLyricAtSelectedItems, "timeline_insert_lyric_at_selected_items");
+			X(Input.Timeline_SetTimeSignatureFromRangeSelection, "timeline_set_time_signature_from_range_selection");
+			X(Input.Timeline_SetJPOSScrollDurationFromRangeSelection, "timeline_set_jpos_scroll_duration_from_range_selection");
+			X(Input.Timeline_SetSuddenAppearanceOffsetFromRangeSelection, "timeline_set_sudden_appearance_offset_from_range_selection");
+			X(Input.Timeline_SetSuddenMovementOffsetFromRangeSelection, "timeline_set_sudden_movement_offset_from_range_selection");
+			X(Input.Timeline_SetGoGoRangeFromRangeSelection, "timeline_set_gogo_range_from_range_selection");
 			X(Input.Timeline_ConvertSelectionToScrollChanges, "timeline_convert_selection_to_scroll_changes");
 			X(Input.Timeline_FlipNoteType, "timeline_flip_note_type");
 			X(Input.Timeline_ToggleNoteSize, "timeline_toggle_note_size");
@@ -643,6 +653,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_SetPlaybackSpeed_50, "timeline_set_playback_speed_50");
 			X(Input.Timeline_SetPlaybackSpeed_25, "timeline_set_playback_speed_25");
 			X(Input.Timeline_TogglePlayback, "timeline_toggle_playback");
+			X(Input.Timeline_ToggleLoopPlayback, "timeline_toggle_loop_playback");
 			X(Input.Timeline_ToggleMetronome, "timeline_toggle_metronome");
 			X(Input.TempoCalculator_Tap, "tempo_calculator_tap");
 			X(Input.TempoCalculator_Reset, "tempo_calculator_reset");
