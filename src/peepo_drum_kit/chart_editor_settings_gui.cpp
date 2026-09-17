@@ -812,6 +812,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.TimelinePlaybackCursorFollow,
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW"),
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.TimelineLoopPlayback,
 							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK"),
 							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC")),
@@ -1098,6 +1103,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_SetPlaybackSpeed_50, "Timeline: Set Playback Speed 50%", },
 						{ &settings.Input.Timeline_SetPlaybackSpeed_25, "Timeline: Set Playback Speed 25%", },
 						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
+						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, "Timeline: Toggle Playback Cursor Follow", },
 						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
 						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
 						{},

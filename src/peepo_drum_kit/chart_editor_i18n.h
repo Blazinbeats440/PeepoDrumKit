@@ -182,6 +182,8 @@ X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Bra
 X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing the Normal, Expert, or Master branch in the Chart Branches window.") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
+X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
+X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
 X("SETTINGS_EVENT_SHOW_SUDDEN", "Chart Events: Show Sudden") \
