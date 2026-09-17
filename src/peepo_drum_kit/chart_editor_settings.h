@@ -138,6 +138,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
+			WithDefault<b8> TimelinePlaybackCursorFollow = true;
 			WithDefault<b8> TimelineLoopPlayback = false;
 			WithDefault<b8> EventShowSudden = true;
 			WithDefault<b8> EventShowJPOSScroll = true;
@@ -329,6 +330,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_SetPlaybackSpeed_50 = { KeyBinding(ImGuiKey_9) };
 			WithDefault<MultiInputBinding> Timeline_SetPlaybackSpeed_25 = { KeyBinding(ImGuiKey_0) };
 			WithDefault<MultiInputBinding> Timeline_TogglePlayback = { KeyBinding(ImGuiKey_Space) };
+			WithDefault<MultiInputBinding> Timeline_TogglePlaybackCursorFollow = { KeyBinding(ImGuiKey_F8) };
 			WithDefault<MultiInputBinding> Timeline_ToggleLoopPlayback = { KeyBinding(ImGuiKey_F9) };
 			WithDefault<MultiInputBinding> Timeline_ToggleMetronome = { KeyBinding(ImGuiKey_M) };
 

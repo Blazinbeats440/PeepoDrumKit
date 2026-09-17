@@ -477,6 +477,7 @@ namespace PeepoDrumKit
 			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
+			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
 			X(General.EventShowSudden, "event_show_sudden");
 			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
@@ -653,6 +654,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_SetPlaybackSpeed_50, "timeline_set_playback_speed_50");
 			X(Input.Timeline_SetPlaybackSpeed_25, "timeline_set_playback_speed_25");
 			X(Input.Timeline_TogglePlayback, "timeline_toggle_playback");
+			X(Input.Timeline_TogglePlaybackCursorFollow, "timeline_toggle_playback_cursor_follow");
 			X(Input.Timeline_ToggleLoopPlayback, "timeline_toggle_loop_playback");
 			X(Input.Timeline_ToggleMetronome, "timeline_toggle_metronome");
 			X(Input.TempoCalculator_Tap, "tempo_calculator_tap");

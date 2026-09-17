@@ -2542,16 +2542,23 @@ namespace PeepoDrumKit
 						context.SetCursorBeat(context.GetPlaybackSpeed() >= 0.0f ? rangeStart : rangeEnd);
 				}
 
-				const Time cursorTime = context.GetCursorTime();
-				f32 cursorPos = Camera.TimeToLocalSpaceX(cursorTime);
-				if (context.GetPlaybackSpeed() < 0)
-					cursorPos = Regions.Content.GetWidth() - cursorPos;
-				if (IsTimelineCursorVisibleOnScreen(Camera, Regions, cursorTime) && cursorPos >= Regions.Content.GetWidth() * TimelineAutoScrollLockContentWidthFactor)
+				if (*Settings.General.TimelinePlaybackCursorFollow)
 				{
-					const Time elapsedCursorTime = Time::FromSec(Gui::DeltaTime()) * context.GetPlaybackSpeed();
-					const f32 cameraScrollIncrement = Camera.TimeToWorldSpaceX(elapsedCursorTime) * Camera.ZoomCurrent.x;
-					Camera.PositionCurrentScrollBar.x = Camera.PositionCurrent.x += cameraScrollIncrement;
-					Camera.PositionTarget.x += cameraScrollIncrement;
+					const Time cursorTime = context.GetCursorTime();
+					f32 cursorPos = Camera.TimeToLocalSpaceX(cursorTime);
+					if (context.GetPlaybackSpeed() < 0)
+						cursorPos = Regions.Content.GetWidth() - cursorPos;
+					if (!IsTimelineCursorVisibleOnScreen(Camera, Regions, cursorTime))
+					{
+						ScrollToTimelinePosition(Camera, Regions, context, cursorTime);
+					}
+					else if (cursorPos >= Regions.Content.GetWidth() * TimelineAutoScrollLockContentWidthFactor)
+					{
+						const Time elapsedCursorTime = Time::FromSec(Gui::DeltaTime()) * context.GetPlaybackSpeed();
+						const f32 cameraScrollIncrement = Camera.TimeToWorldSpaceX(elapsedCursorTime) * Camera.ZoomCurrent.x;
+						Camera.PositionCurrentScrollBar.x = Camera.PositionCurrent.x += cameraScrollIncrement;
+						Camera.PositionTarget.x += cameraScrollIncrement;
+					}
 				}
 			}
 		}
@@ -3181,6 +3188,13 @@ namespace PeepoDrumKit
 				Settings_Mutable.IsDirty = true;
 			}
 
+			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_TogglePlaybackCursorFollow, false, InputModifierBehavior::Relaxed))
+			{
+				Settings_Mutable.General.TimelinePlaybackCursorFollow.Value = !Settings.General.TimelinePlaybackCursorFollow.Value;
+				Settings_Mutable.General.TimelinePlaybackCursorFollow.SetHasValueIfNotDefault();
+				Settings_Mutable.IsDirty = true;
+			}
+
 			auto updateNotePlacementBinding = [this, &context](const MultiInputBinding& inputBinding, NoteType noteTypeToInsert)
 			{
 				if (Gui::IsAnyPressed(inputBinding, false, InputModifierBehavior::Relaxed))
@@ -3754,6 +3768,15 @@ namespace PeepoDrumKit
 				&inOutScrollValue, inSizeAvail, inContentSize, ImDrawFlags_RoundCornersNone))
 			{
 				Camera.PositionCurrentScrollBar.x = Camera.PositionTarget.x = static_cast<f32>(inOutScrollValue) + TimelineCameraBaseScrollX;
+			}
+
+			if (*Settings.General.TimelinePlaybackCursorFollow && context.GetIsPlayback()
+				&& Regions.ContentScrollbarX.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Left))
+			{
+				const Time chartDuration = GetDisplayedTimelineDuration(Camera, Regions, context);
+				const f32 localMouseX = ScreenToLocalSpace_ScrollbarX(Gui::GetMousePos()).x;
+				const f64 cursorTimeSec = ConvertRangeRClampInput(0.0f, Regions.ContentScrollbarX.GetWidth(), 0.0, chartDuration.ToSec(), localMouseX);
+				context.SetCursorTime(Time::FromSec(cursorTimeSec));
 			}
 
 			if (IsCameraMouseGrabActive) Gui::PopStyleColor();
