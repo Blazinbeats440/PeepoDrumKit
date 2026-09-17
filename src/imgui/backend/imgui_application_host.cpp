@@ -3,6 +3,7 @@
 #include "imgui/3rdparty/imgui_internal.h"
 #include "imgui/backend/imgui_impl_win32.h"
 #include "imgui/backend/imgui_impl_d3d11.h"
+#include "imgui/backend/imgui_custom_draw.h"
 #include "imgui/extension/imgui_input_binding.h"
 
 #include "core_io.h"
@@ -91,11 +92,13 @@ namespace ApplicationHost
 	static UINT_PTR					GlobalWindowRedrawTimerID = {};
 	static HANDLE					GlobalSwapChainWaitableObject = NULL;
 	static ImGuiStyle				GlobalOriginalScaleStyle = {};
+	static b8						GlobalD3D11DeviceRecoveryRequested = false;
 
 	static b8 CreateGlobalD3D11(const StartupParam& startupParam, HWND hWnd);
 	static void CleanupGlobalD3D11();
 	static void CreateGlobalD3D11SwapchainRenderTarget();
 	static void CleanupGlobalD3D11SwapchainRenderTarget();
+	static b8 RecoverGlobalD3D11(const StartupParam& startupParam, HWND hWnd);
 
 #if HAS_EMBEDDED_ICONS
 	// Based on imgui_draw.cpp: ImGui_ImplStbTrueType_* implementation
@@ -580,7 +583,14 @@ namespace ApplicationHost
 		if (!GlobalIsWindowMinimized)
 		{
 			const HRESULT presentResult = GlobalSwapChain->Present(Clamp(GlobalState.SwapInterval, 0, 4), 0);
-			if (FAILED(presentResult))
+			if (presentResult == DXGI_ERROR_DEVICE_REMOVED || presentResult == DXGI_ERROR_DEVICE_RESET)
+			{
+				const HRESULT removalReason = GlobalD3D11Device->GetDeviceRemovedReason();
+				Log::WriteHRESULT("IDXGISwapChain::Present", presentResult);
+				Log::WriteHRESULT("ID3D11Device::GetDeviceRemovedReason", removalReason);
+				GlobalD3D11DeviceRecoveryRequested = true;
+			}
+			else if (FAILED(presentResult))
 				Log::WriteHRESULT("IDXGISwapChain::Present", presentResult);
 		}
 		else
@@ -681,6 +691,17 @@ namespace ApplicationHost
 			}
 			if (done)
 				break;
+
+			if (GlobalD3D11DeviceRecoveryRequested)
+			{
+				GlobalD3D11DeviceRecoveryRequested = false;
+				if (!RecoverGlobalD3D11(startupParam, hwnd))
+				{
+					Log::Write("D3D11 device recovery failed; exiting application");
+					::PostQuitMessage(1);
+					continue;
+				}
+			}
 
 			GlobalState.IsAnyWindowFocusedLastFrame = GlobalState.IsAnyWindowFocusedThisFrame;
 			GlobalState.IsAnyWindowFocusedThisFrame = (GlobalIsWindowFocused || ImGui_ImplWin32_IsAnyViewportFocused());
@@ -855,6 +876,21 @@ namespace ApplicationHost
 		if (GlobalSwapChain) { GlobalSwapChain->Release(); GlobalSwapChain = nullptr; }
 		if (GlobalD3D11DeviceContext) { GlobalD3D11DeviceContext->Release(); GlobalD3D11DeviceContext = nullptr; }
 		if (GlobalD3D11Device) { GlobalD3D11Device->Release(); GlobalD3D11Device = nullptr; }
+	}
+
+	static b8 RecoverGlobalD3D11(const StartupParam& startupParam, HWND hWnd)
+	{
+		Log::Write("D3D11 device recovery begin");
+		CustomDraw::InvalidateDeviceObjects();
+		ImGui_ImplDX11_Shutdown();
+		CleanupGlobalD3D11();
+
+		if (!CreateGlobalD3D11(startupParam, hWnd))
+			return false;
+
+		ImGui_ImplDX11_Init(GlobalD3D11Device, GlobalD3D11DeviceContext);
+		Log::Write("D3D11 device recovery complete");
+		return true;
 	}
 
 	static void CreateGlobalD3D11SwapchainRenderTarget()

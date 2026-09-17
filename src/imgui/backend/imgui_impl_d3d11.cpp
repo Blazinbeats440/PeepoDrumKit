@@ -1007,6 +1007,20 @@ namespace CustomDraw
 	GPUPixelFormat GPUTexture::GetFormat() const { auto* data = ResolveHandle(Handle); return data ? data->Desc.Format : GPUPixelFormat {}; }
 	ImTextureID GPUTexture::GetTexID() const { auto* data = ResolveHandle(Handle); return data ? (ImTextureID)data->ResourceView : 0; }
 
+	void InvalidateDeviceObjects()
+	{
+		for (DX11GPUTextureData& slot : LoadedTextureSlots)
+		{
+			if (slot.Texture2D != nullptr) { slot.Texture2D->Release(); }
+			if (slot.ResourceView != nullptr) { slot.ResourceView->Release(); }
+			slot = DX11GPUTextureData {};
+		}
+
+		for (ID3D11DeviceChild* resource : DeviceResourcesToDeferRelease)
+			if (resource != nullptr) { resource->Release(); }
+		DeviceResourcesToDeferRelease.clear();
+	}
+
 	// NOTE: The most obvious way to extend this would be to either add an enum command type + a union of parameters
 	//		 or (better?) a per command type commands vector with the render callback userdata storing a packed type+index
 	struct DX11CustomDrawCommand

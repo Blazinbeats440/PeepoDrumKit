@@ -195,7 +195,19 @@ namespace PeepoDrumKit
 
 		f32& currentRasterScale = Data->PerGroupRasterScale[EnumToIndex(group)];
 		if (ApproxmiatelySame(currentRasterScale, scale))
-			return;
+		{
+			b8 allTexturesAreValid = true;
+			for (i32 sprIndex = 0; sprIndex < EnumCountI32<SprID>; sprIndex++)
+			{
+				if (GetSprGroup(static_cast<SprID>(sprIndex)) == group && !Data->PerSprTexture[sprIndex].IsValid())
+				{
+					allTexturesAreValid = false;
+					break;
+				}
+			}
+			if (allTexturesAreValid)
+				return;
+		}
 		currentRasterScale = scale;
 
 		for (i32 sprIndex = 0; sprIndex < EnumCountI32<SprID>; sprIndex++)
