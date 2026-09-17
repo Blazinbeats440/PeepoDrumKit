@@ -35,6 +35,9 @@ namespace CustomDraw
 		ImTextureID GetTexID() const;
 	};
 
+	// Invalidates textures owned by the active D3D11 device. The source data remains owned by callers.
+	void InvalidateDeviceObjects();
+
 	constexpr i32 WaveformPixelsPerChunk = 256;
 	struct WaveformChunk { f32 PerPixelAmplitude[WaveformPixelsPerChunk]; };
 	void DrawWaveformChunk(ImDrawList* drawList, Rect rect, u32 color, const WaveformChunk& chunk);
