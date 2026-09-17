@@ -883,11 +883,14 @@ namespace ApplicationHost
 		Log::Write("D3D11 device recovery begin");
 		CustomDraw::InvalidateDeviceObjects();
 		ImGui_ImplDX11_Shutdown();
+		ImGui_ImplWin32_Shutdown();
 		CleanupGlobalD3D11();
 
 		if (!CreateGlobalD3D11(startupParam, hWnd))
 			return false;
 
+		const HICON windowIcon = ::LoadIconW(::GetModuleHandleW(nullptr), MAKEINTRESOURCEW(PEEPO_DRUM_KIT_ICON));
+		ImGui_ImplWin32_Init(hWnd, windowIcon);
 		ImGui_ImplDX11_Init(GlobalD3D11Device, GlobalD3D11DeviceContext);
 		Log::Write("D3D11 device recovery complete");
 		return true;
