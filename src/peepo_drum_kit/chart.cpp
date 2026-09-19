@@ -76,17 +76,6 @@ namespace PeepoDrumKit
 		}
 	}
 
-	struct TempTimedDelayCommand { Beat Beat; Time Delay; };
-
-	template <>
-	struct IsNonListChartEventTrait<TempTimedDelayCommand> : std::true_type { };
-
-	template <GenericMember Member, typename TempTimedDelayCommandT, expect_type_t<TempTimedDelayCommandT, TempTimedDelayCommand> = true>
-	constexpr decltype(auto) get(TempTimedDelayCommandT&& event)
-	{
-		if constexpr (Member == GenericMember::Beat_Start) return (std::forward<TempTimedDelayCommandT>(event).Beat);
-	}
-
 	static constexpr NoteType ConvertTJANoteType(TJA::NoteType tjaNoteType)
 	{
 		switch (tjaNoteType)
@@ -183,6 +172,33 @@ namespace PeepoDrumKit
 		return maxBeat;
 	}
 
+	Beat FindCourseBeatAtDuration(const ChartCourse& course, Time duration)
+	{
+		if (course.TempoMap.Delays[0].empty()) return course.TempoMap.TimeToBeatWithoutDelay(duration, true);
+		const auto candidates = course.TempoMap.TimeToBeats(duration, 0, true);
+		return candidates.empty() ? course.TempoMap.TimeToBeat(duration, true) : candidates.back();
+	}
+
+	Time FindCourseMaxUsedTime(const ChartCourse& course)
+	{
+		if (!course.HasDelays()) return course.TempoMap.BeatToTime(FindCourseMaxUsedBeat(course));
+		Time maximum = {};
+		ApplyForEachGenericList([&](GenericList list, const auto& events)
+		{
+			const size_t branch = IsDelaysList(list) ? EnumToIndex(list) - EnumToIndex(GenericList::Delays_Normal)
+				: IsNotesList(list) ? EnumToIndex(list) - EnumToIndex(GenericList::Notes_Normal)
+				: IsScrollChangesList(list) ? EnumToIndex(ScrollChangesListToBranchType(list)) : 0;
+			for (const auto& event : events)
+			{
+				const Beat beat = GetBeat(event);
+				maximum = Max(maximum, course.TempoMap.BeatToTime(beat, branch));
+				maximum = Max(maximum, course.TempoMap.BeatToTime(beat + GetBeatDuration(event), branch));
+				if (IsDelaysList(list)) maximum = Max(maximum, course.TempoMap.BeatToTimeWithoutDelay(beat) + course.TempoMap.GetDelayAtBeat(beat, branch, false));
+			}
+		}, course);
+		return maximum;
+	}
+
 	b8 CreateChartProjectFromTJA(const TJA::ParsedTJA& inTJA, ChartProject& out)
 	{
 		out.ChartDuration = Time::Zero();
@@ -230,14 +246,6 @@ namespace PeepoDrumKit
 			auto importNotes = [&](const std::vector<TJA::ConvertedMeasure>& measures, SortedNotesList& outNotes, const std::vector<i32>& balloonPopCounts)
 			{
 				i32 currentBalloonIndex = 0;
-				BeatSortedList<TempTimedDelayCommand> tempSortedDelayCommands;
-				BeatSortedForwardIterator<TempTimedDelayCommand> tempDelayCommandsIt;
-				for (const TJA::ConvertedMeasure& inMeasure : measures)
-				{
-					for (const TJA::ConvertedDelayChange& inDelayChange : inMeasure.DelayChanges)
-						tempSortedDelayCommands.InsertOrUpdate(TempTimedDelayCommand { inMeasure.StartTime + inDelayChange.TimeWithinMeasure, inDelayChange.Delay });
-				}
-
 				for (const TJA::ConvertedMeasure& inMeasure : measures)
 				{
 					for (const TJA::ConvertedNote& inNote : inMeasure.Notes)
@@ -257,9 +265,6 @@ namespace PeepoDrumKit
 						outNote.BeatTime = (inMeasure.StartTime + inNote.TimeWithinMeasure);
 						outNote.Type = outNoteType;
 
-						const TempTimedDelayCommand* delayCommandForThisNote = tempDelayCommandsIt.Next(tempSortedDelayCommands.Sorted, outNote.BeatTime);
-						outNote.TimeOffset = (delayCommandForThisNote != nullptr) ? delayCommandForThisNote->Delay : Time::Zero();
-
 						if (IsBalloonNote(outNote.Type))
 						{
 							if (InBounds(currentBalloonIndex, balloonPopCounts))
@@ -274,10 +279,21 @@ namespace PeepoDrumKit
 			const auto& balloonExpert = !inCourse.CourseMetadata.BALLOON_Expert.empty() ? inCourse.CourseMetadata.BALLOON_Expert : inCourse.CourseMetadata.BALLOON;
 			const auto& balloonMaster = !inCourse.CourseMetadata.BALLOON_Master.empty() ? inCourse.CourseMetadata.BALLOON_Master : inCourse.CourseMetadata.BALLOON;
 			importNotes(inCourse.Measures, outCourse.Notes_Normal, balloonNormal);
+			auto importDelays = [&](const std::vector<TJA::ConvertedMeasure>& measures, BranchType branch)
+			{
+				auto& delays = outCourse.GetDelays(branch);
+				for (const auto& measure : measures)
+					for (const auto& delay : measure.DelayChanges)
+						delays.InsertOrFunc(DelayChange { measure.StartTime + delay.TimeWithinMeasure, delay.Delay },
+							[](DelayChange& existing, const DelayChange& added) { existing.Duration += added.Duration; });
+			};
+			importDelays(inCourse.Measures, BranchType::Normal);
 			if (!inCourse.Branches.empty())
 			{
 				importNotes(inCourse.Measures_Expert, outCourse.Notes_Expert, balloonExpert);
 				importNotes(inCourse.Measures_Master, outCourse.Notes_Master, balloonMaster);
+				importDelays(inCourse.Measures_Expert, BranchType::Expert);
+				importDelays(inCourse.Measures_Master, BranchType::Master);
 			}
 			auto importScrollChanges = [](const std::vector<TJA::ConvertedMeasure>& measures, SortedScrollChangesList& outScrollChanges)
 			{
@@ -433,7 +449,7 @@ namespace PeepoDrumKit
 			// 1. rounded beat of time can have 1 extra tick which would become a whole measure -> used truncated beat
 			// 2. use minimum length of difficulties in case the timing differ slightly
 			const Beat inChartMaxUsedBeat = FindCourseMaxUsedBeat(inCourse);
-			const Beat inChartBeatDuration = inCourse.TempoMap.TimeToBeat(in.GetDuration(), true);
+			const Beat inChartBeatDuration = FindCourseBeatAtDuration(inCourse, in.GetDuration());
 			std::vector<TJA::ConvertedMeasure> outConvertedMeasures;
 
 			inCourse.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
@@ -477,7 +493,6 @@ namespace PeepoDrumKit
 
 			auto appendNotesToMeasures = [&](const SortedNotesList& notes, std::vector<TJA::ConvertedMeasure>& measures)
 			{
-				Time lastNoteTimeOffset = Time::Zero();
 				for (const Note& inNote : notes)
 				{
 					TJA::ConvertedMeasure* outConvertedMeasure = tryFindMeasureForBeat(measures, inNote.BeatTime);
@@ -491,15 +506,16 @@ namespace PeepoDrumKit
 							durationEndMeasure->Notes.push_back(TJA::ConvertedNote { ((inNote.BeatTime + inNote.BeatDuration) - durationEndMeasure->StartTime), TJA::NoteType::End_BalloonOrDrumroll });
 					}
 
-					const Time thisNoteTimeOffset = ApproxmiatelySame(inNote.TimeOffset.Seconds, 0.0) ? Time::Zero() : inNote.TimeOffset;
-					if (thisNoteTimeOffset != lastNoteTimeOffset)
-					{
-						outConvertedMeasure->DelayChanges.push_back(TJA::ConvertedDelayChange { (inNote.BeatTime - outConvertedMeasure->StartTime), thisNoteTimeOffset });
-						lastNoteTimeOffset = thisNoteTimeOffset;
-					}
 				}
 			};
 			appendNotesToMeasures(inCourse.Notes_Normal, outConvertedMeasures);
+			auto appendDelaysToMeasures = [&](BranchType branch, std::vector<TJA::ConvertedMeasure>& measures)
+			{
+				for (const auto& delay : inCourse.GetDelays(branch))
+					if (auto* measure = tryFindMeasureForBeat(measures, delay.BeatTime))
+						measure->DelayChanges.push_back({ delay.BeatTime - measure->StartTime, delay.Duration });
+			};
+			appendDelaysToMeasures(BranchType::Normal, outConvertedMeasures);
 
 			auto appendScrollChangesToMeasures = [&](const SortedScrollChangesList& scrollChanges, std::vector<TJA::ConvertedMeasure>& measures)
 			{
@@ -591,6 +607,8 @@ namespace PeepoDrumKit
 			}
 			appendNotesToMeasures(inCourse.Notes_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
 			appendNotesToMeasures(inCourse.Notes_Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
+			appendDelaysToMeasures(BranchType::Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
+			appendDelaysToMeasures(BranchType::Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
 			appendScrollChangesToMeasures(inCourse.ScrollChanges_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
 			appendScrollChangesToMeasures(inCourse.ScrollChanges_Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
 
@@ -690,6 +708,55 @@ namespace PeepoDrumKit
 			}
 		}
 
+		return true;
+	}
+
+	b8 RunTJADelaySelfTest(std::string& outError)
+	{
+		auto fail = [&](cstr message) { outError = message; return false; };
+		auto same = [](Time time, double seconds) { return ApproxmiatelySame(time.Seconds, seconds, 0.000001); };
+		SortedTempoMap map;
+		map.Tempo.Sorted = { TempoChange { Beat::Zero(), Tempo(120) } };
+		map.RebuildAccelerationStructure();
+		map.Delays[0].Sorted = { { Beat::FromBeats(4), Time::FromSec(0.5) }, { Beat::FromBeats(8), Time::FromSec(-2.0) } };
+		if (!same(map.BeatToTime(Beat::FromBeats(4)), 2.5) || !same(map.BeatToTime(Beat::FromBeats(8)), 2.5)) return fail("Delay accumulation failed");
+		if (!same(map.BeatToTimeWithoutDelay(Beat::FromBeats(8)), 4.0)) return fail("Score view timing changed");
+		if (!map.TimeToBeats(Time::FromSec(2.25)).empty()) return fail("Positive delay gap was mapped to a note");
+		if (map.GetDelaySegmentAtTime(Time::FromSec(2.25), Beat::FromBeats(4)) != 0 || map.GetDelaySegmentAtTime(Time::FromSec(2.5), Beat::FromBeats(4)) != 1) return fail("Cursor delay segment is incorrect during a positive delay");
+		if (map.TimeToBeats(Time::FromSec(2.75)).size() != 2) return fail("Overlapping delay segments were lost");
+		const Beat after = map.TimeToBeat(Time::FromSec(2.75), false, 0, Beat::FromBeats(8));
+		const Beat before = map.TimeToBeat(Time::FromSec(2.75), false, 0, Beat::FromBeats(4));
+		if (map.GetDelaySegment(after) != 2 || map.GetDelaySegment(before) != 1) return fail("Preferred cursor segment was not preserved");
+		if (!same(map.BeatToTime(Beat::FromBeats(8), 1), 4.0)) return fail("Delay leaked into another branch");
+		if (!same(map.BeatToTime(Beat::FromBeats(10)) - map.BeatToTime(Beat::FromBeats(2)), 2.5)) return fail("Long note tail does not follow delays");
+
+		TJA::ErrorList errors;
+		const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Delay Test\nBPM:120\nCOURSE:Oni\nLEVEL:5\n#START\n1000,\n#DELAY 0.5\n5000\n#DELAY -0.25\n0008,\n#DELAY -3\n2000,\n#DELAY 0.125\n0000,\n#END\n")), errors);
+		ChartProject chart;
+		if (!errors.Errors.empty() || !CreateChartProjectFromTJA(parsed, chart)) return fail("Delay fixture import failed");
+		const auto& course = *chart.Courses.front();
+		const auto& notes = course.Notes_Normal;
+		if (course.GetDelays(BranchType::Normal).size() != 4 || notes.size() != 3) return fail("Delay events or notes were lost on import");
+		if (!same(course.TempoMap.BeatToTime(notes[1].GetStart()), 2.5) || !same(course.TempoMap.BeatToTime(notes[1].GetEnd()), 4.0)) return fail("Imported long note timing is incorrect");
+		if (!(notes[1].BeatTime < notes[2].BeatTime) || !(course.TempoMap.BeatToTime(notes[2].BeatTime) < course.TempoMap.BeatToTime(notes[1].BeatTime))) return fail("Note source order or reversed playback order was lost");
+		TJA::ParsedTJA exported;
+		if (!ConvertChartProjectToTJA(chart, exported, false)) return fail("Delay export failed");
+		std::string text;
+		TJA::ConvertParsedToText(exported, text, TJA::SaveFormat::Current);
+		if (UTF8::HasBOM(text)) text.erase(0, 3);
+		const auto reparsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(text)), errors);
+		ChartProject reimported;
+		if (!errors.Errors.empty() || !CreateChartProjectFromTJA(reparsed, reimported)) return fail("Delay round trip import failed");
+		bool matches = true;
+		DebugCompareCharts(chart, reimported, [&](std::string_view message, b8 isError) { if (isError) { matches = false; outError = message; } });
+		if (!matches) return false;
+		const auto edgeParsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Delay Boundary\nBPM:120\nCOURSE:Oni\n#START\n1\n#DELAY 0.5\n,\n#DELAY 0.25\n1,\n#END\n")), errors);
+		ChartProject edge;
+		if (!CreateChartProjectFromTJA(edgeParsed, edge)) return fail("Boundary fixture import failed");
+		const auto& edgeCourse = *edge.Courses.front();
+		if (edgeCourse.GetDelays(BranchType::Normal).size() != 1 || !same(edgeCourse.TempoMap.BeatToTime(Beat::Zero()), 0) || !same(edgeCourse.TempoMap.BeatToTime(Beat::FromBeats(4)), 2.75)) return fail("Single-note measure or same-beat accumulation failed");
 		return true;
 	}
 
@@ -814,7 +881,7 @@ namespace PeepoDrumKit
 		};
 		if (countOccurrences(exportedText, "\n#N\n") != 2 || countOccurrences(exportedText, "\n#E\n") != 2 || countOccurrences(exportedText, "\n#M\n") != 2)
 			return fail("Zero-length branch unexpectedly exported branch selectors");
-		if (countOccurrences(exportedText, "#BRANCHSTART") != 3 || countOccurrences(exportedText, "#BRANCHEND") != 1)
+		if (countOccurrences(exportedText, "#BRANCHSTART") != 3 || countOccurrences(exportedText, "#BRANCHEND") != 2)
 			return fail("Implicit or explicit branch endings were not preserved during export");
 
 		TJA::ParsedTJA reparsed;

@@ -107,15 +107,24 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-tja-delay")
+			{
+				i18n::InitBuiltinLocale();
+				std::string error;
+				if (RunTJADelaySelfTest(error)) { printf("TJA delay self-test passed\n"); return 0; }
+				printf("TJA delay self-test failed: %s\n", error.c_str());
+				return 1;
+			}
 			if (argv[i] == "--test-tja-branches")
 			{
+				i18n::InitBuiltinLocale();
 				std::string error;
 				if (RunTJAChartBranchSelfTest(error))
 				{
-					Log::Write("TJA branch self-test passed");
+					printf("TJA branch self-test passed\n");
 					return 0;
 				}
-				Log::Write("TJA branch self-test failed: %s", error.c_str());
+				printf("TJA branch self-test failed: %s\n", error.c_str());
 				return 1;
 			}
 		}

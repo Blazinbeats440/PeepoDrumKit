@@ -806,8 +806,11 @@ namespace TJA
 					} break;
 					case Key::Chart_DELAY:
 					{
-						if (!tryParseTime(in, &pushChartCommand(ParsedChartCommandType::ChangeDelay).Param.ChangeDelay.Value))
+						f64 seconds = 0.0;
+						if (!ASCII::TryParse(in, seconds) || !std::isfinite(seconds))
 							outErrors.Push(lineIndex, "Invalid delay '%.*s'", FmtStrViewArgs(in));
+						else
+							pushChartCommand(ParsedChartCommandType::ChangeDelay).Param.ChangeDelay.Value = Time::FromSec(seconds);
 					} break;
 					case Key::Chart_SCROLL:
 					{
@@ -1373,7 +1376,7 @@ namespace TJA
 				} break;
 				case ParsedChartCommandType::ChangeDelay:
 				{
-					appendCommandLine(out, Key::Chart_DELAY, std::string_view(buffer, sprintf_s(buffer, "%g", command.Param.ChangeDelay.Value.ToSec())));
+					appendCommandLine(out, Key::Chart_DELAY, std::string_view(buffer, sprintf_s(buffer, "%.17g", command.Param.ChangeDelay.Value.ToSec())));
 				} break;
 				case ParsedChartCommandType::ChangeScrollSpeed:
 				{
@@ -1728,8 +1731,7 @@ namespace TJA
 
 					if (!currentMeasure->Notes.empty() && currentNotesInMeasure > 0)
 						currentTimeWithinMeasure = currentMeasure->Notes[currentNotesInMeasure - 1].TimeWithinMeasure +
-						// TODO: WHAT TO DO HERE?
-						(currentMeasure->Notes.size() > 1 ? currentMeasure->Notes[1].TimeWithinMeasure : Beat {});
+							abs(currentMeasure->TimeSignature.GetDurationPerBar()) / static_cast<i32>(currentMeasure->Notes.size());
 				}
 				if (command.Type == ParsedChartCommandType::MeasureEnd)
 				{

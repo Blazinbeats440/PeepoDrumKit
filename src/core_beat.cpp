@@ -1,6 +1,84 @@
 #include "core_beat.h"
 #include <algorithm>
 
+Time SortedTempoMap::GetDelayAtBeat(Beat beat, size_t branch, bool includeAtBeat) const
+{
+	Time offset = {};
+	for (const auto& delay : Delays[branch])
+	{
+		if (delay.BeatTime > beat || (!includeAtBeat && delay.BeatTime == beat)) break;
+		offset += delay.Duration;
+	}
+	return offset;
+}
+
+size_t SortedTempoMap::GetDelaySegment(Beat beat, size_t branch) const
+{
+	size_t segment = 0;
+	for (const auto& delay : Delays[branch])
+	{
+		if (delay.BeatTime > beat) break;
+		++segment;
+	}
+	return segment;
+}
+
+size_t SortedTempoMap::GetDelaySegmentAtTime(Time time, Beat preferredBeat, size_t branch) const
+{
+	const Beat beat = TimeToBeat(time, false, branch, preferredBeat);
+	const size_t segment = GetDelaySegment(beat, branch);
+	if (segment > 0)
+	{
+		const auto& delay = Delays[branch][segment - 1];
+		const Time end = BeatToTime(delay.BeatTime, branch);
+		if (beat == delay.BeatTime && delay.Duration > Time::Zero() && time >= end - delay.Duration && time < end)
+			return segment - 1;
+	}
+	return segment;
+}
+
+std::vector<Beat> SortedTempoMap::TimeToBeats(Time time, size_t branch, bool truncTo0) const
+{
+	std::vector<Beat> result;
+	Time offset = {};
+	const auto& delays = Delays[branch];
+	for (size_t segment = 0; segment <= delays.size(); ++segment)
+	{
+		const Time localTime = time - offset;
+		const bool afterStart = segment == 0 || localTime >= BeatToTimeWithoutDelay(delays[segment - 1].BeatTime);
+		const bool beforeEnd = segment == delays.size() || localTime < BeatToTimeWithoutDelay(delays[segment].BeatTime);
+		if (afterStart && beforeEnd)
+		{
+			Beat beat = TimeToBeatWithoutDelay(localTime, truncTo0);
+			if (segment < delays.size()) beat = Min(beat, delays[segment].BeatTime - Beat::FromTicks(1));
+			if (segment > 0) beat = Max(beat, delays[segment - 1].BeatTime);
+			result.push_back(beat);
+		}
+		if (segment < delays.size()) offset += delays[segment].Duration;
+	}
+	return result;
+}
+
+Beat SortedTempoMap::TimeToBeat(Time time, bool truncTo0, size_t branch, Beat preferredBeat) const
+{
+	if (Delays[branch].empty()) return TimeToBeatWithoutDelay(time, truncTo0);
+	const auto candidates = TimeToBeats(time, branch, truncTo0);
+	const size_t preferredSegment = GetDelaySegment(preferredBeat, branch);
+	for (Beat beat : candidates)
+		if (GetDelaySegment(beat, branch) == preferredSegment) return beat;
+	if (!candidates.empty()) return candidates.front();
+	// A positive delay creates a gap: keep the cursor at its boundary while audio continues.
+	Time offset = {};
+	for (const auto& delay : Delays[branch])
+	{
+		const Time start = BeatToTimeWithoutDelay(delay.BeatTime) + offset;
+		if (delay.Duration > Time::Zero() && time >= start && time < start + delay.Duration)
+			return delay.BeatTime;
+		offset += delay.Duration;
+	}
+	return TimeToBeatWithoutDelay(time - offset, truncTo0);
+}
+
 Time TempoMapAccelerationStructure::ConvertBeatToTimeUsingLookupTableIndexing(Beat beat) const
 {
 	const i32 beatTickToTimesCount = static_cast<i32>(BeatTickToTimes.size());

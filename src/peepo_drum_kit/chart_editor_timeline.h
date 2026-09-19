@@ -89,6 +89,7 @@ namespace PeepoDrumKit
 		ScrollType,
 		JPOSScroll,
 		Sudden,
+		Delay,
 		Count,
 
 		NoteBranches_First = Notes_Normal,
@@ -112,6 +113,7 @@ namespace PeepoDrumKit
 		"EVENT_SCROLL_TYPE",
 		"EVENT_JPOS_SCROLL",
 		"EVENT_SUDDEN",
+		"EVENT_DELAY",
 	};
 
 	constexpr GenericList TimelineRowToGenericList(TimelineRowType row)
@@ -131,6 +133,7 @@ namespace PeepoDrumKit
 		case TimelineRowType::ScrollType: return GenericList::ScrollType;
 		case TimelineRowType::JPOSScroll: return GenericList::JPOSScroll;
 		case TimelineRowType::Sudden: return GenericList::Sudden;
+		case TimelineRowType::Delay: return GenericList::Delays_Normal;
 		default: assert(false); return GenericList::Count;
 		}
 	}
@@ -153,12 +156,16 @@ namespace PeepoDrumKit
 		case GenericList::ScrollType: return TimelineRowType::ScrollType;
 		case GenericList::JPOSScroll: return TimelineRowType::JPOSScroll;
 		case GenericList::Sudden: return TimelineRowType::Sudden;
+		case GenericList::Delays_Normal:
+		case GenericList::Delays_Expert:
+		case GenericList::Delays_Master: return TimelineRowType::Delay;
 		default: assert(false); return TimelineRowType::Count;
 		}
 	}
 
 	constexpr GenericList TimelineRowToGenericList(TimelineRowType row, BranchType branch)
 	{
+		if (row == TimelineRowType::Delay) return BranchTypeToDelaysList(branch);
 		if (row != TimelineRowType::ScrollSpeed)
 			return TimelineRowToGenericList(row);
 		return BranchTypeToScrollChangesList(branch);

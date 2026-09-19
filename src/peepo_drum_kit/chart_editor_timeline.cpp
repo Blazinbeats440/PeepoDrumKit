@@ -269,7 +269,8 @@ namespace PeepoDrumKit
 				(rowType == TimelineRowType::Lyrics && course.Lyrics.Sorted.empty()) ||
 				(rowType == TimelineRowType::ScrollType && course.ScrollTypes.Sorted.empty()) ||
 				(rowType == TimelineRowType::JPOSScroll && course.JPOSScrollChanges.Sorted.empty()) ||
-				(rowType == TimelineRowType::Sudden && course.SuddenChanges.Sorted.empty()))
+				(rowType == TimelineRowType::Sudden && course.SuddenChanges.Sorted.empty()) ||
+				(rowType == TimelineRowType::Delay && !course.HasDelays()))
 				continue;
 			const b8 isNotesRow = rowType == TimelineRowType::Notes || IsBranchNoteRow(rowType);
 
@@ -336,7 +337,7 @@ namespace PeepoDrumKit
 		const Beat chartBeatDuration = context.GetUsedBeatDurationFast();
 		context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
 		{
-			const Time timeIt = context.ChartSelectedCourse->TempoMap.BeatToTime(it.Beat);
+			const Time timeIt = context.TimelineBeatToTime(it.Beat);
 
 			if ((gridLineIndex++ % gridLineModToSkip) == 0)
 			{
@@ -344,7 +345,7 @@ namespace PeepoDrumKit
 					perGridFunc(ForEachGridLineData { timeIt, it.BarIndex, it.IsBar, it.Beat, it.Beat > chartBeatDuration });
 			}
 
-			if (timeIt >= minMaxVisibleTime.Max || (it.IsBar && it.Beat > chartBeatDuration))
+			if ((!context.ChartSelectedCourse->HasDelays() && timeIt >= minMaxVisibleTime.Max) || (it.IsBar && it.Beat > chartBeatDuration))
 				return ControlFlow::Break;
 			else
 				return ControlFlow::Fallthrough;
@@ -387,6 +388,8 @@ namespace PeepoDrumKit
 
 	static Time GetDisplayedTimelineDuration(TimelineCamera& camera, const TimelineRegions& regions, const ChartContext& context, std::optional<Time> targetChartDuration = std::nullopt)
 	{
+		if (!targetChartDuration && !context.TimelineRealTime && context.ChartSelectedCourse->HasDelays())
+			targetChartDuration = Max(context.Chart.GetDuration(), context.ChartSelectedCourse->TempoMap.BeatToTimeWithoutDelay(context.GetUsedBeatDurationFast() + Beat::FromBars(1)));
 		return GetDisplayedTimelineDuration(camera, regions, context.Chart, *context.ChartSelectedCourse, targetChartDuration);
 	}
 
@@ -405,13 +408,15 @@ namespace PeepoDrumKit
 
 	static void ScrollToTimelinePosition(TimelineCamera& camera, const TimelineRegions& regions, const ChartContext& context, Time targetTime, std::optional<Time> targetChartDuration = std::nullopt)
 	{
+		if (!targetChartDuration && !context.TimelineRealTime && context.ChartSelectedCourse->HasDelays())
+			targetChartDuration = Max(context.Chart.GetDuration(), context.ChartSelectedCourse->TempoMap.BeatToTimeWithoutDelay(context.GetUsedBeatDurationFast() + Beat::FromBars(1)));
 		ScrollToTimelinePosition(camera, regions, context.Chart, *context.ChartSelectedCourse, targetTime, targetChartDuration);
 	}
 
 	void ChartTimeline::ScrollToBeat(ChartContext& context, Beat beat)
 	{
 		context.SetCursorBeat(beat);
-		ScrollToTimelinePosition(Camera, Regions, context, context.BeatToTime(beat));
+		ScrollToTimelinePosition(Camera, Regions, context, context.TimelineBeatToTime(beat));
 	}
 
 	static void ScrollToTimelinePositionNormalized(TimelineCamera& camera, const TimelineRegions& regions, const ChartProject& chart, const ChartCourse& course, f32 normalizedTargetPosition)
@@ -422,6 +427,12 @@ namespace PeepoDrumKit
 
 	static void ScrollToTimelinePositionNormalized(TimelineCamera& camera, const TimelineRegions& regions, const ChartContext& context, f32 normalizedTargetPosition)
 	{
+		if (!context.TimelineRealTime && context.ChartSelectedCourse->HasDelays())
+		{
+			const Time duration = Max(context.Chart.GetDuration(), context.ChartSelectedCourse->TempoMap.BeatToTimeWithoutDelay(context.GetUsedBeatDurationFast() + Beat::FromBars(1)));
+			ScrollToTimelinePosition(camera, regions, context, duration * normalizedTargetPosition, duration);
+			return;
+		}
 		ScrollToTimelinePositionNormalized(camera, regions, context.Chart, *context.ChartSelectedCourse, normalizedTargetPosition);
 	}
 
@@ -546,17 +557,17 @@ namespace PeepoDrumKit
 		Gui::DisableFontPixelSnap(false);
 	}
 
-	static void DrawTimelineNoteBalloonPopCount(ChartGraphicsResources& gfx, ImDrawList* drawList, vec2 center, f32 scale, i32 popCount)
+	static void DrawTimelineNoteBalloonPopCount(ChartGraphicsResources& gfx, ImDrawList* drawList, vec2 center, f32 scale, i32 popCount, f32 alpha = 1.0f)
 	{
-		DrawTimelineNoteText(gfx, drawList, center, vec2(0.5f), FontMain, FontBaseSizes::Large, scale, std::to_string(popCount), NoteBalloonTextColor, NoteBalloonTextColorShadow);
+		DrawTimelineNoteText(gfx, drawList, center, vec2(0.5f), FontMain, FontBaseSizes::Large, scale, std::to_string(popCount), Gui::ColorU32WithAlpha(NoteBalloonTextColor, alpha), Gui::ColorU32WithAlpha(NoteBalloonTextColorShadow, alpha));
 	}
 
-	static void DrawTimelineNoteCombo(ChartGraphicsResources& gfx, ImDrawList* drawList, vec2 center, f32 scale, i32 combo, b8 isComboNote)
+	static void DrawTimelineNoteCombo(ChartGraphicsResources& gfx, ImDrawList* drawList, vec2 center, f32 scale, i32 combo, b8 isComboNote, f32 alpha = 1.0f)
 	{
 		DrawTimelineNoteText(gfx, drawList, center, vec2(0.5f, 1), FontMain, FontBaseSizes::Medium, scale, std::to_string(combo),
-			isComboNote ? NoteComboTextColor : NoteComboTextColorNotCombo,
-			isComboNote ? NoteComboTextColorShadow : NoteComboTextColorShadowNotCombo,
-			TimelineBackgroundColor);
+			Gui::ColorU32WithAlpha(isComboNote ? NoteComboTextColor : NoteComboTextColorNotCombo, alpha),
+			Gui::ColorU32WithAlpha(isComboNote ? NoteComboTextColorShadow : NoteComboTextColorShadowNotCombo, alpha),
+			Gui::ColorU32WithAlpha(TimelineBackgroundColor, alpha));
 	}
 
 	struct DrawTimelineRectBaseParam { vec2 TL, BR; f32 TriScaleL, TriScaleR; u32 ColorBorder, ColorOuter, ColorInner; b8 selected; };
@@ -624,7 +635,7 @@ namespace PeepoDrumKit
 		DrawTimelineRectBaseWithStartEndTriangles(drawList, DrawTimelineRectBaseParam{ tl, br, 1.0f, 1.0f, selected ? TimelineJPOSScrollBackgroundColorBorderSelected : TimelineJPOSScrollBackgroundColorBorder, TimelineJPOSScrollBackgroundColorOuter, TimelineJPOSScrollBackgroundColorInner, selected });
 	}
 
-	static void DrawTimelineContentWaveform(const ChartTimeline& timeline, const ChartCourse& course, ImDrawList* drawList, Time chartSongOffset, const Audio::WaveformMipChain& waveformL, const Audio::WaveformMipChain& waveformR, f32 waveformAnimation)
+	static void DrawTimelineContentWaveform(const ChartTimeline& timeline, const ChartContext& context, const ChartCourse& course, ImDrawList* drawList, Time chartSongOffset, const Audio::WaveformMipChain& waveformL, const Audio::WaveformMipChain& waveformR, f32 waveformAnimation)
 	{
 		const f32 waveformAnimationScale = Clamp(waveformAnimation, 0.0f, 1.0f);
 		const f32 waveformAnimationAlpha = (waveformAnimationScale * waveformAnimationScale);
@@ -658,7 +669,7 @@ namespace PeepoDrumKit
 
 				for (i32 chunkPixel = 0; chunkPixel < CustomDraw::WaveformPixelsPerChunk; chunkPixel++)
 				{
-					const Time timeAtPixel = timeline.Camera.LocalSpaceXToTime(static_cast<f32>(visiblePixel)) - chartSongOffset;
+					const Time timeAtPixel = context.TimelineToSongTime(timeline.Camera.LocalSpaceXToTime(static_cast<f32>(visiblePixel)));
 					const b8 outOfBounds = (timeAtPixel < Time::Zero() || (timeAtPixel > waveformDuration));
 
 					chunk.PerPixelAmplitude[chunkPixel] = outOfBounds ? 0.0f : (waveformAnimationScale * ClampBot(waveform.GetAmplitudeAt(waveformMip, timeAtPixel, waveformTimePerPixel), minAmplitude));
@@ -705,7 +716,7 @@ namespace PeepoDrumKit
 		const f32 textHeight = Gui::GetFontSize();
 		auto drawCommand = [&](Beat beat, cstr text)
 		{
-			const Time time = param.Context.BeatToTime(beat);
+			const Time time = param.Context.TimelineBeatToTime(beat);
 			if (time < param.VisibleTime.Min || time > param.VisibleTime.Max)
 				return;
 			const vec2 localTop = { param.Timeline.Camera.TimeToLocalSpaceX(time), rowIt.LocalY };
@@ -749,7 +760,7 @@ namespace PeepoDrumKit
 		{
 			if (levelHold.Branch != param.Context.ChartSelectedBranch)
 				continue;
-			const Time time = param.Context.BeatToTime(levelHold.BeatTime);
+			const Time time = param.Context.TimelineBeatToTime(levelHold.BeatTime);
 			if (time < param.VisibleTime.Min || time > param.VisibleTime.Max)
 				continue;
 			const vec2 localTop = { param.Timeline.Camera.TimeToLocalSpaceX(time), rowIt.LocalY };
@@ -775,6 +786,8 @@ namespace PeepoDrumKit
 		{
 			const ChartCourse& course = *context.ChartSelectedCourse;
 			static constexpr b8 isUnbranchedNotesRow = (RowType == TimelineRowType::Notes);
+			constexpr BranchType noteBranch = isUnbranchedNotesRow ? BranchType::Normal : TimelineRowToBranchType(RowType);
+			const size_t cursorDelaySegment = context.TimelineRealTime ? course.TempoMap.GetDelaySegmentAtTime(context.GetCursorTime(), context.GetCursorBeat(), EnumToIndex(noteBranch)) : 0;
 			// TODO: Draw unselected branch notes grayed and at a slightly smaller scale (also nicely animate between selecting different branched!)
 
 			// TODO: It looks like there'll also have to be one scroll speed lane per branch type
@@ -784,9 +797,10 @@ namespace PeepoDrumKit
 			{
 				if (IsBeatInsideBranchRange(course, it.BeatTime) == isUnbranchedNotesRow)
 					continue;
-				const Time startTime = context.BeatToTime(it.GetStart()) + it.TimeOffset;
-				const Time endTime = (it.BeatDuration > Beat::Zero()) ? context.BeatToTime(it.GetEnd()) + it.TimeOffset : startTime;
-				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
+				const Time startTime = context.TimelineBeatToTime(it.GetStart(), noteBranch);
+				const Time endTime = (it.BeatDuration > Beat::Zero()) ? context.TimelineBeatToTime(it.GetEnd(), noteBranch) : startTime;
+				const f32 alpha = context.TimelineRealTime && course.TempoMap.GetDelaySegment(it.BeatTime, EnumToIndex(noteBranch)) != cursorDelaySegment ? 0.35f : 1.0f;
+				if (Max(startTime, endTime) < visibleTime.Min || Min(startTime, endTime) > visibleTime.Max)
 					continue;
 
 				const vec2 localTL = vec2(timeline.Camera.TimeToLocalSpaceX(startTime), rowIt.LocalY);
@@ -798,26 +812,23 @@ namespace PeepoDrumKit
 				{
 					localTR = vec2(timeline.Camera.TimeToLocalSpaceX(endTime), rowIt.LocalY);
 					localCenterEnd = localTR + vec2(0.0f, rowIt.LocalHeight * 0.5f);
-					DrawTimelineNoteDuration(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), timeline.LocalToScreenSpace(localCenterEnd), it.Type);
+					DrawTimelineNoteDuration(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), timeline.LocalToScreenSpace(localCenterEnd), it.Type, alpha);
 				}
 
-				const f32 noteScaleFactor = GetTimelineNoteScaleFactor(param.IsPlayback, param.CursorTime, param.CursorBeatOnPlaybackStart, it, startTime);
-				DrawTimelineNote(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.Type);
+				const f32 noteScaleFactor = GetTimelineNoteScaleFactor(param.IsPlayback, param.CursorTime, param.CursorBeatOnPlaybackStart, it, course.TempoMap.BeatToTime(it.GetStart(), EnumToIndex(noteBranch)));
+				DrawTimelineNote(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.Type, alpha);
 
 				if (IsBalloonNote(it.Type) || it.BalloonPopCount > 0)
-					DrawTimelineNoteBalloonPopCount(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.BalloonPopCount);
+					DrawTimelineNoteBalloonPopCount(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.BalloonPopCount, alpha);
 
 				if (it.IsSelected)
 				{
-					// NOTE: Draw the note itself with the time offset applied but draw the hitbox at the original beat center
-					const f32 localSpaceTimeOffsetX = timeline.Camera.WorldToLocalSpaceScale(vec2(timeline.Camera.TimeToWorldSpaceX(it.TimeOffset), 0.0f)).x;
-
 					const vec2 hitBoxSize = vec2(GuiScale((IsBigNote(it.Type) ? TimelineSelectedNoteHitBoxSizeBig : TimelineSelectedNoteHitBoxSizeSmall)));
-					timeline.TempSelectionBoxesDrawBuffer.push_back(ChartTimeline::TempDrawSelectionBox { Rect::FromCenterSize(timeline.LocalToScreenSpace(localCenter - vec2(localSpaceTimeOffsetX, 0.0f)), hitBoxSize), TimelineSelectedNoteBoxBackgroundColor, TimelineSelectedNoteBoxBorderColor });
+					timeline.TempSelectionBoxesDrawBuffer.push_back(ChartTimeline::TempDrawSelectionBox { Rect::FromCenterSize(timeline.LocalToScreenSpace(localCenter), hitBoxSize), TimelineSelectedNoteBoxBackgroundColor, TimelineSelectedNoteBoxBorderColor });
 					if (it.BeatDuration > Beat::Zero())
-						timeline.TempSelectionBoxesDrawBuffer.push_back(ChartTimeline::TempDrawSelectionBox{ Rect::FromCenterSize(timeline.LocalToScreenSpace(localCenterEnd - vec2(localSpaceTimeOffsetX, 0.0f)), hitBoxSize), TimelineSelectedNoteBoxBackgroundColor, TimelineSelectedNoteBoxBorderColor });
+						timeline.TempSelectionBoxesDrawBuffer.push_back(ChartTimeline::TempDrawSelectionBox{ Rect::FromCenterSize(timeline.LocalToScreenSpace(localCenterEnd), hitBoxSize), TimelineSelectedNoteBoxBackgroundColor, TimelineSelectedNoteBoxBorderColor });
 
-					DrawTimelineNoteCombo(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter - vec2(localSpaceTimeOffsetX, hitBoxSize.y / 2)), noteScaleFactor, it.TempComboCount, IsComboNote(it.Type));
+					DrawTimelineNoteCombo(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter - vec2(0.0f, hitBoxSize.y / 2)), noteScaleFactor, it.TempComboCount, IsComboNote(it.Type), alpha);
 				}
 			}
 
@@ -829,7 +840,7 @@ namespace PeepoDrumKit
 					if (data.Branch != branchForThisRow)
 						continue;
 
-					const Time startTime = context.BeatToTime(data.OriginalNote.BeatTime) + data.OriginalNote.TimeOffset;
+					const Time startTime = context.TimelineBeatToTime(data.OriginalNote.BeatTime, data.Branch);
 					const Time endTime = startTime;
 					if (endTime < visibleTime.Min || startTime > visibleTime.Max)
 						continue;
@@ -858,9 +869,9 @@ namespace PeepoDrumKit
 			if (timeline.LongNotePlacement.IsActive && context.ChartSelectedBranch == branchForThisRow && previewBelongsToRow)
 			{
 				const Beat minBeatAfter = timeline.LongNotePlacement.GetMin(), maxBeat = timeline.LongNotePlacement.GetMax();
-				const vec2 localTL = vec2(timeline.Camera.TimeToLocalSpaceX(context.BeatToTime(minBeatAfter)), rowIt.LocalY);
+				const vec2 localTL = vec2(timeline.Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(minBeatAfter)), rowIt.LocalY);
 				const vec2 localCenter = localTL + vec2(0.0f, rowIt.LocalHeight * 0.5f);
-				const vec2 localTR = vec2(timeline.Camera.TimeToLocalSpaceX(context.BeatToTime(maxBeat)), rowIt.LocalY);
+				const vec2 localTR = vec2(timeline.Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(maxBeat)), rowIt.LocalY);
 				const vec2 localCenterEnd = localTR + vec2(0.0f, rowIt.LocalHeight * 0.5f);
 				DrawTimelineNoteDuration(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), timeline.LocalToScreenSpace(localCenterEnd), timeline.LongNotePlacement.NoteType, 0.7f);
 				DrawTimelineNote(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), 1.0f, timeline.LongNotePlacement.NoteType, 0.7f);
@@ -877,8 +888,8 @@ namespace PeepoDrumKit
 		{
 			for (const GoGoRange& it : list)
 			{
-				const Time startTime = context.BeatToTime(it.GetStart());
-				const Time endTime = context.BeatToTime(it.GetEnd());
+				const Time startTime = context.TimelineBeatToTime(it.GetStart());
+				const Time endTime = context.TimelineBeatToTime(it.GetEnd());
 				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
 					continue;
 
@@ -902,8 +913,8 @@ namespace PeepoDrumKit
 					continue;
 
 				const Beat nowBeat = (thisLyric.BeatTime <= chartBeatDuration) ? chartBeatDuration : Beat::FromTicks(I32Max);
-				const Time startTime = context.BeatToTime(thisLyric.BeatTime);
-				const Time endTime = context.BeatToTime(thisLyric.Lyric.empty() ? thisLyric.BeatTime : (nextLyric != nullptr) ? nextLyric->BeatTime : nowBeat);
+				const Time startTime = context.TimelineBeatToTime(thisLyric.BeatTime);
+				const Time endTime = context.TimelineBeatToTime(thisLyric.Lyric.empty() ? thisLyric.BeatTime : (nextLyric != nullptr) ? nextLyric->BeatTime : nowBeat);
 				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
 					continue;
 
@@ -946,7 +957,7 @@ namespace PeepoDrumKit
 
 			for (const auto& it : list)
 			{
-				const Time startTime = context.BeatToTime(GetBeat(it));
+				const Time startTime = context.TimelineBeatToTime(GetBeat(it));
 				Time endTime = startTime;
 				if constexpr (std::is_same_v<T, JPOSScrollChange>) {
 					endTime = startTime + Time::FromSec(it.Duration);
@@ -964,6 +975,7 @@ namespace PeepoDrumKit
 				{
 					[[maybe_unused]] char b[32]; std::string_view text; u32 lineColor = TimelineDefaultLineColor; u32 textColor = TimelineItemTextColor;
 					if constexpr (std::is_same_v<T, TempoChange>) { text = std::string_view(b, sprintf_s(b, useCompactFormat ? "%.0f BPM" : "%g BPM", it.Tempo.BPM)); lineColor = TimelineTempoChangeLineColor; }
+					if constexpr (std::is_same_v<T, DelayChange>) { text = std::string_view(b, sprintf_s(b, "%+g ms", it.Duration.ToMS())); lineColor = TimelineSuddenChangeLineColor; }
 					if constexpr (std::is_same_v<T, TimeSignatureChange>) { text = std::string_view(b, sprintf_s(b, "%d/%d", it.Signature.Numerator, it.Signature.Denominator)); lineColor = TimelineSignatureChangeLineColor; textColor = IsTimeSignatureSupported(it.Signature) ? TimelineItemTextColor : TimelineItemTextColorWarning; }
 					if constexpr (std::is_same_v<T, ScrollChange>) { text = std::string_view(b, sprintf_s(b, "%sx", it.ScrollSpeed.toStringCompat("x\n").c_str())); lineColor = it.ScrollSpeed.IsReal() ? TimelineScrollChangeLineColor : TimelineScrollChangeComplexLineColor; }
 					if constexpr (std::is_same_v<T, BarLineChange>) { text = it.IsVisible ? "On" : "Off"; lineColor = TimelineBarLineChangeLineColor; }
@@ -1020,7 +1032,7 @@ namespace PeepoDrumKit
 		return Clamp(TimeToScrollbarLocalSpaceX(time, regions, chartDuration), 1.0f, regions.ContentScrollbarX.GetWidth() - 2.0f);
 	}
 
-	static void DrawTimelineScrollbarXWaveform(const ChartTimeline& timeline, ImDrawList* drawList, Time chartSongOffset, Time chartDuration, const Audio::WaveformMipChain& waveformL, const Audio::WaveformMipChain& waveformR, f32 waveformAnimation)
+	static void DrawTimelineScrollbarXWaveform(const ChartTimeline& timeline, const ChartContext& context, ImDrawList* drawList, Time chartSongOffset, Time chartDuration, const Audio::WaveformMipChain& waveformL, const Audio::WaveformMipChain& waveformR, f32 waveformAnimation)
 	{
 		assert(!waveformL.IsEmpty());
 		const f32 waveformAnimationScale = Clamp(waveformAnimation, 0.0f, 1.0f);
@@ -1048,7 +1060,7 @@ namespace PeepoDrumKit
 
 				for (i32 chunkPixel = 0; chunkPixel < CustomDraw::WaveformPixelsPerChunk; chunkPixel++)
 				{
-					const Time timeAtPixel = (waveformTimePerPixel * static_cast<f64>(visiblePixel)) - chartSongOffset;
+					const Time timeAtPixel = context.TimelineToSongTime(waveformTimePerPixel * static_cast<f64>(visiblePixel));
 					const b8 outOfBounds = (timeAtPixel < Time::Zero() || (timeAtPixel > waveformDuration));
 
 					chunk.PerPixelAmplitude[chunkPixel] = outOfBounds ? 0.0f : (waveformAnimationScale * ClampBot(waveform.GetAmplitudeAt(waveformMip, timeAtPixel, waveformTimePerPixel), minAmplitude));
@@ -1060,7 +1072,7 @@ namespace PeepoDrumKit
 		}
 	}
 
-	static void DrawTimelineScrollbarXMinimap(const ChartTimeline& timeline, ImDrawList* drawList, const ChartCourse& course, BranchType branch, Time chartDuration)
+	static void DrawTimelineScrollbarXMinimap(const ChartTimeline& timeline, const ChartContext& context, ImDrawList* drawList, const ChartCourse& course, BranchType branch, Time chartDuration)
 	{
 		const vec2 localNoteRectSize = GuiScale(vec2(2.0f, 4.0f)); // timeline.Regions.ContentScrollbarX.GetHeight() * 0.25f;
 		const f32 localNoteCenterY = timeline.Regions.ContentScrollbarX.GetHeight() * /*0.5f*//*0.75f*/0.25f;
@@ -1068,12 +1080,12 @@ namespace PeepoDrumKit
 		// TODO: Also draw other timeline items... tempo / signature changes, gogo-time etc. (?)
 		for (const Note& note : course.GetNotes(branch))
 		{
-			const f32 localHeadX = TimeToScrollbarLocalSpaceX(course.TempoMap.BeatToTime(note.GetStart()) + note.TimeOffset, timeline.Regions, chartDuration);
+			const f32 localHeadX = TimeToScrollbarLocalSpaceX(context.TimelineBeatToTime(note.GetStart(), branch), timeline.Regions, chartDuration);
 			Rect screenNoteRect = Rect::FromCenterSize(timeline.LocalToScreenSpace_ScrollbarX(vec2(localHeadX, localNoteCenterY)), localNoteRectSize);
 
 			if (note.BeatDuration > Beat::Zero())
 			{
-				const f32 localTailX = TimeToScrollbarLocalSpaceX(course.TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset, timeline.Regions, chartDuration);
+				const f32 localTailX = TimeToScrollbarLocalSpaceX(context.TimelineBeatToTime(note.GetEnd(), branch), timeline.Regions, chartDuration);
 				screenNoteRect.BR.x += (localTailX - localHeadX);
 			}
 
@@ -1134,6 +1146,7 @@ namespace PeepoDrumKit
 				{
 					auto checkLongNoteHits = [&](i32 nHits, auto&& getHitTime, b8 playBalloonSound = false)
 					{
+						if (nHits <= 0) return;
 						auto checkHitTime = [&](i32 iHit) { return checkNoteSound(getHitTime(iHit)); };
 						auto range = Range(0, nHits, checkHitTime);
 						const b8 inBound = (checkHitTime(0) <= 0 && checkHitTime(nHits) >= 0); // inclusive check to prevent missing hits
@@ -1154,10 +1167,10 @@ namespace PeepoDrumKit
 
 					const f32 rollsPerSecond = *Settings.General.DrumrollPreviewRollsPerSecond;
 					const Time hitInterval = Time::FromSec(1.0 / rollsPerSecond);
-					const Time timeHead = course->TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset;
+					const Time timeHead = course->TempoMap.BeatToTime(note.BeatTime, EnumToIndex(branch));
 					if (IsBalloonNote(note.Type))
 					{
-						const Time timeEnd = course->TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset;
+						const Time timeEnd = course->TempoMap.BeatToTime(note.GetEnd(), EnumToIndex(branch));
 						const i32 maxHitsInDuration = static_cast<i32>(Floor((timeEnd - timeHead).ToSec() * rollsPerSecond)) + 1;
 						const i32 nHits = Min(note.BalloonPopCount, maxHitsInDuration);
 						auto getHitTime = [&](i32 iHit) { return timeHead + (hitInterval * iHit); };
@@ -1165,7 +1178,7 @@ namespace PeepoDrumKit
 					}
 					else
 					{
-						const Time timeEnd = course->TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset;
+						const Time timeEnd = course->TempoMap.BeatToTime(note.GetEnd(), EnumToIndex(branch));
 						const i32 nHits = static_cast<i32>(Ceil((timeEnd - timeHead).ToSec() * rollsPerSecond)) + 1;
 						auto getHitTime = [&](i32 iHit) { return timeHead + (hitInterval * iHit); };
 						checkLongNoteHits(nHits, getHitTime);
@@ -1173,7 +1186,7 @@ namespace PeepoDrumKit
 				}
 				else
 				{
-					checkAndPlayNoteSound(course->TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset, note.Type, pan);
+					checkAndPlayNoteSound(course->TempoMap.BeatToTime(note.BeatTime, EnumToIndex(branch)), note.Type, pan);
 				}
 			};
 
@@ -1205,7 +1218,7 @@ namespace PeepoDrumKit
 			metronome.LastProvidedNonSmoothCursorTime = nonSmoothCursorThisFrame;
 
 			const Beat cursorBeatStart = context.TimeToBeat(nonSmoothCursorThisFrame);
-			const Beat cursorBeatEnd = cursorBeatStart + Beat::FromBars(1);
+			const Beat cursorBeatEnd = context.ChartSelectedCourse->HasDelays() ? context.GetUsedBeatDurationFast() + Beat::FromBars(1) : cursorBeatStart + Beat::FromBars(1);
 			const Time cursorTimeOnPlaybackStart = context.CursorTimeOnPlaybackStart;
 
 			context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
@@ -1223,7 +1236,7 @@ namespace PeepoDrumKit
 					metronome.HasOnPlaybackStartTimeBeenPlayed = true;
 					metronome.LastPlayedBeatTime = beatTime;
 					context.SfxVoicePool.PlaySound(it.IsBar ? SoundEffectType::MetronomeBar : SoundEffectType::MetronomeBeat);
-					return ControlFlow::Break;
+					return context.ChartSelectedCourse->HasDelays() ? ControlFlow::Fallthrough : ControlFlow::Break;
 				}
 
 				if (offsetBeatTime >= nonSmoothCursorLastFrame && offsetBeatTime < nonSmoothCursorThisFrame)
@@ -1234,7 +1247,7 @@ namespace PeepoDrumKit
 						const Time startTime = Min((nonSmoothCursorThisFrame - beatTime), Time::Zero());
 						context.SfxVoicePool.PlaySound(it.IsBar ? SoundEffectType::MetronomeBar : SoundEffectType::MetronomeBeat, startTime);
 					}
-					return ControlFlow::Break;
+					return context.ChartSelectedCourse->HasDelays() ? ControlFlow::Fallthrough : ControlFlow::Break;
 				}
 
 				return ControlFlow::Fallthrough;
@@ -1385,7 +1398,7 @@ namespace PeepoDrumKit
 				case GenericList::Notes_Master:
 				{
 					const auto& in = item.Value.POD.Note;
-					bufferLength = sprintf_s(buffer, "Note { %d, %d, %d, %d, %g };\n", (in.BeatTime - baseBeat).Ticks, in.BeatDuration.Ticks, static_cast<i32>(in.Type), in.BalloonPopCount, in.TimeOffset.ToMS());
+					bufferLength = sprintf_s(buffer, "Note { %d, %d, %d, %d };\n", (in.BeatTime - baseBeat).Ticks, in.BeatDuration.Ticks, static_cast<i32>(in.Type), in.BalloonPopCount);
 				} break;
 				case GenericList::ScrollChanges_Normal:
 				case GenericList::ScrollChanges_Expert:
@@ -1427,6 +1440,13 @@ namespace PeepoDrumKit
 				{
 					const auto& in = item.Value.POD.Sudden;
 					bufferLength = sprintf_s(buffer, "Sudden { %d, %g, %g, %hhu };\n", (in.BeatTime - baseBeat).Ticks, in.AppearanceOffset.Seconds, in.MovementOffset.Seconds, in.HideRoll);
+				} break;
+				case GenericList::Delays_Normal:
+				case GenericList::Delays_Expert:
+				case GenericList::Delays_Master:
+				{
+					const auto& in = item.Value.POD.Delay;
+					bufferLength = sprintf_s(buffer, "Delay { %d, %.17g };\n", (in.BeatTime - baseBeat).Ticks, in.Duration.ToSec());
 				} break;
 				default: { assert(false); } break;
 				}
@@ -1519,7 +1539,6 @@ namespace PeepoDrumKit
 						newItemValue.BeatDuration.Ticks = parsedParams[1].I32;
 						newItemValue.Type = static_cast<NoteType>(parsedParams[2].I32);
 						newItemValue.BalloonPopCount = parsedParams[3].I32;
-						newItemValue.TimeOffset = Time::FromMS(parsedParams[4].F32);
 					}
 					else if (itemType == "ScrollSpeed")
 					{
@@ -1561,6 +1580,11 @@ namespace PeepoDrumKit
 						newItemValue.BeatTime.Ticks = parsedParams[0].I32;
 						newItemValue.Move = parsedParams[1].CPX;
 						newItemValue.Duration = parsedParams[2].F32;
+					}
+					else if (itemType == "Delay")
+					{
+						auto& newItem = out.emplace_back(); newItem.List = GenericList::Delays_Normal;
+						newItem.Value.POD.Delay = DelayChange { Beat::FromTicks(parsedParams[0].I32), Time::FromSec(parsedParams[1].F32) };
 					}
 					else if (itemType == "Sudden")
 					{
@@ -1643,6 +1667,8 @@ namespace PeepoDrumKit
 						item.List = BranchTypeToNotesList(context.ChartSelectedBranch);
 					else if (IsScrollChangesList(item.List))
 						item.List = BranchTypeToScrollChangesList(context.ChartSelectedBranch);
+					else if (IsDelaysList(item.List))
+						item.List = BranchTypeToDelaysList(context.ChartSelectedBranch);
 				const Beat baseBeat = FloorBeatToCurrentGrid(context.GetCursorBeat()) - findBaseBeat(clipboardItems);
 				for (auto& item : clipboardItems) { SetBeat(GetBeat(item) + baseBeat, item); }
 
@@ -1675,6 +1701,9 @@ namespace PeepoDrumKit
 					case GenericList::ScrollType: return check(course.ScrollTypes, item.Value.POD.ScrollType);
 					case GenericList::JPOSScroll: return check(course.JPOSScrollChanges, item.Value.POD.JPOSScroll);
 					case GenericList::Sudden: return check(course.SuddenChanges, item.Value.POD.Sudden);
+					case GenericList::Delays_Normal: return check(course.TempoMap.Delays[0], item.Value.POD.Delay);
+					case GenericList::Delays_Expert: return check(course.TempoMap.Delays[1], item.Value.POD.Delay);
+					case GenericList::Delays_Master: return check(course.TempoMap.Delays[2], item.Value.POD.Delay);
 					default: assert(false); return false;
 					}
 				};
@@ -1753,7 +1782,7 @@ namespace PeepoDrumKit
 
 			for (GenericList list = {}; list < GenericList::Count; IncrementEnum(list))
 			{
-				if (IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch))
+				if ((IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch)) || (IsDelaysList(list) && list != BranchTypeToDelaysList(context.ChartSelectedBranch)))
 					continue;
 				const i32 listCount = static_cast<i32>(GetGenericListCount(course, list));
 				if (param.ShiftDelta > 0)
@@ -1788,7 +1817,7 @@ namespace PeepoDrumKit
 			const std::string_view pattern = param.Pattern;
 			for (GenericList list = {}; list < GenericList::Count; IncrementEnum(list))
 			{
-				if (IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch))
+				if ((IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch)) || (IsDelaysList(list) && list != BranchTypeToDelaysList(context.ChartSelectedBranch)))
 					continue;
 				for (size_t i = 0, patternIndex = 0; i < GetGenericListCount(course, list); i++)
 				{
@@ -2544,7 +2573,7 @@ namespace PeepoDrumKit
 
 				if (*Settings.General.TimelinePlaybackCursorFollow)
 				{
-					const Time cursorTime = context.GetCursorTime();
+					const Time cursorTime = context.GetTimelineCursorTime();
 					f32 cursorPos = Camera.TimeToLocalSpaceX(cursorTime);
 					if (context.GetPlaybackSpeed() < 0)
 						cursorPos = Regions.Content.GetWidth() - cursorPos;
@@ -2582,7 +2611,7 @@ namespace PeepoDrumKit
 
 				SelectedItemDrag.HoverTarget = EDragTarget::None;
 				SelectedItemDrag.MouseBeatLastFrame = SelectedItemDrag.MouseBeatThisFrame;
-				SelectedItemDrag.MouseBeatThisFrame = FloorBeatToCurrentGrid(context.TimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x)));
+				SelectedItemDrag.MouseBeatThisFrame = FloorBeatToCurrentGrid(context.TimelineTimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x)));
 
 				if (selectedItemCount > 0 && Regions.Content.IsHovered && SelectedItemDrag.ActiveTarget == EDragTarget::None)
 				{
@@ -2592,6 +2621,7 @@ namespace PeepoDrumKit
 							return;
 						const GenericList list = TimelineRowToGenericList(rowIt.RowType, context.ChartSelectedBranch);
 						const b8 isNotesRow = IsNotesList(list);
+						const BranchType rowBranch = rowIt.RowType == TimelineRowType::Notes ? BranchType::Normal : IsBranchNoteRow(rowIt.RowType) ? TimelineRowToBranchType(rowIt.RowType) : context.ChartSelectedBranch;
 
 						const Rect screenRowRect = Rect(LocalToScreenSpace(vec2(0.0f, rowIt.LocalY)), LocalToScreenSpace(vec2(Regions.Content.GetWidth(), rowIt.LocalY + rowIt.LocalHeight)));
 						const vec2 screenRectCenter = screenRowRect.GetCenter();
@@ -2607,7 +2637,8 @@ namespace PeepoDrumKit
 								const b8 hasBeatDuration = TryGet<GenericMember::Beat_Duration>(selectedCourse, list, i, beatDuration);
 								const b8 hasTimeDuration = TryGet<GenericMember::F32_JPOSScrollDuration>(selectedCourse, list, i, timeDuration);
 
-								const vec2 center = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatStart)), 0.0f)).x, screenRectCenter.y);
+								if (isNotesRow && IsBeatInsideBranchRange(selectedCourse, beatStart) == (rowIt.RowType == TimelineRowType::Notes)) continue;
+								const vec2 center = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(beatStart, rowBranch)), 0.0f)).x, screenRectCenter.y);
 								vec2 centerTail = center;
 
 								f32 hitboxSize = TimelineSelectedNoteHitBoxSizeSmall;
@@ -2620,11 +2651,11 @@ namespace PeepoDrumKit
 								Rect screenHitboxTail = Rect::FromTLSize(vec2{ FLT_MAX, FLT_MAX }, vec2{ 0, 0 }); // no hitbox
 								if (hasBeatDuration && (!isNotesRow || beatDuration > Beat::Zero())) {
 									// TODO: Proper hitboxses (at least for gogo range and lyrics?)
-									centerTail = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatStart + beatDuration)), 0.0f)).x, screenRectCenter.y);
+									centerTail = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(beatStart + beatDuration, rowBranch)), 0.0f)).x, screenRectCenter.y);
 									screenHitboxTail = Rect::FromCenterSize(centerTail, vec2(GuiScale(hitboxSize)));
 								}
 								else if (hasTimeDuration) {
-									centerTail = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatStart) + Time::FromSec(timeDuration)), 0.0f)).x, screenRectCenter.y);
+									centerTail = vec2(LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(beatStart) + Time::FromSec(timeDuration)), 0.0f)).x, screenRectCenter.y);
 									screenHitboxTail = Rect::FromCenterSize(centerTail, vec2(GuiScale(hitboxSize)));
 								}
 								if (screenHitbox.Overlaps(screenHitboxTail)) {
@@ -2644,6 +2675,12 @@ namespace PeepoDrumKit
 										if (Gui::IsMouseClicked(ImGuiMouseButton_Left))
 										{
 											SelectedItemDrag.ActiveTarget = target;
+											if (context.TimelineRealTime)
+											{
+												context.SetSelectedChart(context.ChartSelectedCourse, rowBranch);
+												context.CursorBeatHint = target == EDragTarget::Tail ? beatStart + beatDuration : beatStart;
+												SelectedItemDrag.MouseBeatThisFrame = SelectedItemDrag.MouseBeatLastFrame = FloorBeatToCurrentGrid(context.TimelineTimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x)));
+											}
 											SelectedItemDrag.BeatOnMouseDown = SelectedItemDrag.MouseBeatThisFrame;
 											SelectedItemDrag.BeatDistanceMovedSoFar = Beat::Zero();
 											context.Undo.DisallowMergeForLastCommand();
@@ -2783,7 +2820,7 @@ namespace PeepoDrumKit
 						b8 allItemsCanBeMoved = true;
 						for (GenericList list = {}; list < GenericList::Count; IncrementEnum(list))
 						{
-							if (IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch))
+							if ((IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch)) || (IsDelaysList(list) && list != BranchTypeToDelaysList(context.ChartSelectedBranch)))
 								continue;
 							allItemsCanBeMoved &= checkCanSelectedItemsBeDragged(list, dragBeatIncrement, isTail);
 						}
@@ -2862,18 +2899,36 @@ namespace PeepoDrumKit
 
 			if (Regions.Content.IsHovered && SelectedItemDrag.HoverTarget == EDragTarget::None && Gui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
-				const Time oldCursorTime = context.GetCursorTime();
+				const Time oldCursorTime = context.GetTimelineCursorTime();
 				const f32 oldCursorLocalSpaceX = Camera.TimeToLocalSpaceX(oldCursorTime);
 
 				const Time timeAtMouseX = Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x);
-				const Beat newCursorBeat = FloorBeatToCurrentGrid(context.TimeToBeat(timeAtMouseX));
+				Beat newCursorBeat = FloorBeatToCurrentGrid(context.TimelineTimeToBeat(timeAtMouseX));
+				if (context.TimelineRealTime)
+				{
+					f32 closestDistance = GuiScale(TimelineSelectedNoteHitBoxSizeSmall) * 0.5f;
+					const auto& course = *context.ChartSelectedCourse;
+					ForEachTimelineRow(*this, course, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+					{
+						const f32 localY = ScreenToLocalSpace(MousePosThisFrame).y;
+						if (localY < row.LocalY || localY > row.LocalY + row.LocalHeight) return;
+						if (row.RowType != TimelineRowType::Notes && !IsBranchNoteRow(row.RowType)) return;
+						const BranchType branch = IsBranchNoteRow(row.RowType) ? TimelineRowToBranchType(row.RowType) : BranchType::Normal;
+						for (const auto& note : course.GetNotes(branch))
+						{
+							if (IsBeatInsideBranchRange(course, note.BeatTime) == (row.RowType == TimelineRowType::Notes)) continue;
+							const f32 distance = Absolute(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(note.BeatTime, branch)) - ScreenToLocalSpace(MousePosThisFrame).x);
+							if (distance <= closestDistance) { closestDistance = distance; newCursorBeat = note.BeatTime; context.SetSelectedChart(context.ChartSelectedCourse, branch); }
+						}
+					});
+				}
 
 				context.SetCursorBeat(newCursorBeat);
 				PlayNoteSoundAndHitAnimationsAtBeat(context, newCursorBeat);
 
 				if (context.GetIsPlayback())
 				{
-					const Time newCursorTime = context.BeatToTime(newCursorBeat);
+					const Time newCursorTime = context.TimelineBeatToTime(newCursorBeat);
 					const f32 localCursorX = Camera.TimeToLocalSpaceX(newCursorTime);
 					const f32 localAutoScrollLockX = Round(Regions.Content.GetWidth() * TimelineAutoScrollLockContentWidthFactor);
 
@@ -2903,7 +2958,7 @@ namespace PeepoDrumKit
 					const f32 mouseLocalSpaceX = ScreenToLocalSpace(MousePosThisFrame).x;
 					const Time mouseCursorTime = Camera.LocalSpaceXToTime(mouseLocalSpaceX);
 					const Beat oldCursorBeat = context.GetCursorBeat();
-					const Beat newCursorBeat = context.TimeToBeat(mouseCursorTime);
+					const Beat newCursorBeat = context.TimelineTimeToBeat(mouseCursorTime);
 
 					const f32 threshold = ClampBot(GuiScale(*Settings.General.TimelineScrubAutoScrollPixelThreshold), 1.0f);
 					const f32 speedMin = *Settings.General.TimelineScrubAutoScrollSpeedMin, speedMax = *Settings.General.TimelineScrubAutoScrollSpeedMax;
@@ -2942,9 +2997,10 @@ namespace PeepoDrumKit
 						}
 					}
 
-					if (newCursorBeat != oldCursorBeat)
+					if (newCursorBeat != oldCursorBeat || context.TimelineRealTime)
 					{
-						context.SetCursorBeat(newCursorBeat);
+						if (context.TimelineRealTime) context.SetCursorTime(mouseCursorTime);
+						else context.SetCursorBeat(newCursorBeat);
 						WorldSpaceCursorXAnimationCurrent = Camera.LocalToWorldSpace(vec2(mouseLocalSpaceX, 0.0f)).x;
 						if (MousePosThisFrame.x != MousePosLastFrame.x) PlayNoteSoundAndHitAnimationsAtBeat(context, newCursorBeat);
 					}
@@ -3034,7 +3090,7 @@ namespace PeepoDrumKit
 						const f32 cursorLocalSpaceXOld = Camera.TimeToLocalSpaceX_AtTarget(oldCursorBeatAndTime.Time);
 						if (cursorLocalSpaceXOld >= 0.0f && cursorLocalSpaceXOld <= Regions.Content.GetWidth())
 						{
-							const f32 cursorLocalSpaceX = Camera.TimeToLocalSpaceX(context.BeatToTime(newCursorBeat));
+							const f32 cursorLocalSpaceX = Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(newCursorBeat));
 							Camera.PositionTarget.x += (cursorLocalSpaceX - Camera.TimeToLocalSpaceX(oldCursorBeatAndTime.Time));
 							WorldSpaceCursorXAnimationCurrent = Camera.LocalToWorldSpace(vec2(cursorLocalSpaceX, 0.0f)).x;
 						}
@@ -3169,7 +3225,7 @@ namespace PeepoDrumKit
 				if (context.GetIsPlayback())
 				{
 					context.SetIsPlayback(false);
-					WorldSpaceCursorXAnimationCurrent = Camera.TimeToWorldSpaceX(context.GetCursorTime());
+					WorldSpaceCursorXAnimationCurrent = Camera.TimeToWorldSpaceX(context.GetTimelineCursorTime());
 				}
 				else
 				{
@@ -3188,6 +3244,16 @@ namespace PeepoDrumKit
 				Settings_Mutable.IsDirty = true;
 			}
 
+			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleDelayView, false))
+			{
+				const f32 oldCursorX = Camera.TimeToLocalSpaceX(context.GetTimelineCursorTime());
+				context.TimelineRealTime = !context.TimelineRealTime;
+				const f32 delta = Camera.TimeToLocalSpaceX(context.GetTimelineCursorTime()) - oldCursorX;
+				Camera.PositionTarget.x += delta;
+				Camera.PositionCurrent.x += delta;
+				Camera.PositionCurrentScrollBar.x += delta;
+				WorldSpaceCursorXAnimationCurrent = Camera.TimeToWorldSpaceX(context.GetTimelineCursorTime());
+			}
 			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_TogglePlaybackCursorFollow, false, InputModifierBehavior::Relaxed))
 			{
 				Settings_Mutable.General.TimelinePlaybackCursorFollow.Value = !Settings.General.TimelinePlaybackCursorFollow.Value;
@@ -3425,8 +3491,8 @@ namespace PeepoDrumKit
 						const vec2 screenSelectionMax = LocalToScreenSpace(Camera.WorldToLocalSpace(BoxSelection.WorldSpaceRect.GetMax()));
 						const Time selectionTimeMin = Camera.WorldSpaceXToTime(BoxSelection.WorldSpaceRect.GetMin().x);
 						const Time selectionTimeMax = Camera.WorldSpaceXToTime(BoxSelection.WorldSpaceRect.GetMax().x);
-						const Beat selectionBeatMin = context.TimeToBeat(selectionTimeMin);
-						const Beat selectionBeatMax = context.TimeToBeat(selectionTimeMax);
+						const Beat selectionBeatMin = context.TimelineTimeToBeat(selectionTimeMin);
+						const Beat selectionBeatMax = context.TimelineTimeToBeat(selectionTimeMax);
 
 						ForEachTimelineRow(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachRowData& rowIt)
 						{
@@ -3466,16 +3532,12 @@ namespace PeepoDrumKit
 								// Note: Ignore negative-length body
 								const Beat beatMin = beatStart;
 								const Beat beatMax = hasBeatDuration ? (beatStart + ClampBot(beatDuration, Beat::Zero())) : beatStart;
-								b8 isXInsideSelectionBox;
-								if (hasTimeDuration && timeDuration > 0) {
-									const Time timeMax = context.BeatToTime(beatMin) + Time::FromSec(timeDuration);
-									isXInsideSelectionBox = (((beatMin <= selectionBeatMax) && (timeMax >= selectionTimeMin))
-										&& (!(xIntersectionTest == XIntersectionTest::Tips) || (beatMin >= selectionBeatMin) || (timeMax <= selectionTimeMax)));
-								}
-								else {
-									isXInsideSelectionBox = (((beatMin <= selectionBeatMax) && (beatMax >= selectionBeatMin))
-										&& (!(xIntersectionTest == XIntersectionTest::Tips) || (beatMin >= selectionBeatMin) || (beatMax <= selectionBeatMax)));
-								}
+								const BranchType rowBranch = rowIt.RowType == TimelineRowType::Notes ? BranchType::Normal : IsBranchNoteRow(rowIt.RowType) ? TimelineRowToBranchType(rowIt.RowType) : context.ChartSelectedBranch;
+								const Time headTime = context.TimelineBeatToTime(beatMin, rowBranch);
+								const Time tailTime = hasTimeDuration ? headTime + Time::FromSec(timeDuration) : context.TimelineBeatToTime(beatMax, rowBranch);
+								const Time leftTime = Min(headTime, tailTime), rightTime = Max(headTime, tailTime);
+								const b8 isXInsideSelectionBox = (leftTime <= selectionTimeMax && rightTime >= selectionTimeMin)
+									&& (xIntersectionTest != XIntersectionTest::Tips || leftTime >= selectionTimeMin || rightTime <= selectionTimeMax);
 								const b8 isInsideSelectionBox = isXInsideSelectionBox && (screenMinY <= screenSelectionMax.y) && (screenMaxY >= screenSelectionMin.y);
 
 								switch (BoxSelection.Action)
@@ -3534,7 +3596,7 @@ namespace PeepoDrumKit
 		Gui::AnimateExponential(&context.SongJacketFadeAnimationCurrent, context.SongJacketFadeAnimationTarget, *Settings.Animation.TimelineJacketFadeSpeed); // actually displayed in Game Preview
 		Gui::AnimateExponential(&RangeSelectionExpansionAnimationCurrent, RangeSelectionExpansionAnimationTarget, *Settings.Animation.TimelineRangeSelectionExpansionSpeed);
 
-		const f32 worldSpaceCursorXAnimationTarget = Camera.TimeToWorldSpaceX(context.GetCursorTime());
+		const f32 worldSpaceCursorXAnimationTarget = Camera.TimeToWorldSpaceX(context.GetTimelineCursorTime());
 		Gui::AnimateExponential(&WorldSpaceCursorXAnimationCurrent, worldSpaceCursorXAnimationTarget, *Settings.Animation.TimelineWorldSpaceCursorXSpeed);
 
 		for (auto& course : context.Chart.Courses)
@@ -3621,7 +3683,7 @@ namespace PeepoDrumKit
 							context.SetCursorTime(newTime + context.Chart.SongOffset);
 						else
 							context.SetCursorTime(newTime);
-						ScrollToTimelinePosition(Camera, Regions, context, context.GetCursorTime());
+						ScrollToTimelinePosition(Camera, Regions, context, context.GetTimelineCursorTime());
 					};
 					if (f32 v = displayTime.Seconds; Gui::DragFloat("##DisplayTime", &v, 1, 0, 0, strDisplayTime.c_str()) && !Gui::IsItemBeingEditedAsText())
 						setDisplayTime(Time::FromSec(v));
@@ -3732,14 +3794,14 @@ namespace PeepoDrumKit
 
 			// NOTE: Waveform and cursor on top of scrollbar!
 			{
-				const Time cursorTime = context.GetCursorTime();
+				const Time cursorTime = context.GetTimelineCursorTime();
 				const Time chartDuration = GetDisplayedTimelineDuration(Camera, Regions, context);
 				const b8 isPlayback = context.GetIsPlayback();
 
 				if (!context.SongWaveformL.IsEmpty())
-					DrawTimelineScrollbarXWaveform(*this, Gui::GetWindowDrawList(), context.Chart.SongOffset, chartDuration, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
+					DrawTimelineScrollbarXWaveform(*this, context, Gui::GetWindowDrawList(), context.Chart.SongOffset, chartDuration, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
 
-				DrawTimelineScrollbarXMinimap(*this, Gui::GetWindowDrawList(), *context.ChartSelectedCourse, context.ChartSelectedBranch, chartDuration);
+				DrawTimelineScrollbarXMinimap(*this, context, Gui::GetWindowDrawList(), *context.ChartSelectedCourse, context.ChartSelectedBranch, chartDuration);
 
 				const f32 animatedCursorLocalSpaceX = TimeToScrollbarLocalSpaceXClamped(Camera.WorldSpaceXToTime(WorldSpaceCursorXAnimationCurrent), Regions, chartDuration);
 				const f32 currentCursorLocalSpaceX = TimeToScrollbarLocalSpaceXClamped(cursorTime, Regions, chartDuration);
@@ -3776,7 +3838,8 @@ namespace PeepoDrumKit
 				const Time chartDuration = GetDisplayedTimelineDuration(Camera, Regions, context);
 				const f32 localMouseX = ScreenToLocalSpace_ScrollbarX(Gui::GetMousePos()).x;
 				const f64 cursorTimeSec = ConvertRangeRClampInput(0.0f, Regions.ContentScrollbarX.GetWidth(), 0.0, chartDuration.ToSec(), localMouseX);
-				context.SetCursorTime(Time::FromSec(cursorTimeSec));
+				if (context.TimelineRealTime) context.SetCursorTime(Time::FromSec(cursorTimeSec));
+				else context.SetCursorBeat(context.TimelineTimeToBeat(Time::FromSec(cursorTimeSec)));
 			}
 
 			if (IsCameraMouseGrabActive) Gui::PopStyleColor();
@@ -3792,7 +3855,7 @@ namespace PeepoDrumKit
 		context.ElapsedProgramTimeSincePlaybackStarted = isPlayback ? context.ElapsedProgramTimeSincePlaybackStarted + Time::FromSec(Gui::DeltaTime()) : Time::Zero();
 		context.ElapsedProgramTimeSincePlaybackStopped = !isPlayback ? context.ElapsedProgramTimeSincePlaybackStopped + Time::FromSec(Gui::DeltaTime()) : Time::Zero();
 		const f32 animatedCursorLocalSpaceX = Camera.WorldToLocalSpace(vec2(WorldSpaceCursorXAnimationCurrent, 0.0f)).x;
-		const f32 currentCursorLocalSpaceX = Camera.TimeToLocalSpaceX(cursorTime);
+		const f32 currentCursorLocalSpaceX = Camera.TimeToLocalSpaceX(context.GetTimelineCursorTime());
 
 		const f32 cursorLocalSpaceX = isPlayback ? currentCursorLocalSpaceX : animatedCursorLocalSpaceX;
 		const f32 cursorHeaderTriangleLocalSpaceX = cursorLocalSpaceX + 0.5f;
@@ -3895,6 +3958,7 @@ namespace PeepoDrumKit
 					case TimelineRowType::ScrollType: DrawTimelineContentItemRowT<ScrollType, TimelineRowType::ScrollType>(rowParam, rowIt, context.ChartSelectedCourse->ScrollTypes); break;
 					case TimelineRowType::JPOSScroll: DrawTimelineContentItemRowT<JPOSScrollChange, TimelineRowType::JPOSScroll>(rowParam, rowIt, context.ChartSelectedCourse->JPOSScrollChanges); break;
 					case TimelineRowType::Sudden: DrawTimelineContentItemRowT<SuddenChange, TimelineRowType::Sudden>(rowParam, rowIt, context.ChartSelectedCourse->SuddenChanges); break;
+					case TimelineRowType::Delay: DrawTimelineContentItemRowT<DelayChange, TimelineRowType::Delay>(rowParam, rowIt, context.ChartSelectedCourse->GetDelays(context.ChartSelectedBranch)); break;
 					default: { assert(!"Missing TimelineRowType switch case"); } break;
 					}
 				});
@@ -3910,8 +3974,8 @@ namespace PeepoDrumKit
 			DrawListContent->AddRectFilled(Regions.Content.TL + vec2(borders), Regions.Content.BR - vec2(borders), TimelineBackgroundColor);
 			for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
 			{
-				const Time startTime = context.BeatToTime(branch.GetStart());
-				const Time endTime = context.BeatToTime(branch.GetEnd());
+				const Time startTime = context.TimelineBeatToTime(branch.GetStart());
+				const Time endTime = context.TimelineBeatToTime(branch.GetEnd());
 				const f32 xStart = Camera.TimeToLocalSpaceX(startTime);
 				const f32 xEnd = Camera.TimeToLocalSpaceX(endTime);
 				const vec2 topLeft = LocalToScreenSpace(vec2(xStart, 0.0f));
@@ -3930,7 +3994,7 @@ namespace PeepoDrumKit
 			else if (auto* bpmEvent = context.ChartSelectedCourse->TempoMap.Tempo.TryFindExactAtBeat(BarLineDrag.TempoEventBeat))
 			{
 				const Time targetTime = Camera.LocalSpaceXToTime(ScreenToLocalSpace(Gui::GetMousePos()).x);
-				const Time bpmStartTime = context.ChartSelectedCourse->TempoMap.BeatToTime(bpmEvent->Beat);
+				const Time bpmStartTime = context.TimelineBeatToTime(bpmEvent->Beat);
 				const Time timeDelta = targetTime - bpmStartTime;
 				const Beat beatDelta = BarLineDrag.BarBeat - bpmEvent->Beat;
 
@@ -4032,7 +4096,7 @@ namespace PeepoDrumKit
 			{
 				for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
 				{
-					const f32 localX = Camera.TimeToLocalSpaceX(context.BeatToTime(branch.GetStart()));
+					const f32 localX = Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(branch.GetStart()));
 					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(localX, 0.0f));
 					const vec2 headerScreenSpaceTL = LocalToScreenSpace_ContentHeader(vec2(localX, 0.0f));
 					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), *Settings.Appearance.BranchStartLineColor, 2.0f);
@@ -4072,8 +4136,9 @@ namespace PeepoDrumKit
 
 				const auto minMaxVisibleTime = GetMinMaxVisibleTime();
 				const Beat gridBeatSnap = GetGridBeatSnap(CurrentGridBarDivision);
-				const Beat minVisibleBeat = FloorBeatToGrid(context.TimeToBeat(minMaxVisibleTime.Min), gridBeatSnap) - gridBeatSnap;
-				const Beat maxVisibleBeat = CeilBeatToGrid(context.TimeToBeat(minMaxVisibleTime.Max), gridBeatSnap) + gridBeatSnap;
+				const b8 overlappingTime = context.TimelineRealTime && context.ChartSelectedCourse->HasDelays();
+				const Beat minVisibleBeat = overlappingTime ? Beat::Zero() : FloorBeatToGrid(context.TimelineTimeToBeat(minMaxVisibleTime.Min), gridBeatSnap) - gridBeatSnap;
+				const Beat maxVisibleBeat = overlappingTime ? context.GetUsedBeatDurationFast() : CeilBeatToGrid(context.TimelineTimeToBeat(minMaxVisibleTime.Max), gridBeatSnap) + gridBeatSnap;
 
 				const u32 gridColorHex = IsTupletBarDivision(CurrentGridBarDivision)
 					? TimelineGridSnapTupletLineColor
@@ -4090,7 +4155,7 @@ namespace PeepoDrumKit
 					GridSnapLineAnimationCurrent);
 				for (Beat beatIt = ClampBot(minVisibleBeat, Beat::Zero()); beatIt <= ClampTop(maxVisibleBeat, context.GetUsedBeatDurationFast()); beatIt += gridBeatSnap)
 				{
-					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatIt)), 0.0f));
+					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(beatIt)), 0.0f));
 					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), gridSnapLineColor);
 				}
 			}
@@ -4117,8 +4182,8 @@ namespace PeepoDrumKit
 			DrawListContentHeader->ChannelsSetCurrent(1);
 			DrawListContent->ChannelsSetCurrent(0);
 
-			vec2 localTL = vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(context.RangeSelection.Start)), 1.0f);
-			vec2 localBR = vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(context.RangeSelection.End)), Regions.Content.GetHeight() - 1.0f);
+			vec2 localTL = vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(context.RangeSelection.Start)), 1.0f);
+			vec2 localBR = vec2(Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(context.RangeSelection.End)), Regions.Content.GetHeight() - 1.0f);
 			localBR.x = LerpClamped(localTL.x, localBR.x, RangeSelectionExpansionAnimationCurrent);
 			const vec2 screenSpaceTL = LocalToScreenSpace(localTL) + vec2(!context.RangeSelection.HasEnd ? -1.0f : 0.0f, 0.0f);
 			const vec2 screenSpaceBR = LocalToScreenSpace(localBR) + vec2(!context.RangeSelection.HasEnd ? +1.0f : 0.0f, 0.0f);
@@ -4141,13 +4206,42 @@ namespace PeepoDrumKit
 		// NOTE: Background waveform
 		if (TimelineWaveformDrawOrder == WaveformDrawOrder::Background && !context.SongWaveformL.IsEmpty()) {
 			DrawListContent->ChannelsSetCurrent(0);
-			DrawTimelineContentWaveform(*this, *context.ChartSelectedCourse, DrawListContent, context.Chart.SongOffset, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
+			DrawTimelineContentWaveform(*this, context, *context.ChartSelectedCourse, DrawListContent, context.Chart.SongOffset, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
 		}
 
 		// NOTE: Background waveform overlay
 		if (TimelineWaveformDrawOrder == WaveformDrawOrder::Foreground && !context.SongWaveformL.IsEmpty()) {
 			DrawListContent->ChannelsSetCurrent(1);
-			DrawTimelineContentWaveform(*this, *context.ChartSelectedCourse, DrawListContent, context.Chart.SongOffset, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
+			DrawTimelineContentWaveform(*this, context, *context.ChartSelectedCourse, DrawListContent, context.Chart.SongOffset, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
+		}
+
+		// NOTE: Cursor foreground
+		if (context.ChartSelectedCourse->HasDelays())
+		{
+			DrawListContent->ChannelsSetCurrent(1);
+			DrawListContentHeader->ChannelsSetCurrent(1);
+			for (const auto& delay : context.ChartSelectedCourse->GetDelays(context.ChartSelectedBranch))
+			{
+				const f32 x = Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(delay.BeatTime));
+				if (x < 0 || x > Regions.Content.GetWidth()) continue;
+				const vec2 top = LocalToScreenSpace(vec2(x, 0));
+				DrawListContent->AddLine(top, top + vec2(0, Regions.Content.GetHeight()), Gui::ColorU32WithAlpha(TimelineSuddenChangeLineColor, 0.45f));
+				DrawListContentHeader->AddText(LocalToScreenSpace_ContentHeader(vec2(x + 3, 0)), TimelineItemTextColor, "//");
+				if (Regions.ContentHeader.IsHovered && Absolute(MousePosThisFrame.x - top.x) < GuiScale(8.0f))
+				{
+					Gui::SetTooltip(UI_Str("TIMELINE_DELAY_TOOLTIP"), delay.Duration.ToMS(), context.ChartSelectedCourse->TempoMap.GetDelayAtBeat(delay.BeatTime, EnumToIndex(context.ChartSelectedBranch)).ToMS());
+					if (Gui::IsMouseClicked(ImGuiMouseButton_Left)) context.SetCursorBeat(delay.BeatTime);
+				}
+			}
+			DrawListContentHeader->AddText(LocalToScreenSpace_ContentHeader(vec2(Regions.ContentHeader.GetWidth() - GuiScale(160.0f), 0)), TimelineItemTextColor,
+				UI_StrRuntime(context.TimelineRealTime ? "TIMELINE_DELAY_TIME_VIEW" : "TIMELINE_DELAY_SCORE_VIEW"));
+			if (!context.TimelineRealTime && isPlayback)
+				for (Beat matchingBeat : context.ChartSelectedCourse->TempoMap.TimeToBeats(cursorTime, EnumToIndex(context.ChartSelectedBranch)))
+				{
+					const f32 x = Camera.TimeToLocalSpaceX(context.TimelineBeatToTime(matchingBeat));
+					if (Absolute(x - cursorLocalSpaceX) < 1.0f) continue;
+					DrawListContent->AddLine(LocalToScreenSpace(vec2(x, 0)), LocalToScreenSpace(vec2(x, Regions.Content.GetHeight())), Gui::ColorU32WithAlpha(TimelineCursorColor, 0.4f));
+				}
 		}
 
 		// NOTE: Cursor foreground
