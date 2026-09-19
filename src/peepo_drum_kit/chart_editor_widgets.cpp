@@ -8,6 +8,7 @@
 #include <charconv>
 #include <filesystem>
 #include <map>
+#include <random>
 
 // TODO: Populate char[U8Max] lookup table using provided flags and index into instead of using a switch (?)
 enum class EscapeSequenceFlags : u32 { NewLines };
@@ -999,9 +1000,7 @@ namespace PeepoDrumKit
 		return out;
 	}
 
-	enum class InterpolationEasing : i32 { Linear, EaseIn, EaseOut, Geometric, Count };
-	static constexpr cstr interpolationEasingNames[] = { "Linear", "Ease In", "Ease Out", "Geometric" };
-
+	enum class InterpolationEasing : i32 { Linear, EaseIn, EaseOut, Geometric, Random, Count };
 	static InterpolationEasing GetInterpolationEasing(std::string_view label)
 	{
 		Gui::PushID(Gui::StringViewStart(label), Gui::StringViewEnd(label));
@@ -1021,12 +1020,14 @@ namespace PeepoDrumKit
 	}
 
 	template <typename T>
-	static b8 GuiPropertyRangeInterpolationEditWidget(std::string_view label, T inOutStartEnd[2], T step, T stepFast, b8 enableClamp, T minValue, T maxValue, cstr format, const cstr previewStrings[2])
+	static b8 GuiPropertyRangeInterpolationEditWidget(std::string_view label, T inOutStartEnd[2], T step, T stepFast, b8 enableClamp, T minValue, T maxValue, cstr format, const cstr previewStrings[2], InterpolationEasing* outEasing, T outRandomStartEnd[2], i32* outRandomDecimalPlaces, b8* outApplyRandom)
 	{
 		b8 wasValueChanged = false;
+		*outApplyRandom = false;
 		Gui::PushID(Gui::StringViewStart(label), Gui::StringViewEnd(label));
 		Gui::Property::PropertyTextValueFunc(label, [&]
 		{
+			const cstr interpolationEasingNames[] = { UI_Str("INTERPOLATION_EASING_LINEAR"), UI_Str("INTERPOLATION_EASING_EASE_IN"), UI_Str("INTERPOLATION_EASING_EASE_OUT"), UI_Str("INTERPOLATION_EASING_GEOMETRIC"), UI_Str("INTERPOLATION_EASING_RANDOM") };
 			i32& easingIndex = *Gui::GetStateStorage()->GetIntRef(Gui::GetID("Easing"), static_cast<i32>(InterpolationEasing::Linear));
 			InterpolationEasing easing = static_cast<InterpolationEasing>(Clamp(easingIndex, 0, EnumCountI32<InterpolationEasing> - 1));
 			f32& easingStrength = *Gui::GetStateStorage()->GetFloatRef(Gui::GetID("EasingStrength"), 0.0f);
@@ -1034,18 +1035,71 @@ namespace PeepoDrumKit
 			if (Gui::ComboEnum("##Easing", &easing, interpolationEasingNames))
 			{
 				easingIndex = static_cast<i32>(easing);
+				if (easing == InterpolationEasing::Random)
+					Gui::GetStateStorage()->SetBool(Gui::GetID("RandomRangeInitialized"), false);
 				wasValueChanged = true;
 			}
-			Gui::Spacing();
-			Gui::BeginDisabled(easing == InterpolationEasing::Linear);
-			const f32 easingStrengthMin = (easing == InterpolationEasing::Geometric) ? 1.0f : 0.0f;
-			easingStrength = Clamp(easingStrength, easingStrengthMin, 2.0f);
-			Gui::SetNextItemWidth(-1.0f);
-			if (Gui::SliderFloat(easing == InterpolationEasing::Geometric ? "Acceleration" : "Easing strength", &easingStrength, easingStrengthMin, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
-				wasValueChanged = true;
-			Gui::EndDisabled();
-			Gui::Spacing();
+			*outEasing = easing;
+			if (easing == InterpolationEasing::Random)
+			{
+				Gui::Spacing();
+				b8& randomRangeInitialized = *Gui::GetStateStorage()->GetBoolRef(Gui::GetID("RandomRangeInitialized"), false);
+				if constexpr (std::is_integral_v<T>)
+				{
+					i32& randomMinimum = *Gui::GetStateStorage()->GetIntRef(Gui::GetID("RandomMinimum"), 0);
+					i32& randomMaximum = *Gui::GetStateStorage()->GetIntRef(Gui::GetID("RandomMaximum"), 0);
+					if (!randomRangeInitialized) { randomMinimum = static_cast<i32>(Min(inOutStartEnd[0], inOutStartEnd[1])); randomMaximum = static_cast<i32>(Max(inOutStartEnd[0], inOutStartEnd[1])); randomRangeInitialized = true; }
+					outRandomStartEnd[0] = static_cast<T>(randomMinimum);
+					outRandomStartEnd[1] = static_cast<T>(randomMaximum);
+				}
+				else
+				{
+					f32& randomMinimum = *Gui::GetStateStorage()->GetFloatRef(Gui::GetID("RandomMinimum"), 0.0f);
+					f32& randomMaximum = *Gui::GetStateStorage()->GetFloatRef(Gui::GetID("RandomMaximum"), 0.0f);
+					if (!randomRangeInitialized) { randomMinimum = static_cast<f32>(Min(inOutStartEnd[0], inOutStartEnd[1])); randomMaximum = static_cast<f32>(Max(inOutStartEnd[0], inOutStartEnd[1])); randomRangeInitialized = true; }
+					outRandomStartEnd[0] = static_cast<T>(randomMinimum);
+					outRandomStartEnd[1] = static_cast<T>(randomMaximum);
+				}
 
+				const cstr randomRangeLabels[] = { UI_Str("INTERPOLATION_RANDOM_MINIMUM"), UI_Str("INTERPOLATION_RANDOM_MAXIMUM") };
+				for (i32 component = 0; component < 2; component++)
+				{
+					Gui::TextUnformatted(randomRangeLabels[component]);
+					Gui::SetNextItemWidth(-1.0f);
+					if (Gui::InputScalar_WithExtraStuff(component == 0 ? "##RandomMinimum" : "##RandomMaximum", TypeToImGuiDataType<T>, &outRandomStartEnd[component], &step, &stepFast, format, ImGuiInputTextFlags_None).ValueChanged && enableClamp)
+						outRandomStartEnd[component] = Clamp(outRandomStartEnd[component], minValue, maxValue);
+				}
+				if constexpr (std::is_integral_v<T>)
+				{
+					Gui::GetStateStorage()->SetInt(Gui::GetID("RandomMinimum"), static_cast<i32>(outRandomStartEnd[0]));
+					Gui::GetStateStorage()->SetInt(Gui::GetID("RandomMaximum"), static_cast<i32>(outRandomStartEnd[1]));
+				}
+				else
+				{
+					Gui::GetStateStorage()->SetFloat(Gui::GetID("RandomMinimum"), static_cast<f32>(outRandomStartEnd[0]));
+					Gui::GetStateStorage()->SetFloat(Gui::GetID("RandomMaximum"), static_cast<f32>(outRandomStartEnd[1]));
+				}
+				i32& decimalPlaces = *Gui::GetStateStorage()->GetIntRef(Gui::GetID("RandomDecimalPlaces"), 0);
+				if (Gui::SliderInt(UI_Str("INTERPOLATION_RANDOM_DECIMAL_PLACES"), &decimalPlaces, 0, 6, "%d", ImGuiSliderFlags_AlwaysClamp))
+					decimalPlaces = Clamp(decimalPlaces, 0, 6);
+				*outRandomDecimalPlaces = decimalPlaces;
+				if (Gui::Button(UI_Str("ACT_INTERPOLATION_APPLY_RANDOM"), { -1.0f, 0.0f }))
+					*outApplyRandom = true;
+				Gui::Spacing();
+			}
+			else if (easing != InterpolationEasing::Linear)
+			{
+				Gui::Spacing();
+				const f32 easingStrengthMin = (easing == InterpolationEasing::Geometric) ? 1.0f : 0.0f;
+				easingStrength = Clamp(easingStrength, easingStrengthMin, 2.0f);
+				Gui::SetNextItemWidth(-1.0f);
+				if (Gui::SliderFloat(easing == InterpolationEasing::Geometric ? UI_Str("INTERPOLATION_ACCELERATION") : UI_Str("INTERPOLATION_EASING_STRENGTH"), &easingStrength, easingStrengthMin, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+					wasValueChanged = true;
+				Gui::Spacing();
+			}
+
+			if (easing != InterpolationEasing::Random)
+			{
 			static constexpr i32 components = 2; // NOTE: Unicode "Rightwards Arrow" U+2192
 			static constexpr std::string_view divisionText = u8"  →  "; // "  ->  "; // " < > ";
 			const f32 divisionLabelWidth = Gui::CalcTextSize(Gui::StringViewStart(divisionText), Gui::StringViewEnd(divisionText)).x;
@@ -1083,6 +1137,7 @@ namespace PeepoDrumKit
 					Gui::SameLine(0.0f, 0.0f);
 				}
 				Gui::PopID();
+			}
 			}
 		});
 		Gui::PopID();
@@ -2062,11 +2117,17 @@ namespace PeepoDrumKit
 			{
 				const f64 start = static_cast<f64>(startValue);
 				const f64 end = static_cast<f64>(endValue);
-				if (start == 0.0 || end == 0.0 || ((start < 0.0) != (end < 0.0)))
-					return Lerp<T>(startValue, endValue, t);
-
 				const f64 acceleration = static_cast<f64>(easingStrength);
 				const f64 exponent = (start <= end) ? acceleration : (1.0 / acceleration);
+				if (start == 0.0 || end == 0.0 || ((start < 0.0) != (end < 0.0)))
+				{
+					const f64 signedLogScale = std::max(std::max(std::abs(start), std::abs(end)) * 0.01, 1e-6);
+					const auto toSignedLog = [signedLogScale](f64 value) { return std::copysign(std::log1p(std::abs(value) / signedLogScale), value); };
+					const auto fromSignedLog = [signedLogScale](f64 value) { return std::copysign(signedLogScale * std::expm1(std::abs(value)), value); };
+					const f64 signedLogValue = Lerp(toSignedLog(start), toSignedLog(end), std::pow(static_cast<f64>(t), exponent));
+					return static_cast<T>(fromSignedLog(signedLogValue));
+				}
+
 				const f64 forward = start * std::pow(end / start, std::pow(static_cast<f64>(t), exponent));
 				const f64 backward = end * std::pow(start / end, std::pow(1.0 - static_cast<f64>(t), 1.0 / exponent));
 				return static_cast<T>((forward + backward) * 0.5);
@@ -2078,6 +2139,27 @@ namespace PeepoDrumKit
 				? Lerp(t, easedTBase, easingStrength)
 				: Lerp(easedTBase, binaryT, easingStrength - 1.0f);
 			return Lerp<T>(startValue, endValue, easedT);
+		};
+		const auto getRandomValue = [](const T& startValue, const T& endValue, i32 decimalPlaces) -> T
+		{
+			const f64 minRandomValue = Min(static_cast<f64>(startValue), static_cast<f64>(endValue));
+			const f64 maxRandomValue = Max(static_cast<f64>(startValue), static_cast<f64>(endValue));
+			static std::mt19937 randomGenerator { std::random_device {}() };
+			if constexpr (std::is_integral_v<T>)
+			{
+				std::uniform_int_distribution<T> distribution(static_cast<T>(minRandomValue), static_cast<T>(maxRandomValue));
+				return distribution(randomGenerator);
+			}
+			else
+			{
+				const f64 scale = std::pow(10.0, decimalPlaces);
+				const i64 minScaledValue = static_cast<i64>(std::ceil(minRandomValue * scale));
+				const i64 maxScaledValue = static_cast<i64>(std::floor(maxRandomValue * scale));
+				if (minScaledValue > maxScaledValue)
+					return static_cast<T>(minRandomValue);
+				std::uniform_int_distribution<i64> distribution(minScaledValue, maxScaledValue);
+				return static_cast<T>(static_cast<f64>(distribution(randomGenerator)) / scale);
+			}
 		};
 
 		TempChartItem* startItem = !SelectedItems.empty() ? &SelectedItems.front() : nullptr;
@@ -2118,7 +2200,21 @@ namespace PeepoDrumKit
 
 		Gui::BeginDisabled(isSelectionTooSmall);
 		b8 valueWasChanged = false;
-		if (GuiPropertyRangeInterpolationEditWidget(label, inOutStartEnd, step, stepFast, enableClamp, minValue, maxValue, format, previewStrings)) {
+		InterpolationEasing easing = InterpolationEasing::Linear;
+		T randomStartEnd[2] = {};
+		i32 randomDecimalPlaces = 0;
+		b8 applyRandom = false;
+		const b8 interpolationSettingsChanged = GuiPropertyRangeInterpolationEditWidget(label, inOutStartEnd, step, stepFast, enableClamp, minValue, maxValue, format, previewStrings, &easing, randomStartEnd, &randomDecimalPlaces, &applyRandom);
+		if (easing == InterpolationEasing::Random)
+		{
+			if (applyRandom)
+			{
+				for (auto& thisItem : SelectedItems)
+					setValue(thisItem, getRandomValue(randomStartEnd[0], randomStartEnd[1], randomDecimalPlaces), component);
+				valueWasChanged = true;
+			}
+		}
+		else if (interpolationSettingsChanged) {
 			for (auto& thisItem : SelectedItems)
 				setValue(thisItem, getInterpolatedValue(*startItem, *endItem, thisItem, inOutStartEnd[0], inOutStartEnd[1]), component);
 			valueWasChanged = true;
@@ -2449,7 +2545,7 @@ namespace PeepoDrumKit
 
 					b8 disableChangePropertiesCommandMerge = false;
 					GenericMemberFlags outModifiedMembers = GenericMemberFlags_None;
-					for (const GenericMember member : { GenericMember::NoteType_V, GenericMember::I32_BalloonPopCount, GenericMember::Time_Offset,
+					for (const GenericMember member : { GenericMember::NoteType_V, GenericMember::I32_BalloonPopCount,
 						GenericMember::Tempo_V, GenericMember::TimeSignature_V, GenericMember::F32_ScrollSpeed, GenericMember::B8_BarLineVisible,
 						GenericMember::I8_ScrollType, GenericMember::F32_JPOSScroll, GenericMember::F32_JPOSScrollDuration,
 						GenericMember::Time_AppearanceOffset, GenericMember::Time_MovementOffset, GenericMember::B8_SuddenHideRoll,
@@ -2537,9 +2633,8 @@ namespace PeepoDrumKit
 										disableChangePropertiesCommandMerge = true;
 									}
 								});
-							}
 
-							cstr label = UI_Str("EVENT_PROP_BALLOON_POP_COUNT");
+								cstr label = UI_Str("EVENT_PROP_BALLOON_POP_COUNT");
 							MultiEditWidgetParam widgetIn = {};
 							widgetIn.DataType = ImGuiDataType_S32;
 							widgetIn.Value.I32 = sharedValues.BalloonPopCount();
@@ -2555,17 +2650,13 @@ namespace PeepoDrumKit
 							widgetIn.EnableClamp = true;
 							widgetIn.ValueClampMin.I32 = MinBalloonCount;
 							widgetIn.ValueClampMax.I32 = MaxBalloonCount;
-							Gui::BeginDisabled(!isAnyBalloonNoteSelected);
 							const MultiEditWidgetResult widgetOut = GuiPropertyMultiSelectionEditWidget(label, widgetIn);
-							Gui::EndDisabled();
 
 							auto getV = [](const TempChartItem& item, ...) { return item.MemberValues.BalloonPopCount(); };
 							auto setV = [](TempChartItem& item, auto v, ...) { if (IsBalloonNote(item.MemberValues.NoteType())) item.MemberValues.BalloonPopCount() = v; };
 							if (SetPropertyMultiSelection(SelectedItems, widgetIn, widgetOut, getV, setV))
 								valueWasChanged = true;
-							sprintf_s(labelBuffer, UI_Str("EVENT_PROP_INTERPOLATE_%s"), label);
-							if (DrawInterpolationProperty(labelBuffer, widgetIn, SelectedItems, getV, setV))
-								valueWasChanged = true;
+							}
 						} break;
 						case GenericMember::F32_JPOSScroll:
 						{
@@ -2923,7 +3014,6 @@ namespace PeepoDrumKit
 						{
 							static constexpr i32 components = 2;
 							cstr label = UI_Str("EVENT_TIME_SIGNATURE");
-							cstr label_components[2] = { UI_Str("EVENT_TIME_SIGNATURE_UPPER"), UI_Str("EVENT_TIME_SIGNATURE_LOWER") };
 							MultiEditWidgetParam widgetIn = {};
 							widgetIn.DataType = ImGuiDataType_S32;
 							widgetIn.Components = components;
@@ -2960,11 +3050,6 @@ namespace PeepoDrumKit
 							auto setV = [](TempChartItem& item, i32 v, i32 c) { item.MemberValues.TimeSignature()[c] = v; };
 							if (SetPropertyMultiSelection(SelectedItems, widgetIn, widgetOut, getV, setV))
 								valueWasChanged = true;
-							for (i32 c = 0; c < components; c++) {
-								sprintf_s(labelBuffer, UI_Str("EVENT_PROP_INTERPOLATE_%s"), label_components[c]);
-								if (DrawInterpolationProperty(labelBuffer, widgetIn, SelectedItems, getV, setV, c))
-									valueWasChanged = true;
-							}
 						} break;
 						case GenericMember::I8_ScrollType:
 						{
