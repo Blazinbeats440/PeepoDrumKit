@@ -98,7 +98,7 @@ namespace PeepoDrumKit
 		static void RefreshChart(ChartCourse* Course, ChartCourseListType<TEvent>* Map)
 		{
 			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) { Map->RebuildAccelerationStructure(); Course->RecalculateNoteStates(); }
-			else if constexpr (expect_type_v<TEvent, Note>) { Course->RecalculateNoteStates(); }
+			else if constexpr (expect_type_v<TEvent, Note, DelayChange>) { Course->RecalculateNoteStates(); }
 		}
 
 		template <typename TEvent>
@@ -332,6 +332,9 @@ namespace PeepoDrumKit
 		using UpdateTimeSignatureChange = UpdateSingleChartEvent<TimeSignatureChange>;
 
 		using AddSudden = AddSingleChartEvent<SuddenChange>;
+		using AddDelay = AddSingleChartEvent<DelayChange>;
+		using RemoveDelay = RemoveSingleChartEvent<DelayChange>;
+		using UpdateDelay = UpdateSingleChartEvent<DelayChange>;
 		using RemoveSudden = RemoveSingleChartEvent<SuddenChange>;
 		using UpdateSudden = UpdateSingleChartEvent<SuddenChange>;
 

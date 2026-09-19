@@ -31,6 +31,9 @@ namespace PeepoDrumKit
 		Time CursorNonSmoothTimeThisFrame, CursorNonSmoothTimeLastFrame;
 		// NOTE: Store cursor time as Beat while paused to avoid any floating point precision issues and make sure "SetCursorBeat(x); assert(GetCursorBeat() == x)"
 		Beat CursorBeatWhilePaused = Beat::Zero();
+		mutable Beat CursorBeatHint = Beat::Zero();
+		std::optional<Time> CursorExactTimeWhilePaused;
+		b8 TimelineRealTime = false;
 		// NOTE: Specifically to skip hit animations for notes before this time point
 		Time CursorTimeOnPlaybackStart = Time::Zero();
 
@@ -73,10 +76,23 @@ namespace PeepoDrumKit
 		Undo::UndoHistory Undo;
 
 	public:
-		inline Time BeatToTime(Beat beat) const { return ChartSelectedCourse->TempoMap.BeatToTime(beat); }
-		inline Beat TimeToBeat(Time time) const { return ChartSelectedCourse->TempoMap.TimeToBeat(time); }
-		inline Beat TimeToBeat(Time time, bool truncTo0) const { return ChartSelectedCourse->TempoMap.TimeToBeat(time, truncTo0); }
-		inline f64 BeatAndTimeToHBScrollBeatTick(Beat beat, Time time) const { return ChartSelectedCourse->TempoMap.BeatAndTimeToHBScrollBeatTick(beat, time); }
+		inline Time BeatToTime(Beat beat) const { return ChartSelectedCourse->TempoMap.BeatToTime(beat, EnumToIndex(ChartSelectedBranch)); }
+		inline Beat TimeToBeat(Time time, bool truncTo0 = false) const { return ChartSelectedCourse->TempoMap.TimeToBeat(time, truncTo0, EnumToIndex(ChartSelectedBranch), CursorBeatHint); }
+		inline f64 BeatAndTimeToHBScrollBeatTick(Beat beat, Time time) const { return ChartSelectedCourse->TempoMap.BeatAndTimeToHBScrollBeatTick(beat, time, EnumToIndex(ChartSelectedBranch)); }
+		Time TimelineBeatToTime(Beat beat) const { return TimelineBeatToTime(beat, ChartSelectedBranch); }
+		Time TimelineBeatToTime(Beat beat, BranchType branch) const
+		{
+			return TimelineRealTime ? ChartSelectedCourse->TempoMap.BeatToTime(beat, EnumToIndex(branch)) : ChartSelectedCourse->TempoMap.BeatToTimeWithoutDelay(beat);
+		}
+		Beat TimelineTimeToBeat(Time time, bool truncTo0 = false) const
+		{
+			return TimelineRealTime ? TimeToBeat(time, truncTo0) : ChartSelectedCourse->TempoMap.TimeToBeatWithoutDelay(time, truncTo0);
+		}
+		Time GetTimelineCursorTime() const { return TimelineRealTime ? GetCursorTime() : TimelineBeatToTime(GetCursorBeat()); }
+		Time TimelineToSongTime(Time time) const
+		{
+			return (TimelineRealTime ? time : time + ChartSelectedCourse->TempoMap.GetDelayAtBeat(TimelineTimeToBeat(time), EnumToIndex(ChartSelectedBranch))) - Chart.SongOffset;
+		}
 
 		Time GetUsedDuration() const { return GetUsedDuration(*ChartSelectedCourse); }
 		Time GetUsedDurationFast() const { return GetUsedDurationFast(*ChartSelectedCourse); }
@@ -94,13 +110,29 @@ namespace PeepoDrumKit
 			auto it = ChartsCompared.find(course);
 			return (it != cend(ChartsCompared)) && (it->second.find(branch) != cend(it->second));
 		}
+		b8 IsCurrentChartCourse(const ChartCourse* course) const
+		{
+			for (const auto& currentCourse : Chart.Courses)
+				if (currentCourse.get() == course)
+					return true;
+			return false;
+		}
 
 		void SetSelectedChart(ChartCourse* course, BranchType branch)
 		{
-			const b8 selectionChanged = (course != ChartSelectedCourse || branch != ChartSelectedBranch);
+			const b8 selectedCourseIsCurrent = IsCurrentChartCourse(ChartSelectedCourse);
+			const b8 selectionChanged = !selectedCourseIsCurrent || course != ChartSelectedCourse || branch != ChartSelectedBranch;
 			if (selectionChanged)
 			{
-				const Time cursorTime = !ChartSelectedCourse ? Time::Zero() : GetCursorTime();
+				// A chart import replaces Chart.Courses before selecting its first course. Do not dereference
+				// the old selected pointer after that replacement.
+				const Time cursorTime = selectedCourseIsCurrent ? GetCursorTime()
+					: GetIsPlayback() ? SongVoice.GetPositionSmooth() + Chart.SongOffset : CursorExactTimeWhilePaused.value_or(Time::Zero());
+				if (!selectedCourseIsCurrent)
+				{
+					ChartsCompared.clear();
+					CompareMode = false;
+				}
 				ChartSelectedCourse = course;
 				ChartSelectedBranch = branch;
 				SetCursorTime(cursorTime); // fix time jumping if timing is different
@@ -126,13 +158,16 @@ namespace PeepoDrumKit
 
 			if (newIsPlaying)
 			{
+				SongVoice.SetPosition(GetCursorTime() - Chart.SongOffset);
+				CursorBeatHint = CursorBeatWhilePaused;
 				CursorTimeOnPlaybackStart = (SongVoice.GetPosition() + Chart.SongOffset);
 				SongVoice.SetIsPlaying(true);
 			}
 			else
 			{
 				SongVoice.SetIsPlaying(false);
-				CursorBeatWhilePaused = ChartSelectedCourse->TempoMap.TimeToBeat((SongVoice.GetPosition() + Chart.SongOffset));
+				CursorBeatWhilePaused = CursorBeatHint = TimeToBeat(SongVoice.GetPosition() + Chart.SongOffset);
+				CursorExactTimeWhilePaused = SongVoice.GetPosition() + Chart.SongOffset;
 				SfxVoicePool.PauseAllFutureVoices();
 			}
 		}
@@ -142,7 +177,7 @@ namespace PeepoDrumKit
 			if (SongVoice.GetIsPlaying())
 				return (SongVoice.GetPositionSmooth() + Chart.SongOffset);
 			else
-				return ChartSelectedCourse->TempoMap.BeatToTime(CursorBeatWhilePaused);
+				return CursorExactTimeWhilePaused.value_or(BeatToTime(CursorBeatWhilePaused));
 		}
 
 		inline Beat GetCursorBeat() const
@@ -153,7 +188,7 @@ namespace PeepoDrumKit
 		inline Beat GetCursorBeat(bool truncTo0) const
 		{
 			if (SongVoice.GetIsPlaying())
-				return ChartSelectedCourse->TempoMap.TimeToBeat((SongVoice.GetPositionSmooth() + Chart.SongOffset), truncTo0);
+				return CursorBeatHint = TimeToBeat(SongVoice.GetPositionSmooth() + Chart.SongOffset, truncTo0);
 			else
 				return CursorBeatWhilePaused;
 		}
@@ -171,24 +206,36 @@ namespace PeepoDrumKit
 
 		inline BeatAndTime GetCursorBeatAndTime(const ChartCourse* course, bool truncTo0) const
 		{
-			if (SongVoice.GetIsPlaying()) { const Time t = (SongVoice.GetPositionSmooth() + Chart.SongOffset); return { course->TempoMap.TimeToBeat(t, truncTo0), t }; }
-			else { const Beat b = CursorBeatWhilePaused; return { b, course->TempoMap.BeatToTime(b) }; }
+			return GetCursorBeatAndTime(course, ChartSelectedBranch, truncTo0);
+		}
+
+		inline BeatAndTime GetCursorBeatAndTime(const ChartCourse* course, BranchType branch, bool truncTo0) const
+		{
+			const Time time = GetCursorTime();
+			if (!GetIsPlayback() && course == ChartSelectedCourse && branch == ChartSelectedBranch)
+				return { CursorBeatWhilePaused, time };
+			const Beat beat = course->TempoMap.TimeToBeat(time, truncTo0, EnumToIndex(branch), CursorBeatHint);
+			if (course == ChartSelectedCourse && branch == ChartSelectedBranch) CursorBeatHint = beat;
+			return { beat, time };
 		}
 
 		inline void SetCursorTime(Time newTime)
 		{
 			SongVoice.SetPosition(newTime - Chart.SongOffset);
 			CursorNonSmoothTimeThisFrame = CursorNonSmoothTimeLastFrame = newTime;
-			CursorBeatWhilePaused = ChartSelectedCourse->TempoMap.TimeToBeat(newTime);
+			CursorBeatWhilePaused = CursorBeatHint = TimeToBeat(newTime);
+			CursorExactTimeWhilePaused = newTime;
 			CursorTimeOnPlaybackStart = newTime;
 		}
 
 		inline void SetCursorBeat(Beat newBeat)
 		{
-			const Time newTime = ChartSelectedCourse->TempoMap.BeatToTime(newBeat);
+			const Time newTime = BeatToTime(newBeat);
 			SongVoice.SetPosition(newTime - Chart.SongOffset);
 			CursorNonSmoothTimeThisFrame = CursorNonSmoothTimeLastFrame = newTime;
 			CursorBeatWhilePaused = newBeat;
+			CursorExactTimeWhilePaused.reset();
+			CursorBeatHint = newBeat;
 			CursorTimeOnPlaybackStart = newTime;
 		}
 	};

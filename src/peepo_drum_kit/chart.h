@@ -266,13 +266,13 @@ namespace PeepoDrumKit
 
 	template <> constexpr std::string_view DisplayNameOfChartEvent<TempoChange> = "Tempo Change";
 	template <> constexpr std::string_view DisplayNameOfChartEvent<TimeSignatureChange> = "Time Signature Change";
+	template <> constexpr std::string_view DisplayNameOfChartEvent<DelayChange> = "Delay";
 
 	// TODO: Animations for create / delete AND for moving left / right (?)
 	struct Note
 	{
 		Beat BeatTime;
 		Beat BeatDuration;
-		Time TimeOffset;
 		f32 ClickAnimationTimeRemaining;
 		f32 ClickAnimationTimeDuration;
 		i32 BalloonPopCount;
@@ -291,7 +291,7 @@ namespace PeepoDrumKit
 	template <> constexpr std::string_view DisplayNameOfChartEvent<Note> = "Note";
 	template <> constexpr std::string_view DisplayNameOfLongChartEvent<Note> = "Long Note";
 
-	static_assert(sizeof(Note) == 40, "Accidentally introduced padding to Note struct (?)");
+	static_assert(sizeof(Note) == 32, "Accidentally introduced padding to Note struct (?)");
 
 	template <typename TEvent>
 	TEvent FallbackEvent = std::declval<TEvent>(); // Forbid usage unless specialized
@@ -300,6 +300,8 @@ namespace PeepoDrumKit
 	constexpr TempoChange FallbackEvent<TempoChange> = {Beat::Zero(), FallbackTempo};
 	template <>
 	constexpr TimeSignatureChange FallbackEvent<TimeSignatureChange> = {Beat::Zero(), FallbackTimeSignature};
+	template <>
+	constexpr DelayChange FallbackEvent<DelayChange> = {};
 
 	struct ScrollChange
 	{
@@ -516,6 +518,9 @@ namespace PeepoDrumKit
 		inline auto& GetNotes(BranchType branch) const { assert(branch < BranchType::Count); return (&Notes_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetScrollChanges(BranchType branch) { assert(branch < BranchType::Count); return (&ScrollChanges_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetScrollChanges(BranchType branch) const { assert(branch < BranchType::Count); return (&ScrollChanges_Normal)[EnumToIndex(branch)]; }
+		inline auto& GetDelays(BranchType branch) { return TempoMap.Delays[EnumToIndex(branch)]; }
+		inline const auto& GetDelays(BranchType branch) const { return TempoMap.Delays[EnumToIndex(branch)]; }
+		b8 HasDelays() const { return !TempoMap.Delays[0].empty() || !TempoMap.Delays[1].empty() || !TempoMap.Delays[2].empty(); }
 
 		void RecalculateNoteStates()
 		{
@@ -540,6 +545,8 @@ namespace PeepoDrumKit
 
 	Beat FindCourseMaxUsedBeat(const ChartCourse& course);
 	Beat FindCourseMaxUsedBeatFast(const ChartCourse& course);
+	Time FindCourseMaxUsedTime(const ChartCourse& course);
+	Beat FindCourseBeatAtDuration(const ChartCourse& course, Time duration);
 
 	// NOTE: Internal representation of a chart. Can then be imported / exported as .tja (and maybe as the native fumen binary format too eventually?)
 	struct ChartProject
@@ -576,21 +583,21 @@ namespace PeepoDrumKit
 		inline Time GetDuration() const { return (ChartDuration.Seconds < 0.0) ? Time::Zero() : ChartDuration; }
 		inline Time GetUsedDuration(const ChartCourse& course) const
 		{
-			return Max(course.TempoMap.BeatToTime(FindCourseMaxUsedBeat(course)), GetDuration());
+			return Max(FindCourseMaxUsedTime(course), GetDuration());
 		}
 		// NOTE: Will break if chart contains negative time duration sections (not supported yet)
 		inline Time GetUsedDurationFast(const ChartCourse& course) const
 		{
-			return Max(course.TempoMap.BeatToTime(FindCourseMaxUsedBeatFast(course)), GetDuration());
+			return course.HasDelays() ? GetUsedDuration(course) : Max(course.TempoMap.BeatToTime(FindCourseMaxUsedBeatFast(course)), GetDuration());
 		}
 		// NOTE: Time duration end is exclusive
 		inline Beat GetUsedBeatDuration(const ChartCourse& course) const
 		{
-			return Max(FindCourseMaxUsedBeat(course), course.TempoMap.TimeToBeat(GetDuration(), true) - Beat::FromTicks(1));
+			return Max(FindCourseMaxUsedBeat(course), FindCourseBeatAtDuration(course, GetDuration()) - Beat::FromTicks(1));
 		}
 		inline Beat GetUsedBeatDurationFast(const ChartCourse& course) const
 		{
-			return Max(FindCourseMaxUsedBeatFast(course), course.TempoMap.TimeToBeat(GetDuration(), true) - Beat::FromTicks(1));
+			return Max(FindCourseMaxUsedBeatFast(course), FindCourseBeatAtDuration(course, GetDuration()) - Beat::FromTicks(1));
 		}
 	};
 
@@ -629,6 +636,7 @@ namespace PeepoDrumKit
 	b8 CreateChartProjectFromTJA(const TJA::ParsedTJA& inTJA, ChartProject& out);
 	b8 ConvertChartProjectToTJA(const ChartProject& in, TJA::ParsedTJA& out, b8 includePeepoDrumKitComment = true);
 	b8 RunTJAChartBranchSelfTest(std::string& outError);
+	b8 RunTJADelaySelfTest(std::string& outError);
 }
 
 namespace PeepoDrumKit
@@ -649,6 +657,9 @@ namespace PeepoDrumKit
 		ScrollType,
 		JPOSScroll,
 		Sudden,
+		Delays_Normal,
+		Delays_Expert,
+		Delays_Master,
 		Count
 	};
 
@@ -705,7 +716,7 @@ namespace PeepoDrumKit
 
 // EnumNames<> is global
 template <>
-constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "ScrollType", "JPOSScroll", "Sudden",};
+constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "ScrollType", "JPOSScroll", "Sudden", "Delays_Normal", "Delays_Expert", "Delays_Master" };
 template <>
 constexpr std::string_view EnumNames<PeepoDrumKit::GenericMember>[EnumCount<PeepoDrumKit::GenericMember>] = {"IsSelected", "BarLineVisible", "BalloonPopCount", "ScrollSpeed", "BeatStart", "BeatDuration", "TimeOffset", "NoteType", "Tempo", "TimeSignature", "Lyric", "ScrollType", "JPOSScrollMove", "JPOSScrollDuration", "SuddenAppearanceOffset", "SuddenMovementOffset", "SuddenHideRoll"};
 
@@ -850,8 +861,15 @@ namespace PeepoDrumKit
 		else if constexpr (Member == GenericMember::I32_BalloonPopCount) return (std::forward<NoteT>(event).BalloonPopCount);
 		else if constexpr (Member == GenericMember::Beat_Start) return (std::forward<NoteT>(event).BeatTime);
 		else if constexpr (Member == GenericMember::Beat_Duration) return (std::forward<NoteT>(event).BeatDuration);
-		else if constexpr (Member == GenericMember::Time_Offset) return (std::forward<NoteT>(event).TimeOffset);
 		else if constexpr (Member == GenericMember::NoteType_V) return (std::forward<NoteT>(event).Type);
+	}
+
+	template <GenericMember Member, typename DelayChangeT, expect_type_t<DelayChangeT, DelayChange> = true>
+	constexpr decltype(auto) get(DelayChangeT&& event)
+	{
+		if constexpr (Member == GenericMember::B8_IsSelected) return (std::forward<DelayChangeT>(event).IsSelected);
+		else if constexpr (Member == GenericMember::Beat_Start) return (std::forward<DelayChangeT>(event).BeatTime);
+		else if constexpr (Member == GenericMember::Time_Offset) return (std::forward<DelayChangeT>(event).Duration);
 	}
 
 	template <GenericMember Member, typename ScrollChangeT, expect_type_t<ScrollChangeT, ScrollChange> = true>
@@ -1124,6 +1142,7 @@ namespace PeepoDrumKit
 			ScrollType ScrollType;
 			JPOSScrollChange JPOSScroll;
 			SuddenChange Sudden;
+			DelayChange Delay;
 
 			inline PODData() { ::memset(this, 0, sizeof(*this)); }
 		} POD;
@@ -1189,6 +1208,9 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<ChartCourseT>(course).ScrollTypes);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<ChartCourseT>(course).JPOSScrollChanges);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<ChartCourseT>(course).SuddenChanges);
+		else if constexpr (List == GenericList::Delays_Normal) return (std::forward<ChartCourseT>(course).TempoMap.Delays[0]);
+		else if constexpr (List == GenericList::Delays_Expert) return (std::forward<ChartCourseT>(course).TempoMap.Delays[1]);
+		else if constexpr (List == GenericList::Delays_Master) return (std::forward<ChartCourseT>(course).TempoMap.Delays[2]);
 		else static_assert(false, "unhandled or invalid GenericList value");
 	}
 
@@ -1212,6 +1234,7 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<GenericListStructT>(inValue).POD.ScrollType);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<GenericListStructT>(inValue).POD.JPOSScroll);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<GenericListStructT>(inValue).POD.Sudden);
+		else if constexpr (List == GenericList::Delays_Normal || List == GenericList::Delays_Expert || List == GenericList::Delays_Master) return (std::forward<GenericListStructT>(inValue).POD.Delay);
 		else static_assert(false, "unhandled or invalid GenericList value");
 	}
 
@@ -1281,6 +1304,9 @@ namespace PeepoDrumKit
 		X(GenericList::ScrollType)
 		X(GenericList::JPOSScroll)
 		X(GenericList::Sudden)
+		X(GenericList::Delays_Normal)
+		X(GenericList::Delays_Expert)
+		X(GenericList::Delays_Master)
 #undef X
 		default: assert(false); return keep_or_static_cast<TRet>(vError);
 		}
@@ -1318,6 +1344,8 @@ namespace PeepoDrumKit
 
 	// course list attribute query functions
 	constexpr b8 IsNotesList(GenericList list) { return (list == GenericList::Notes_Normal) || (list == GenericList::Notes_Expert) || (list == GenericList::Notes_Master); }
+	constexpr b8 IsDelaysList(GenericList list) { return list >= GenericList::Delays_Normal && list <= GenericList::Delays_Master; }
+	constexpr GenericList BranchTypeToDelaysList(BranchType branch) { return static_cast<GenericList>(EnumToIndex(GenericList::Delays_Normal) + EnumToIndex(branch)); }
 	constexpr b8 IsScrollChangesList(GenericList list) { return (list == GenericList::ScrollChanges_Normal) || (list == GenericList::ScrollChanges_Expert) || (list == GenericList::ScrollChanges_Master); }
 	constexpr GenericList BranchTypeToNotesList(BranchType branch)
 	{
@@ -1337,7 +1365,7 @@ namespace PeepoDrumKit
 	constexpr b8 ListHasDurations(GenericList list) { return IsNotesList(list) || (list == GenericList::GoGoRanges); }
 	constexpr b8 ListIsStartAfterLastEndRequired(GenericList list) { return IsNotesList(list); }
 	constexpr b8 ListIsItemEndBounded(GenericList list) { return IsNotesList(list) || (list == GenericList::GoGoRanges) || (list == GenericList::JPOSScroll); }
-	constexpr b8 ListHasNoteStaticEffects(GenericList list) { return (list == GenericList::TempoChanges) || IsScrollChangesList(list) || (list == GenericList::ScrollType) || (list == GenericList::Sudden); }
+	constexpr b8 ListHasNoteStaticEffects(GenericList list) { return (list == GenericList::TempoChanges) || IsScrollChangesList(list) || IsDelaysList(list) || (list == GenericList::ScrollType) || (list == GenericList::Sudden); }
 	constexpr b8 ListHasBarlineStaticEffects(GenericList list) { return ListHasNoteStaticEffects(list) || (list == GenericList::BarLineChanges); }
 
 	constexpr size_t GetGenericMember_RawByteSize(GenericMember member)
@@ -1468,6 +1496,7 @@ namespace PeepoDrumKit
 	{
 		const GenericList activeScrollChanges = BranchTypeToScrollChangesList(branch);
 		ApplyForEachGenericList([&](GenericList list, auto&& typedList) {
+			if (IsDelaysList(list) && list != BranchTypeToDelaysList(branch)) return;
 			if (IsScrollChangesList(list) && list != activeScrollChanges)
 				return;
 			for (size_t i = 0; i < typedList.size(); i++)
