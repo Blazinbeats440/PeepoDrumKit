@@ -461,6 +461,17 @@ X("SCROLL_TYPE_HBSCROLL",							"HBSCROLL") \
 X("SCROLL_TYPE_BMSCROLL",							"BMSCROLL") \
 X("EVENT_PROP_BALLOON_POP_COUNT",					"Balloon Pop Count") \
 X("EVENT_PROP_INTERPOLATE_%s",						"Interpolate: %s") \
+X("INTERPOLATION_EASING_LINEAR",						"Linear") \
+X("INTERPOLATION_EASING_EASE_IN",						"Ease In") \
+X("INTERPOLATION_EASING_EASE_OUT",						"Ease Out") \
+X("INTERPOLATION_EASING_GEOMETRIC",						"Geometric") \
+X("INTERPOLATION_EASING_RANDOM",						"Random") \
+X("INTERPOLATION_ACCELERATION",						"Acceleration") \
+X("INTERPOLATION_EASING_STRENGTH",						"Easing strength") \
+X("INTERPOLATION_RANDOM_DECIMAL_PLACES",				"Decimal Places") \
+X("INTERPOLATION_RANDOM_MINIMUM",						"Minimum") \
+X("INTERPOLATION_RANDOM_MAXIMUM",						"Maximum") \
+X("ACT_INTERPOLATION_APPLY_RANDOM",					"Apply Random") \
 X("EVENT_PROP_TIME_OFFSET",							"Time Offset") \
 X("EVENT_PROP_NOTE_TYPE",							"Note Type") \
 X("EVENT_PROP_NOTE_TYPE_SIZE",						"Note Type Size") \
