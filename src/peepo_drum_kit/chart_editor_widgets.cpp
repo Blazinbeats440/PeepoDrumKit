@@ -1831,6 +1831,11 @@ namespace PeepoDrumKit
 				HasTempoAnalysis = TempoAnalysis.IsValid();
 			}
 
+			Gui::Checkbox(UI_Str("TEMPO_FIXED_BPM"), &TempoAnalysisUseFixedBPM);
+			if (TempoAnalysisUseFixedBPM)
+				Gui::SpinFloat("##TempoAnalysisFixedBPM", &TempoAnalysisFixedBPM, 1.0f, 10.0f, "%.3f BPM", ImGuiInputTextFlags_None);
+			TempoAnalysisFixedBPM = Clamp(TempoAnalysisFixedBPM, 60.0f, 300.0f);
+
 			if (Gui::Button(UI_Str("TEMPO_ANALYZE_AUDIO"), { Gui::CalcItemWidth(), 0.0f }) && !TempoAnalysisRunning)
 			{
 				TempoAnalysis = {};
@@ -1839,9 +1844,10 @@ namespace PeepoDrumKit
 				if (const Audio::PCMSampleBuffer* sampleBuffer = Audio::Engine.GetSourceSampleBufferView(context.SongSource))
 				{
 					TempoAnalysisRunning = true;
-					TempoAnalysisFuture = std::async(std::launch::async, [sampleBuffer]
+					const f64 fixedBPM = TempoAnalysisUseFixedBPM ? TempoAnalysisFixedBPM : 0.0;
+					TempoAnalysisFuture = std::async(std::launch::async, [sampleBuffer, fixedBPM]
 					{
-						return Audio::AnalyzeTempo(*sampleBuffer);
+						return Audio::AnalyzeTempo(*sampleBuffer, Time::Zero(), Time::Zero(), fixedBPM);
 					});
 				}
 				else

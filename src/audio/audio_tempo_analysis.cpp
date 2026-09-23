@@ -14,14 +14,15 @@ namespace Audio
 			f32 Strength = 0.0f;
 		};
 
-		constexpr f64 MinBPM = 90.0;
-		constexpr f64 MaxBPM = 205.0;
-		constexpr f64 CoarseBPMStep = 0.5;
-		constexpr f64 FineBPMStep = 0.001;
+		constexpr f64 MinBPM = 60.0;
+		constexpr f64 MaxBPM = 300.0;
 		constexpr i64 AnalysisWindow = 1024;
 		constexpr i64 AnalysisHop = 512;
 		constexpr i64 MinimumOnsetDistanceMS = 80;
 		constexpr i64 GapWindowSamples = 2048;
+		constexpr f64 OffsetRefinementRangeMS = 40.0;
+		constexpr f64 OffsetRefinementStepMS = 0.5;
+		constexpr f64 CoarseCandidateMinimumDistanceBPM = 4.0;
 
 		static std::vector<Onset> FindOnsets(const PCMSampleBuffer& buffer, i64 firstFrame, i64 frameCount)
 		{
@@ -39,7 +40,7 @@ namespace Audio
 				energyPrefix[static_cast<size_t>(frame + 1)] = energyPrefix[static_cast<size_t>(frame)] + mixed * mixed;
 			}
 
-			const auto frameRMS = [&](i64 frame, i64 count)
+			const auto frameEnergy = [&](i64 frame, i64 count)
 			{
 				const i64 begin = Clamp(frame, energyBegin, lastFrame);
 				const i64 end = Clamp(frame + count, begin, lastFrame);
@@ -49,12 +50,55 @@ namespace Audio
 				return static_cast<f32>(std::sqrt(sum / static_cast<f64>(end - begin)));
 			};
 
+			const auto bandEnergy = [&](i64 frame, i64 count)
+			{
+				const i64 begin = Clamp(frame, energyBegin, lastFrame);
+				const i64 end = Clamp(frame + count, begin, lastFrame);
+				if (end <= begin)
+					return std::array<f32, 3> {};
+
+				const f64 lowCoefficient = std::exp(-2.0 * 3.141592653589793 * 180.0 / buffer.SampleRate);
+				const f64 midCoefficient = std::exp(-2.0 * 3.141592653589793 * 2200.0 / buffer.SampleRate);
+				f64 lowPass = 0.0;
+				f64 midPass = 0.0;
+				std::array<f64, 3> sum = {};
+				for (i64 sourceFrame = begin; sourceFrame < end; ++sourceFrame)
+				{
+					f64 energy = 0.0;
+					for (u32 c = 0; c < buffer.ChannelCount; ++c)
+					{
+						const f64 sample = ConvertSampleI16ToF32(buffer.InterleavedSamples[sourceFrame * buffer.ChannelCount + c]);
+						energy += sample * sample;
+					}
+					const f64 sample = std::sqrt(energy / buffer.ChannelCount);
+					lowPass = lowCoefficient * lowPass + (1.0 - lowCoefficient) * sample;
+					midPass = midCoefficient * midPass + (1.0 - midCoefficient) * sample;
+					const f64 low = lowPass;
+					const f64 mid = midPass - lowPass;
+					const f64 high = sample - midPass;
+					sum[0] += low * low;
+					sum[1] += mid * mid;
+					sum[2] += high * high;
+				}
+				const f64 inverseCount = 1.0 / static_cast<f64>(end - begin);
+				return std::array<f32, 3> {
+					static_cast<f32>(std::sqrt(sum[0] * inverseCount)),
+					static_cast<f32>(std::sqrt(sum[1] * inverseCount)),
+					static_cast<f32>(std::sqrt(sum[2] * inverseCount)),
+				};
+			};
+
 			std::vector<f32> flux;
 			for (i64 frame = firstFrame; frame < lastFrame; frame += AnalysisHop)
 			{
-				const f32 current = frameRMS(frame, AnalysisWindow);
-				const f32 previous = frameRMS(frame - AnalysisHop, AnalysisWindow);
-				flux.push_back(std::max(0.0f, current - previous));
+				const f32 current = frameEnergy(frame, AnalysisWindow);
+				const f32 previous = frameEnergy(frame - AnalysisHop, AnalysisWindow);
+				const auto currentBands = bandEnergy(frame, AnalysisWindow);
+				const auto previousBands = bandEnergy(frame - AnalysisHop, AnalysisWindow);
+				f32 bandFlux = 0.0f;
+				for (size_t band = 0; band < currentBands.size(); ++band)
+					bandFlux += std::max(0.0f, currentBands[band] - previousBands[band]);
+				flux.push_back(std::max(0.0f, current - previous) + bandFlux);
 			}
 
 			if (flux.size() < 3)
@@ -144,11 +188,65 @@ namespace Audio
 			return result;
 		}
 
-		static std::vector<f32> ComputeWaveformSlopes(const PCMSampleBuffer& buffer)
+		static void RefineTempoWithOnsets(const std::vector<Onset>& onsets, u32 sampleRate, f64 fixedBPM, TempoAnalysisCandidate& candidate)
 		{
-			std::vector<f32> slopes(static_cast<size_t>(buffer.FrameCount), 0.0f);
+			if (onsets.size() < 2 || candidate.BPM <= 0.0f)
+				return;
+
+			const b8 refineBPM = fixedBPM <= 0.0;
+			f64 interval = static_cast<f64>(sampleRate) * 60.0 / (refineBPM ? candidate.BPM : fixedBPM);
+			f64 offset = candidate.Offset.ToSec() * sampleRate;
+			for (i32 pass = 0; pass < 2; ++pass)
+			{
+				f64 totalWeight = 0.0;
+				f64 meanBeat = 0.0;
+				f64 meanFrame = 0.0;
+				for (const Onset& onset : onsets)
+				{
+					const f64 beat = std::round((onset.Frame - offset) / interval);
+					const f64 residual = onset.Frame - (offset + beat * interval);
+					if (std::abs(residual) > interval * 0.15)
+						continue;
+					const f64 weight = onset.Strength;
+					totalWeight += weight;
+					meanBeat += weight * beat;
+					meanFrame += weight * onset.Frame;
+				}
+				if (totalWeight <= 0.0)
+					return;
+				meanBeat /= totalWeight;
+				meanFrame /= totalWeight;
+
+				f64 covariance = 0.0;
+				f64 variance = 0.0;
+				for (const Onset& onset : onsets)
+				{
+					const f64 beat = std::round((onset.Frame - offset) / interval);
+					const f64 residual = onset.Frame - (offset + beat * interval);
+					if (std::abs(residual) > interval * 0.15)
+						continue;
+					const f64 weight = onset.Strength;
+					const f64 beatDelta = beat - meanBeat;
+					covariance += weight * beatDelta * (onset.Frame - meanFrame);
+					variance += weight * beatDelta * beatDelta;
+				}
+				if (refineBPM && variance > 0.0)
+					interval = covariance / variance;
+				offset = meanFrame - interval * meanBeat;
+			}
+
+			if (interval <= 0.0)
+				return;
+			candidate.BPM = static_cast<f32>(refineBPM ? static_cast<f64>(sampleRate) * 60.0 / interval : fixedBPM);
+			candidate.Offset = Time::FromSec(std::fmod(std::fmod(offset, interval) + interval, interval) / sampleRate);
+		}
+
+		static std::vector<f32> ComputeWaveformSlopes(const PCMSampleBuffer& buffer, i64 firstFrame, i64 frameCount)
+		{
+			std::vector<f32> slopes(static_cast<size_t>(frameCount), 0.0f);
 			const i64 halfWindow = std::max<i64>(1, buffer.SampleRate / 20);
-			if (buffer.FrameCount < halfWindow * 2)
+			const i64 lastFrame = firstFrame + frameCount;
+			if (frameCount < halfWindow * 2)
 				return slopes;
 
 			const auto absoluteSample = [&](i64 frame)
@@ -163,12 +261,12 @@ namespace Audio
 			f64 right = 0.0;
 			for (i64 i = 0; i < halfWindow; ++i)
 			{
-				left += absoluteSample(i);
-				right += absoluteSample(i + halfWindow);
+				left += absoluteSample(firstFrame + i);
+				right += absoluteSample(firstFrame + i + halfWindow);
 			}
-			for (i64 frame = halfWindow; frame < buffer.FrameCount - halfWindow; ++frame)
+			for (i64 frame = firstFrame + halfWindow; frame < lastFrame - halfWindow; ++frame)
 			{
-				slopes[static_cast<size_t>(frame)] = static_cast<f32>(std::max(0.0, (right - left) / static_cast<f64>(halfWindow)));
+				slopes[static_cast<size_t>(frame - firstFrame)] = static_cast<f32>(std::max(0.0, (right - left) / static_cast<f64>(halfWindow)));
 				const f64 current = absoluteSample(frame);
 				left += current - absoluteSample(frame - halfWindow);
 				right += absoluteSample(frame + halfWindow) - current;
@@ -176,35 +274,57 @@ namespace Audio
 			return slopes;
 		}
 
-		static f64 SampleSlope(const std::vector<f32>& slopes, f64 frame)
+		static f64 SampleSlope(const std::vector<f32>& slopes, i64 firstFrame, f64 frame)
 		{
-			if (slopes.empty() || frame < 0.0 || frame >= static_cast<f64>(slopes.size() - 1))
+			const f64 localFrame = frame - firstFrame;
+			if (slopes.empty() || localFrame < 0.0 || localFrame >= static_cast<f64>(slopes.size() - 1))
 				return 0.0;
-			const i64 index = static_cast<i64>(frame);
-			const f64 t = frame - static_cast<f64>(index);
+			const i64 index = static_cast<i64>(localFrame);
+			const f64 t = localFrame - static_cast<f64>(index);
 			return slopes[static_cast<size_t>(index)] * (1.0 - t) + slopes[static_cast<size_t>(index + 1)] * t;
 		}
 
-		static void RefineOffsetWithWaveform(const std::vector<f32>& slopes, u32 sampleRate, TempoAnalysisCandidate& candidate)
+		static f64 ScoreOffsetWithWaveform(const std::vector<f32>& slopes, i64 firstFrame, f64 offset, f64 interval)
+		{
+			f64 score = 0.0;
+			const f64 firstPosition = offset + std::ceil((firstFrame - offset) / interval) * interval;
+			const f64 lastFrame = static_cast<f64>(firstFrame) + static_cast<f64>(slopes.size());
+			for (f64 position = firstPosition; position < lastFrame; position += interval)
+				score += SampleSlope(slopes, firstFrame, position);
+			return score;
+		}
+
+		static void RefineOffsetWithWaveform(const std::vector<f32>& slopes, i64 firstFrame, u32 sampleRate, TempoAnalysisCandidate& candidate)
 		{
 			const f64 secondsPerBeat = 60.0 / candidate.BPM;
 			const f64 interval = secondsPerBeat * sampleRate;
-			f64 offset = candidate.Offset.ToSec() * sampleRate;
-			const f64 offbeat = std::fmod(offset + interval * 0.5, interval);
-			f64 scoreA = 0.0;
-			f64 scoreB = 0.0;
-			for (f64 positionA = offset, positionB = offbeat; positionA < slopes.size() && positionB < slopes.size(); positionA += interval, positionB += interval)
+			const f64 initialOffset = candidate.Offset.ToSec() * sampleRate;
+			const f64 range = OffsetRefinementRangeMS * sampleRate / 1000.0;
+			const f64 step = OffsetRefinementStepMS * sampleRate / 1000.0;
+			f64 bestOffset = initialOffset;
+			f64 bestScore = -1.0;
+
+			// The histogram can only locate an onset within its support window.
+			// Search around both the inferred beat and its offbeat so that the
+			// selected offset is aligned to the strongest repeated waveform rise.
+			for (const f64 baseOffset : { initialOffset, std::fmod(initialOffset + interval * 0.5, interval) })
 			{
-				scoreA += SampleSlope(slopes, positionA);
-				scoreB += SampleSlope(slopes, positionB);
+				for (f64 adjustment = -range; adjustment <= range; adjustment += step)
+				{
+					const f64 offset = std::fmod(baseOffset + adjustment + interval, interval);
+					const f64 score = ScoreOffsetWithWaveform(slopes, firstFrame, offset, interval);
+					if (score > bestScore)
+					{
+						bestScore = score;
+						bestOffset = offset;
+					}
+				}
 			}
-			if (scoreB > scoreA)
-				offset = offbeat;
-			candidate.Offset = Time::FromMS(std::round(Time::FromSec(offset / sampleRate).ToMS()));
+			candidate.Offset = Time::FromMS(std::round(Time::FromSec(bestOffset / sampleRate).ToMS()));
 		}
 	}
 
-	TempoAnalysisResult AnalyzeTempo(const PCMSampleBuffer& buffer, Time start, Time duration)
+	TempoAnalysisResult AnalyzeTempo(const PCMSampleBuffer& buffer, Time start, Time duration, f64 fixedBPM)
 	{
 		TempoAnalysisResult result;
 		if (buffer.ChannelCount == 0 || buffer.SampleRate == 0 || buffer.FrameCount <= AnalysisWindow)
@@ -212,8 +332,12 @@ namespace Audio
 
 		const i64 firstFrame = Clamp<i64>(TimeToFrames(start, buffer.SampleRate), 0, buffer.FrameCount - 1);
 		const i64 availableFrames = buffer.FrameCount - firstFrame;
+		if (availableFrames < AnalysisWindow)
+			return result;
 		const i64 requestedFrames = (duration > Time::Zero()) ? TimeToFrames(duration, buffer.SampleRate) : availableFrames;
-		const i64 frameCount = Clamp<i64>(requestedFrames, AnalysisWindow, availableFrames);
+		const i64 frameCount = std::min(requestedFrames, availableFrames);
+		if (frameCount < AnalysisWindow)
+			return result;
 		result.AnalyzedDuration = FramesToTime(frameCount, buffer.SampleRate);
 
 		const std::vector<Onset> onsets = FindOnsets(buffer, firstFrame, frameCount);
@@ -222,20 +346,42 @@ namespace Audio
 
 		const i64 minInterval = static_cast<i64>(std::ceil(static_cast<f64>(buffer.SampleRate) * 60.0 / MaxBPM));
 		const i64 maxInterval = static_cast<i64>(std::floor(static_cast<f64>(buffer.SampleRate) * 60.0 / MinBPM));
+		const b8 useFixedBPM = fixedBPM > 0.0;
+		if (useFixedBPM && (fixedBPM < MinBPM || fixedBPM > MaxBPM))
+			return result;
 		std::vector<TempoAnalysisCandidate> candidates;
-		for (i64 interval = minInterval; interval <= maxInterval; interval += 10)
-			candidates.push_back(EvaluateInterval(onsets, buffer.SampleRate, interval, 3));
+		if (useFixedBPM)
+		{
+			const i64 interval = static_cast<i64>(std::llround(static_cast<f64>(buffer.SampleRate) * 60.0 / fixedBPM));
+			candidates.push_back(EvaluateInterval(onsets, buffer.SampleRate, interval, 0));
+		}
+		else
+		{
+			for (i64 interval = minInterval; interval <= maxInterval; interval += 10)
+				candidates.push_back(EvaluateInterval(onsets, buffer.SampleRate, interval, 3));
+		}
 		std::stable_sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.Confidence > b.Confidence; });
 
 		// Refine several promising sample intervals at full resolution. This is
 		// the same interval-first search strategy used by ArrowVortex.
-		const size_t coarseCandidateCount = std::min<size_t>(candidates.size(), 8);
+		std::vector<TempoAnalysisCandidate> coarseCandidates;
+		for (const TempoAnalysisCandidate& candidate : candidates)
+		{
+			b8 duplicate = false;
+			for (const TempoAnalysisCandidate& existing : coarseCandidates)
+				duplicate |= Absolute(candidate.BPM - existing.BPM) < CoarseCandidateMinimumDistanceBPM;
+			if (!duplicate)
+				coarseCandidates.push_back(candidate);
+			if (coarseCandidates.size() >= 8)
+				break;
+		}
+		const size_t coarseCandidateCount = coarseCandidates.size();
 		std::vector<TempoAnalysisCandidate> refinedCandidates;
 		for (size_t i = 0; i < coarseCandidateCount; ++i)
 		{
-			const i64 centerInterval = static_cast<i64>(std::llround(static_cast<f64>(buffer.SampleRate) * 60.0 / candidates[i].BPM));
-			const i64 begin = std::max(minInterval, centerInterval - 10);
-			const i64 end = std::min(maxInterval, centerInterval + 10);
+			const i64 centerInterval = static_cast<i64>(std::llround(static_cast<f64>(buffer.SampleRate) * 60.0 / coarseCandidates[i].BPM));
+			const i64 begin = useFixedBPM ? centerInterval : std::max(minInterval, centerInterval - 10);
+			const i64 end = useFixedBPM ? centerInterval : std::min(maxInterval, centerInterval + 10);
 			for (i64 interval = begin; interval <= end; ++interval)
 				refinedCandidates.push_back(EvaluateInterval(onsets, buffer.SampleRate, interval, 0));
 		}
@@ -249,14 +395,18 @@ namespace Audio
 			for (size_t i = 0; i < result.CandidateCount; ++i)
 				duplicate |= Absolute(candidate.BPM - result.Candidates[i].BPM) < 4.0f;
 			if (!duplicate)
-				result.Candidates[result.CandidateCount++] = candidate;
+			{
+				TempoAnalysisCandidate refinedCandidate = candidate;
+				RefineTempoWithOnsets(onsets, buffer.SampleRate, fixedBPM, refinedCandidate);
+				result.Candidates[result.CandidateCount++] = refinedCandidate;
+			}
 		}
 
 		if (result.IsValid())
 		{
-			const std::vector<f32> slopes = ComputeWaveformSlopes(buffer);
+			const std::vector<f32> slopes = ComputeWaveformSlopes(buffer, firstFrame, frameCount);
 			for (size_t i = 0; i < result.CandidateCount; ++i)
-				RefineOffsetWithWaveform(slopes, buffer.SampleRate, result.Candidates[i]);
+				RefineOffsetWithWaveform(slopes, firstFrame, buffer.SampleRate, result.Candidates[i]);
 		}
 		return result;
 	}

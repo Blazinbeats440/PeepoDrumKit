@@ -356,6 +356,13 @@ namespace PeepoDrumKit
 
 			if (Gui::BeginMenu(UI_Str("MENU_SELECTION")))
 			{
+				if (Gui::MenuItem(UI_Str("ACT_MARKER_TOGGLE"), ToShortcutString(*Settings.Input.Timeline_ToggleMarkerAtCursor).Data))
+					timeline.ToggleMarkerAtCursor(context);
+				if (Gui::MenuItem(UI_Str("ACT_MARKER_JUMP"), ToShortcutString(*Settings.Input.Timeline_JumpToMarker).Data, nullptr, context.Marker.IsActive))
+					timeline.JumpToMarker(context);
+				if (Gui::MenuItem(UI_Str("ACT_MARKER_SELECT_RANGE"), ToShortcutString(*Settings.Input.Timeline_SelectRangeToMarker).Data, nullptr, context.Marker.IsActive))
+					timeline.SelectRangeToMarker(context);
+				Gui::Separator();
 				const b8 setRangeSelectionStartNext = (!context.RangeSelection.IsActive || context.RangeSelection.HasEnd);
 				if (Gui::MenuItem(setRangeSelectionStartNext ? UI_Str("ACT_SELECTION_START_RANGE") : UI_Str("ACT_SELECTION_END_RANGE"), ToShortcutString(*Settings.Input.Timeline_StartEndRangeSelection).Data))
 					timeline.StartEndRangeSelectionAtCursor(context);
@@ -1637,6 +1644,7 @@ namespace PeepoDrumKit
 
 		createBackupOfOriginalTJABeforeOverwriteSave = false;
 		context.Chart = {};
+		context.Marker = {};
 		context.ChartFilePath.clear();
 		context.ResetChartsCompared();
 		context.SetSelectedChart(
@@ -2091,6 +2099,7 @@ namespace PeepoDrumKit
 			createBackupOfOriginalTJABeforeOverwriteSave = !loadResult.TJA.Parsed.HasPeepoDrumKitComment;
 
 			context.Chart = std::move(loadResult.Chart);
+			context.Marker = {};
 			context.ChartFilePath = std::move(loadResult.ChartFilePath);
 			context.ResetChartsCompared();
 			context.SetSelectedChart(

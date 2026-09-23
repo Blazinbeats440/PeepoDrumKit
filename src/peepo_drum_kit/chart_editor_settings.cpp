@@ -517,6 +517,7 @@ namespace PeepoDrumKit
 			X(Audio.BufferFrameSize, "buffer_frame_size");
 
 			SECTION("appearance");
+			X(Appearance.MarkerLineColor, "marker_line_color");
 			X(Appearance.BranchStartLineColor, "branch_start_line_color");
 			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");
 			X(Appearance.PreviewBranchExpertLaneBackgroundColor, "preview_branch_expert_lane_background_color");
@@ -571,6 +572,9 @@ namespace PeepoDrumKit
 			X(Input.Timeline_Copy, "timeline_copy");
 			X(Input.Timeline_Paste, "timeline_paste");
 			X(Input.Timeline_DeleteSelection, "timeline_delete_selection");
+			X(Input.Timeline_ToggleMarkerAtCursor, "timeline_toggle_marker_at_cursor");
+			X(Input.Timeline_JumpToMarker, "timeline_jump_to_marker");
+			X(Input.Timeline_SelectRangeToMarker, "timeline_select_range_to_marker");
 			X(Input.Timeline_StartEndRangeSelection, "timeline_start_end_range_selection");
 			X(Input.Timeline_SelectAll, "timeline_select_all");
 			X(Input.Timeline_ClearSelection, "timeline_clear_selection");

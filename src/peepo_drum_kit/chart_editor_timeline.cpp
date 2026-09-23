@@ -414,6 +414,38 @@ namespace PeepoDrumKit
 		ScrollToTimelinePosition(Camera, Regions, context, context.BeatToTime(beat));
 	}
 
+	void ChartTimeline::ToggleMarkerAtCursor(ChartContext& context)
+	{
+		const Beat cursorBeat = context.GetCursorBeat();
+		if (context.Marker.IsActive && context.Marker.BeatTime == cursorBeat)
+			context.Marker.IsActive = false;
+		else
+		{
+			context.Marker.BeatTime = cursorBeat;
+			context.Marker.IsActive = true;
+		}
+	}
+
+	void ChartTimeline::JumpToMarker(ChartContext& context)
+	{
+		if (!context.Marker.IsActive || (context.GetIsPlayback() && *Settings.General.TimelineLoopPlayback))
+			return;
+
+		ScrollToBeat(context, context.Marker.BeatTime);
+	}
+
+	void ChartTimeline::SelectRangeToMarker(ChartContext& context)
+	{
+		if (!context.Marker.IsActive)
+			return;
+
+		context.RangeSelection.Start = context.GetCursorBeat();
+		context.RangeSelection.End = context.Marker.BeatTime;
+		context.RangeSelection.HasEnd = true;
+		context.RangeSelection.IsActive = true;
+		RangeSelectionExpansionAnimationTarget = 1.0f;
+	}
+
 	static void ScrollToTimelinePositionNormalized(TimelineCamera& camera, const TimelineRegions& regions, const ChartProject& chart, const ChartCourse& course, f32 normalizedTargetPosition)
 	{
 		const Time chartDuration = chart.GetUsedDurationFast(course);
@@ -2959,6 +2991,9 @@ namespace PeepoDrumKit
 					if (Gui::IsAnyPressed(*Settings.Input.Timeline_Copy, false)) ExecuteClipboardAction(context, ClipboardAction::Copy);
 					if (Gui::IsAnyPressed(*Settings.Input.Timeline_Paste, false)) ExecuteClipboardAction(context, ClipboardAction::Paste);
 					if (Gui::IsAnyPressed(*Settings.Input.Timeline_DeleteSelection, false)) ExecuteClipboardAction(context, ClipboardAction::Delete);
+					if (Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleMarkerAtCursor, false)) ToggleMarkerAtCursor(context);
+					if (Gui::IsAnyPressed(*Settings.Input.Timeline_JumpToMarker, false)) JumpToMarker(context);
+					if (Gui::IsAnyPressed(*Settings.Input.Timeline_SelectRangeToMarker, false)) SelectRangeToMarker(context);
 
 					SelectionActionParam param {};
 					auto executeScrollChangeConversion = [&]
@@ -4038,6 +4073,14 @@ namespace PeepoDrumKit
 					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), *Settings.Appearance.BranchStartLineColor, 2.0f);
 					DrawListContentHeader->AddLine(headerScreenSpaceTL, headerScreenSpaceTL + vec2(0.0f, Regions.ContentHeader.GetHeight()), *Settings.Appearance.BranchStartLineColor, 2.0f);
 				}
+			}
+			if (context.Marker.IsActive)
+			{
+				const f32 localX = Camera.TimeToLocalSpaceX(context.BeatToTime(context.Marker.BeatTime));
+				const vec2 screenSpaceTL = LocalToScreenSpace(vec2(localX, 0.0f));
+				const vec2 headerScreenSpaceTL = LocalToScreenSpace_ContentHeader(vec2(localX, 0.0f));
+				DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), *Settings.Appearance.MarkerLineColor, 2.0f);
+				DrawListContentHeader->AddLine(headerScreenSpaceTL, headerScreenSpaceTL + vec2(0.0f, Regions.ContentHeader.GetHeight()), *Settings.Appearance.MarkerLineColor, 2.0f);
 			}
 			Gui::PopFont();
 		});

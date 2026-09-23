@@ -110,6 +110,7 @@ X("TEMPO_AUTOMATIC_MEASUREMENT",					"Automatic measurement") \
 X("TEMPO_ANALYZE_AUDIO",							"Analyze audio") \
 X("TEMPO_ANALYZING_AUDIO",							"Analyzing audio...") \
 X("TEMPO_LOAD_SONG",								"Load a song before analyzing.") \
+X("TEMPO_FIXED_BPM",								"Fixed BPM") \
 X("TEMPO_APPLY",									"Apply") \
 X("TEMPO_NO_ONSET",								"No reliable onset candidates found.") \
 X("TEMPO_SONG_OFFSET",								"Song offset: %.3f ms") \
@@ -143,6 +144,7 @@ X("SETTINGS_TAB_GENERAL", "General") \
 X("SETTINGS_TAB_INPUT_BINDINGS", "Keys") \
 X("SETTINGS_TAB_AUDIO", "Audio") \
 X("SETTINGS_TAB_APPEARANCE", "Appearance") \
+X("SETTINGS_APPEARANCE_MARKER_LINE_COLOR", "Marker Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR", "Chart Preview: Expert Branch Lane Color") \
@@ -269,6 +271,9 @@ X("ACT_FILE_CLEAR_ITEMS",							"Clear Items") \
 X("ACT_FILE_OPEN_CHART_DIRECTORY",					"Open Chart Directory...") \
 X("ACT_FILE_SAVE_AS",								"Save As...") \
 /* selection menu */ \
+X("ACT_MARKER_TOGGLE", "Place/Remove Marker") \
+X("ACT_MARKER_JUMP", "Jump to Marker") \
+X("ACT_MARKER_SELECT_RANGE", "Select Range to Marker") \
 X("ACT_SELECTION_REFINE",							"Refine Selection") \
 X("ACT_SELECTION_SELECT_ALL",						"Select All") \
 X("ACT_SELECTION_SELECT_TO_CHART_END",				"Select to End of Chart") \

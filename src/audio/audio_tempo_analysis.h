@@ -23,5 +23,6 @@ namespace Audio
 	// Estimates constant-tempo candidates from decoded PCM without external libraries.
 	// Offset is the audio time of the estimated first beat. To apply it to
 	// ChartProject::SongOffset, use the negative of this value.
-	TempoAnalysisResult AnalyzeTempo(const PCMSampleBuffer& buffer, Time start = Time::Zero(), Time duration = Time::Zero());
+	// Set fixedBPM to a positive value to estimate only the offset at that tempo.
+	TempoAnalysisResult AnalyzeTempo(const PCMSampleBuffer& buffer, Time start = Time::Zero(), Time duration = Time::Zero(), f64 fixedBPM = 0.0);
 }

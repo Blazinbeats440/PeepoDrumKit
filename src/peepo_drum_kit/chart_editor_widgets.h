@@ -123,6 +123,8 @@ namespace PeepoDrumKit
 		b8 HasTempoAnalysis = false;
 		b8 IsTempoAnalysisUnavailable = false;
 		b8 TempoAnalysisRunning = false;
+		b8 TempoAnalysisUseFixedBPM = false;
+		f32 TempoAnalysisFixedBPM = 120.0f;
 		void DrawGui(ChartContext& context);
 	};
 

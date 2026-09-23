@@ -967,6 +967,7 @@ namespace PeepoDrumKit
 						Gui::PopID();
 					};
 
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_MARKER_LINE_COLOR"), settings.Appearance.MarkerLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR"), settings.Appearance.BranchStartLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR"), settings.Appearance.PreviewBranchExpertLaneBackgroundColor);
@@ -1019,6 +1020,9 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_Copy, "Timeline: Copy", },
 						{ &settings.Input.Timeline_Paste, "Timeline: Paste", },
 						{ &settings.Input.Timeline_DeleteSelection, "Timeline: Delete Selection", },
+						{ &settings.Input.Timeline_ToggleMarkerAtCursor, "Timeline: Place/Remove Marker", },
+						{ &settings.Input.Timeline_JumpToMarker, "Timeline: Jump to Marker", },
+						{ &settings.Input.Timeline_SelectRangeToMarker, "Timeline: Select Range to Marker", },
 						{ &settings.Input.Timeline_StartEndRangeSelection, "Timeline: Start/End Range Selection", },
 						{ &settings.Input.Timeline_SelectAll, "Timeline: Select All", },
 						{ &settings.Input.Timeline_ClearSelection, "Timeline: Clear Selection", },

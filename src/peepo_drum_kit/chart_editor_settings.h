@@ -186,6 +186,7 @@ namespace PeepoDrumKit
 
 		struct AppearanceData
 		{
+			WithDefault<u32> MarkerLineColor = 0xFF00FF00;
 			WithDefault<u32> BranchStartLineColor = 0xFF00FFFF;
 			WithDefault<u32> BranchAreaBackgroundColor = 0x2800FFFF;
 			WithDefault<u32> PreviewBranchExpertLaneBackgroundColor = 0x3CFF9C0B;
@@ -246,6 +247,9 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_Copy = { KeyBinding(ImGuiKey_C, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_Paste = { KeyBinding(ImGuiKey_V, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_DeleteSelection = { KeyBinding(ImGuiKey_Delete) };
+			WithDefault<MultiInputBinding> Timeline_ToggleMarkerAtCursor = { KeyBinding(ImGuiKey_M, ImGuiMod_Ctrl) };
+			WithDefault<MultiInputBinding> Timeline_JumpToMarker = { KeyBinding(ImGuiKey_M, ImGuiMod_Alt) };
+			WithDefault<MultiInputBinding> Timeline_SelectRangeToMarker = { KeyBinding(ImGuiKey_M, ImGuiMod_Shift) };
 			WithDefault<MultiInputBinding> Timeline_StartEndRangeSelection = { KeyBinding(ImGuiKey_Tab) };
 			WithDefault<MultiInputBinding> Timeline_SelectAll = { KeyBinding(ImGuiKey_A, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_ClearSelection = {};

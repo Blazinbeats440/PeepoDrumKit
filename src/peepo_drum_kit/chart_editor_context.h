@@ -45,6 +45,12 @@ namespace PeepoDrumKit
 			Beat GetDuration() const { return GetMax() - GetMin(); }
 		} RangeSelection = {};
 
+		struct MarkerData
+		{
+			Beat BeatTime;
+			b8 IsActive;
+		} Marker = {};
+
 		Time GetRangeSelectionDuration() const
 		{
 			return BeatToTime(RangeSelection.GetMax()) - BeatToTime(RangeSelection.GetMin());

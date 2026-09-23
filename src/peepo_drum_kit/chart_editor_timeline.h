@@ -359,6 +359,9 @@ namespace PeepoDrumKit
 
 		void DrawGui(ChartContext& context, b8 hasGamePreviewFocus = false);
 		void ScrollToBeat(ChartContext& context, Beat beat);
+		void ToggleMarkerAtCursor(ChartContext& context);
+		void JumpToMarker(ChartContext& context);
+		void SelectRangeToMarker(ChartContext& context);
 
 		void StartEndRangeSelectionAtCursor(ChartContext& context);
 		void PlayNoteSoundAndHitAnimationsAtBeat(ChartContext& context, Beat cursorBeat);
