@@ -188,6 +188,8 @@ X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Pl
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
+X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Auto-Step After Note Input") \
+X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC", "When enabled, the cursor advances by the current grid interval after placing a note. The shortcut is F7.") \
 X("SETTINGS_EVENT_SHOW_SUDDEN", "Chart Events: Show Sudden") \
 X("SETTINGS_EVENT_SHOW_SUDDEN_DESC", "Show the Sudden field in the Chart Events window. It is always shown when the chart contains #SUDDEN.") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \
@@ -202,6 +204,12 @@ X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY", "Timeline: Scroll Wheel Sensitivity") 
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_DESC", "The timeline distance moved per mouse wheel scroll tick.") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT", "Timeline: Scroll Wheel Sensitivity (Shift)") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT_DESC", "The timeline distance moved per mouse wheel scroll tick while holding down shift.") \
+X("SETTINGS_GRID_DIVISIONS", "Timeline: Grid Division Candidates") \
+X("SETTINGS_GRID_DIVISIONS_DESC", "Candidates selected when changing the grid division normally. Values are kept positive, sorted, and unique.") \
+X("SETTINGS_GRID_DIVISIONS_ROUGH", "Timeline: Grid Division Candidates (Shift)") \
+X("SETTINGS_GRID_DIVISIONS_ROUGH_DESC", "Candidates selected while holding Shift when changing the grid division.") \
+X("SETTINGS_GRID_DIVISIONS_PRECISE", "Timeline: Grid Division Candidates (Alt)") \
+X("SETTINGS_GRID_DIVISIONS_PRECISE_DESC", "Candidates selected while holding Alt when changing the grid division.") \
 X("SETTINGS_ANIMATION_SMOOTH_ZOOM", "Animation: Smooth UI Zoom") \
 X("SETTINGS_ANIMATION_SMOOTH_ZOOM_DESC", "Smoothly animate between UI zoom levels.") \
 X("SETTINGS_ANIMATION_SCROLL_SPEED", "Animation: Timeline Smooth Scroll Speed") \
@@ -275,6 +283,8 @@ X("ACT_MARKER_TOGGLE", "Place/Remove Marker") \
 X("ACT_MARKER_JUMP", "Jump to Marker") \
 X("ACT_MARKER_SELECT_RANGE", "Select Range to Marker") \
 X("ACT_SELECTION_REFINE",							"Refine Selection") \
+X("ACT_SELECTION_SELECT_BY_TYPE",					"Select by Type") \
+X("ACT_SELECTION_EVENTS",						"Chart Events") \
 X("ACT_SELECTION_SELECT_ALL",						"Select All") \
 X("ACT_SELECTION_SELECT_TO_CHART_END",				"Select to End of Chart") \
 X("ACT_SELECTION_CLEAR",							"Clear Selection") \
@@ -294,6 +304,7 @@ X("PROMPT_SELECTION_CUSTOM_PATTERN_DELETE",			"Delete?") \
 /* transform menu */ \
 X("ACT_TRANSFORM_FLIP_NOTE_TYPES",					"Flip Note Types") \
 X("ACT_TRANSFORM_TOGGLE_NOTE_SIZES",				"Toggle Note Sizes") \
+X("ACT_TRANSFORM_QUANTIZE_ITEMS",					"Quantize Selected Items") \
 X("ACT_TRANSFORM_SCALE_ITEMS",						"Scale/Quantize Items") \
 X("ACT_TRANSFORM_SCALE_RANGE",						"Scale/Quantize Range") \
 X("ACT_TRANSFORM_SCALE_BY_TEMPO",					"Scale by Tempo") \

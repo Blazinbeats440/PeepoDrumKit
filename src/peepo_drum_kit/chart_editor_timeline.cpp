@@ -1744,12 +1744,30 @@ namespace PeepoDrumKit
 	void ChartTimeline::ExecuteSelectionAction(ChartContext& context, SelectionAction action, const SelectionActionParam& param)
 	{
 		ChartCourse& course = *context.ChartSelectedCourse;
+		const auto isWithinRangeSelection = [&](Beat itemStart, Beat itemDuration)
+		{
+			if (!context.RangeSelection.IsActiveAndHasEnd())
+				return true;
+			return (itemStart <= context.RangeSelection.GetMax()) && (itemStart + itemDuration >= context.RangeSelection.GetMin());
+		};
 		switch (action)
 		{
 		default: { assert(false); } break;
 		case SelectionAction::SelectAll: { ForEachChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it) { SetIsSelected(true, it, course); }); } break;
 		case SelectionAction::UnselectAll: { ForEachChartItem(course, [&](const ForEachChartItemData& it) { SetIsSelected(false, it, course); }); } break;
 		case SelectionAction::InvertAll: { ForEachChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it) { SetIsSelected(!GetIsSelected(it, course), it, course); }); } break;
+		case SelectionAction::SelectNotesOfType:
+			for (Note& note : course.GetNotes(context.ChartSelectedBranch))
+				if (note.Type == param.NoteTypeToSelect && isWithinRangeSelection(note.BeatTime, note.BeatDuration))
+					note.IsSelected = true;
+			break;
+		case SelectionAction::SelectEventsOfType:
+			ForEachChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
+			{
+				if (it.List == param.EventListToSelect && isWithinRangeSelection(GetBeat(it, course), GetBeatDuration(it, course)))
+					SetIsSelected(true, it, course);
+			});
+			break;
 		case SelectionAction::SelectToEnd:
 			ForEachChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
 			{
@@ -3230,6 +3248,33 @@ namespace PeepoDrumKit
 				Settings_Mutable.IsDirty = true;
 			}
 
+			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleAutoStepAfterNoteInput, false, InputModifierBehavior::Relaxed))
+			{
+				Settings_Mutable.General.TimelineAutoStepAfterNoteInput.Value = !Settings.General.TimelineAutoStepAfterNoteInput.Value;
+				Settings_Mutable.General.TimelineAutoStepAfterNoteInput.SetHasValueIfNotDefault();
+				Settings_Mutable.IsDirty = true;
+			}
+
+			auto stepCursorForwardByCurrentGrid = [this, &context]
+			{
+				const auto oldCursorBeatAndTime = context.GetCursorBeatAndTime();
+				const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context.GetCursorBeat()) : FloorBeatToCurrentGrid(context.GetCursorBeat());
+				const Beat nextCursorBeat = cursorBeat + GetGridBeatSnap(CurrentGridBarDivision);
+				context.SetCursorBeat(nextCursorBeat);
+				PlayNoteSoundAndHitAnimationsAtBeat(context, nextCursorBeat);
+
+				if (!context.GetIsPlayback())
+				{
+					const f32 cursorLocalSpaceXOld = Camera.TimeToLocalSpaceX_AtTarget(oldCursorBeatAndTime.Time);
+					if (cursorLocalSpaceXOld >= 0.0f && cursorLocalSpaceXOld <= Regions.Content.GetWidth())
+					{
+						const f32 cursorLocalSpaceX = Camera.TimeToLocalSpaceX(context.BeatToTime(nextCursorBeat));
+						Camera.PositionTarget.x += (cursorLocalSpaceX - Camera.TimeToLocalSpaceX(oldCursorBeatAndTime.Time));
+						WorldSpaceCursorXAnimationCurrent = Camera.LocalToWorldSpace(vec2(cursorLocalSpaceX, 0.0f)).x;
+					}
+				}
+			};
+
 			auto updateNotePlacementBinding = [this, &context](const MultiInputBinding& inputBinding, NoteType noteTypeToInsert)
 			{
 				if (Gui::IsAnyPressed(inputBinding, false, InputModifierBehavior::Relaxed))
@@ -3316,10 +3361,20 @@ namespace PeepoDrumKit
 			PlaceDrumrollBindingDownThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyDown(*Settings.Input.Timeline_PlaceNoteDrumroll, InputModifierBehavior::Relaxed);
 			if (hasTimelineOrGamePreviewFocus)
 			{
+				const b8 shouldAutoStep = Settings.General.TimelineAutoStepAfterNoteInput.Value && !Gui::GetIO().KeyShift;
 				if (updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteDon, ToBigNoteIf(NoteType::Don, Gui::GetIO().KeyAlt)))
+				{
 					Gui::SetKeyOwner(ImGuiKey_ModAlt, Gui::GetItemID());
+					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
+				}
 				if (updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteKa, ToBigNoteIf(NoteType::Ka, Gui::GetIO().KeyAlt)))
+				{
 					Gui::SetKeyOwner(ImGuiKey_ModAlt, Gui::GetItemID());
+					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
+				}
+				if (Settings.General.TimelineAutoStepAfterNoteInput.Value
+					&& Gui::IsAnyPressed(*Settings.Input.Timeline_PlaceRestAndStepCursor, false, InputModifierBehavior::Relaxed))
+					stepCursorForwardByCurrentGrid();
 
 				if (PlaceBalloonBindingDownThisFrame || PlaceDrumrollBindingDownThisFrame)
 				{
@@ -3385,6 +3440,14 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_FlipNoteType, false)) ExecuteTransformAction(context, TransformAction::FlipNoteType, param);
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleNoteSize, false)) ExecuteTransformAction(context, TransformAction::ToggleNoteSize, param);
 
+				if (Gui::IsAnyPressed(*Settings.Input.Timeline_QuantizeItemTime_1To1, false)) {
+					// Temporarily force quantizing without changing the user's scale settings.
+					auto wasQuantizing = *Settings.General.TransformScale_QuantizeToGrid;
+					*Settings_Mutable.General.TransformScale_QuantizeToGrid = true;
+					ExecuteTransformAction(context, TransformAction::ScaleItemTime, param.SetTimeRatio(1, 1));
+					*Settings_Mutable.General.TransformScale_QuantizeToGrid = wasQuantizing;
+				}
+
 				// NOTE: tentatively use the same set of keybinds for item and range scale
 				TransformAction scaleAction = context.RangeSelection.IsActiveAndHasEnd() ? TransformAction::ScaleRangeTime : TransformAction::ScaleItemTime;;
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_ExpandItemTime_2To1, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(2, 1));
@@ -3394,13 +3457,6 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_CompressItemTime_2To3, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(2, 3));
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_CompressItemTime_3To4, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(3, 4));
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_CompressItemTime_0To1, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(0, 1));
-				if (Gui::IsAnyPressed(*Settings.Input.Timeline_QuantizeItemTime_1To1, false)) {
-					// temporarily force quantizing
-					auto wasQuantizing = *Settings.General.TransformScale_QuantizeToGrid;
-					*Settings_Mutable.General.TransformScale_QuantizeToGrid = true;
-					ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(1, 1));
-					*Settings_Mutable.General.TransformScale_QuantizeToGrid = wasQuantizing;
-				}
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_ReverseItemTime_N1To1, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(-1, 1));
 
 				const MultiInputBinding* customBindings[] =

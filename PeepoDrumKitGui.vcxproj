@@ -46,11 +46,13 @@
     <OutDir>$(SolutionDir)build\bin\$(Platform)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\bin-int\$(ProjectName)-$(Platform)-$(Configuration)\</IntDir>
     <TargetName>PeepoDrumKit_Debug</TargetName>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)build\bin\$(Platform)-$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\bin-int\$(ProjectName)-$(Platform)-$(Configuration)\</IntDir>
     <TargetName>PeepoDrumKit</TargetName>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

@@ -215,6 +215,7 @@ namespace PeepoDrumKit
 	enum class SelectionAction : u8 {
 		SelectAll, UnselectAll, InvertAll,
 		SelectToEnd, SelectAllWithinRangeSelection,
+		SelectNotesOfType, SelectEventsOfType,
 		PerRowShiftSelected, PerRowSelectPattern,
 	};
 	union SelectionActionParam
@@ -222,9 +223,13 @@ namespace PeepoDrumKit
 		struct { i32 ShiftDelta; };
 		struct { cstr Pattern; }; // NOTE: In the format: "xo", "xoo", "xooo", "xxoo", etc.
 		struct { Beat BeatCursor; };
+		struct { NoteType NoteTypeToSelect; };
+		struct { GenericList EventListToSelect; };
 		inline SelectionActionParam& SetShiftDelta(i32 v) { ShiftDelta = v; return *this; }
 		inline SelectionActionParam& SetPattern(cstr pattern) { Pattern = pattern; return *this; }
 		inline SelectionActionParam& SetBeatCursor(Beat beat) { BeatCursor = beat; return *this; }
+		inline SelectionActionParam& SetNoteTypeToSelect(NoteType v) { NoteTypeToSelect = v; return *this; }
+		inline SelectionActionParam& SetEventListToSelect(GenericList v) { EventListToSelect = v; return *this; }
 	};
 	enum class TransformAction : u8 { FlipNoteType, ToggleNoteSize, ScaleItemTime, ScaleRangeTime };
 	union TransformActionParam

@@ -451,6 +451,7 @@ namespace PeepoDrumKit
 #define SECTION(serializedSection) do { currentSection = serializedSection; } while (false)
 #define X(member, serializedName) do																			\
 		{																										\
+			assert(outMap.MemberCount < ArrayCount(outMap.MemberSlots));								\
 			SettingsReflectionMember& out = outMap.MemberSlots[outMap.MemberCount++];							\
 			out.ByteSizeValue = static_cast<u16>(sizeof(UserSettingsData::member.Value));						\
 			out.ByteOffsetDefault = static_cast<u16>(offsetof(UserSettingsData, member.Default));				\
@@ -479,6 +480,7 @@ namespace PeepoDrumKit
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
+			X(General.TimelineAutoStepAfterNoteInput, "timeline_auto_step_after_note_input");
 			X(General.EventShowSudden, "event_show_sudden");
 			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
 			X(General.EventShowScrollType, "event_show_scroll_type");
@@ -565,6 +567,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_PlaceNoteKa, "timeline_place_note_ka");
 			X(Input.Timeline_PlaceNoteBalloon, "timeline_place_note_balloon");
 			X(Input.Timeline_PlaceNoteDrumroll, "timeline_place_note_drumroll");
+			X(Input.Timeline_PlaceRestAndStepCursor, "timeline_place_rest_and_step_cursor");
 			X(Input.Timeline_SelectBranchNormal, "timeline_select_branch_normal");
 			X(Input.Timeline_SelectBranchExpert, "timeline_select_branch_expert");
 			X(Input.Timeline_SelectBranchMaster, "timeline_select_branch_master");
@@ -617,6 +620,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_CompressItemTime_2To3, "timeline_compress_item_time_2_to_3");
 			X(Input.Timeline_CompressItemTime_3To4, "timeline_compress_item_time_3_to_4");
 			X(Input.Timeline_CompressItemTime_0To1, "timeline_compress_item_time_0_to_1");
+			X(Input.Timeline_QuantizeItemTime_1To1, "timeline_quantize_item_time_1_to_1");
 			X(Input.Timeline_ReverseItemTime_N1To1, "timeline_reverse_item_time_n1_to_1");
 			X(Input.Timeline_ScaleItemTime_CustomA, "timeline_scale_item_time_custom_a");
 			X(Input.Timeline_ScaleItemTime_CustomB, "timeline_scale_item_time_custom_b");
@@ -659,6 +663,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_SetPlaybackSpeed_25, "timeline_set_playback_speed_25");
 			X(Input.Timeline_TogglePlayback, "timeline_toggle_playback");
 			X(Input.Timeline_TogglePlaybackCursorFollow, "timeline_toggle_playback_cursor_follow");
+			X(Input.Timeline_ToggleAutoStepAfterNoteInput, "timeline_toggle_auto_step_after_note_input");
 			X(Input.Timeline_ToggleLoopPlayback, "timeline_toggle_loop_playback");
 			X(Input.Timeline_ToggleMetronome, "timeline_toggle_metronome");
 			X(Input.TempoCalculator_Tap, "tempo_calculator_tap");
