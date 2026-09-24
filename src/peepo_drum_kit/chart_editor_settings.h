@@ -140,6 +140,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<b8> TimelinePlaybackCursorFollow = true;
 			WithDefault<b8> TimelineLoopPlayback = false;
+			WithDefault<b8> TimelineAutoStepAfterNoteInput = false;
 			WithDefault<b8> EventShowSudden = true;
 			WithDefault<b8> EventShowJPOSScroll = true;
 			WithDefault<b8> EventShowScrollType = true;
@@ -240,6 +241,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteKa = { KeyBinding(ImGuiKey_D), KeyBinding(ImGuiKey_K) };
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteBalloon = { KeyBinding(ImGuiKey_E), KeyBinding(ImGuiKey_I) };
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteDrumroll = { KeyBinding(ImGuiKey_R), KeyBinding(ImGuiKey_U) };
+			WithDefault<MultiInputBinding> Timeline_PlaceRestAndStepCursor = { KeyBinding(ImGuiKey_G), KeyBinding(ImGuiKey_H) };
 			WithDefault<MultiInputBinding> Timeline_SelectBranchNormal = { KeyBinding(ImGuiKey_1, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_SelectBranchExpert = { KeyBinding(ImGuiKey_2, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_SelectBranchMaster = { KeyBinding(ImGuiKey_3, ImGuiMod_Ctrl) };
@@ -292,7 +294,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_CompressItemTime_2To3 = {};
 			WithDefault<MultiInputBinding> Timeline_CompressItemTime_3To4 = {};
 			WithDefault<MultiInputBinding> Timeline_CompressItemTime_0To1 = {};
-			WithDefault<MultiInputBinding> Timeline_QuantizeItemTime_1To1 = {};
+			WithDefault<MultiInputBinding> Timeline_QuantizeItemTime_1To1 = { KeyBinding(ImGuiKey_Q, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_ReverseItemTime_N1To1 = {};
 			WithDefault<MultiInputBinding> Timeline_ScaleItemTime_CustomA = {};
 			WithDefault<MultiInputBinding> Timeline_ScaleItemTime_CustomB = {};
@@ -335,6 +337,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_SetPlaybackSpeed_25 = { KeyBinding(ImGuiKey_0) };
 			WithDefault<MultiInputBinding> Timeline_TogglePlayback = { KeyBinding(ImGuiKey_Space) };
 			WithDefault<MultiInputBinding> Timeline_TogglePlaybackCursorFollow = { KeyBinding(ImGuiKey_F8) };
+			WithDefault<MultiInputBinding> Timeline_ToggleAutoStepAfterNoteInput = { KeyBinding(ImGuiKey_F7) };
 			WithDefault<MultiInputBinding> Timeline_ToggleLoopPlayback = { KeyBinding(ImGuiKey_F9) };
 			WithDefault<MultiInputBinding> Timeline_ToggleMetronome = { KeyBinding(ImGuiKey_M) };
 
@@ -390,7 +393,7 @@ namespace PeepoDrumKit
 		IniVoidPtrTypeFromStringFunc FromStringFunc;
 		IniVoidPtrTypeToStringFunc ToStringFunc;
 	};
-	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[192]; size_t MemberCount; };
+	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[256]; size_t MemberCount; };
 
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap();
 	inline const SettingsReflectionMap AppSettingsReflectionMap = StaticallyInitializeAppSettingsReflectionMap();

@@ -129,10 +129,11 @@ namespace PeepoDrumKit
 
 	namespace SettingsGui
 	{
-		enum class DataType : u32 { Invalid, B8, I32, F32, StdString, };
+		enum class DataType : u32 { Invalid, B8, I32, I32Vector, F32, StdString, };
 		template <typename T> constexpr DataType TemplateToDataType() = delete;
 		template <> constexpr DataType TemplateToDataType<b8>() { return DataType::B8; }
 		template <> constexpr DataType TemplateToDataType<i32>() { return DataType::I32; }
+		template <> constexpr DataType TemplateToDataType<std::vector<i32>>() { return DataType::I32Vector; }
 		template <> constexpr DataType TemplateToDataType<f32>() { return DataType::F32; }
 		template <> constexpr DataType TemplateToDataType<std::string>() { return DataType::StdString; }
 
@@ -151,6 +152,7 @@ namespace PeepoDrumKit
 			b8* HasValuePtr;
 			std::string_view Header;
 			std::string_view Description;
+			std::string* InputTextValue;
 			void(*ResetToDefaultFunc)(void* valuePtr);
 			void(*SetHasValueIfNotDefaultFunc)(void* valuePtr);
 
@@ -161,8 +163,8 @@ namespace PeepoDrumKit
 			inline WithDefault<T>* ValueAs() { return (DataType == TemplateToDataType<T>()) ? static_cast<WithDefault<T>*>(ValuePtr) : nullptr; }
 
 			template <typename T>
-			SettingsEntry(WithDefault<T>& v, std::string_view header, std::string_view description, WidgetType widgetType = WidgetType::Default)
-				: DataType(TemplateToDataType<T>()), Widget(widgetType), ValuePtr(&v), HasValuePtr(&v.HasValue), Header(header), Description(description)
+			SettingsEntry(WithDefault<T>& v, std::string_view header, std::string_view description, WidgetType widgetType = WidgetType::Default, std::string* inputTextValue = nullptr)
+				: DataType(TemplateToDataType<T>()), Widget(widgetType), ValuePtr(&v), HasValuePtr(&v.HasValue), Header(header), Description(description), InputTextValue(inputTextValue)
 			{
 				ResetToDefaultFunc = [](void* valuePtr) { static_cast<WithDefault<T>*>(valuePtr)->ResetToDefault(); };
 				SetHasValueIfNotDefaultFunc = [](void* valuePtr) { static_cast<WithDefault<T>*>(valuePtr)->SetHasValueIfNotDefault(); };
@@ -198,6 +200,7 @@ namespace PeepoDrumKit
 
 				auto* inOutB8 = in.ValueAs<b8>();
 				auto* inOutI32 = in.ValueAs<i32>();
+				auto* inOutI32Vector = in.ValueAs<std::vector<i32>>();
 				auto* inOutF32 = in.ValueAs<f32>();
 				auto* inOutStr = in.ValueAs<std::string>();
 
@@ -209,6 +212,56 @@ namespace PeepoDrumKit
 						changesWereMade |= GuiBoolCombo("##", inOutB8, { UI_Str("SETTINGS_TRUE_EXCLUSIVE"), UI_Str("SETTINGS_FALSE") });
 					else
 						changesWereMade |= GuiBoolCombo("##", inOutB8);
+				}
+				else if (inOutI32Vector != nullptr)
+				{
+					assert(in.InputTextValue != nullptr);
+					std::string formattedValue;
+					for (size_t i = 0; i < inOutI32Vector->Value.size(); i++)
+					{
+						if (i > 0) formattedValue += ", ";
+						formattedValue += std::to_string(inOutI32Vector->Value[i]);
+					}
+
+					const ImGuiID inputID = Gui::GetID("##");
+					if (Gui::GetActiveID() != inputID)
+						*in.InputTextValue = formattedValue;
+
+					const f32 resetButtonWidth = Gui::CalcTextSize(UI_Str("SETTINGS_RESET_DEFAULT")).x + style.FramePadding.x * 2.0f;
+					Gui::SetNextItemWidth(Max(1.0f, Gui::CalcItemWidth() - resetButtonWidth - style.ItemInnerSpacing.x));
+					Gui::InputTextWithHint("##", "1, 2, 4, 8", in.InputTextValue);
+					if (Gui::IsItemDeactivatedAfterEdit())
+					{
+						std::vector<i32> parsedDivisions;
+						b8 isValid = true;
+						ASCII::ForEachInCommaSeparatedList(*in.InputTextValue, [&](std::string_view part)
+						{
+							i32 division = 0;
+							if (!ASCII::TryParse(ASCII::Trim(part), division) || division <= 0)
+								isValid = false;
+							else
+								parsedDivisions.push_back(division);
+						});
+
+						if (isValid && !parsedDivisions.empty())
+						{
+							std::sort(parsedDivisions.begin(), parsedDivisions.end());
+							parsedDivisions.erase(std::unique(parsedDivisions.begin(), parsedDivisions.end()), parsedDivisions.end());
+							if (inOutI32Vector->Value != parsedDivisions)
+							{
+								inOutI32Vector->Value = std::move(parsedDivisions);
+								changesWereMade = true;
+							}
+						}
+					}
+
+					Gui::SameLine(0.0f, style.ItemInnerSpacing.x);
+					if (Gui::Button(UI_Str("SETTINGS_RESET_DEFAULT")))
+					{
+						in.ResetToDefault();
+						*in.InputTextValue = formattedValue;
+						changesWereMade = true;
+					}
 				}
 				else if (inOutI32 != nullptr)
 				{
@@ -464,6 +517,34 @@ namespace PeepoDrumKit
 			std::string_view Name;
 		};
 
+		static b8 HasDuplicateInputBinding(const InputSettingsEntry& entryToCheck, InputSettingsEntry* entries, size_t entriesCount)
+		{
+			if (entryToCheck.Binding == nullptr)
+				return false;
+
+			for (size_t otherEntryIndex = 0; otherEntryIndex < entriesCount; otherEntryIndex++)
+			{
+				const InputSettingsEntry& otherEntry = entries[otherEntryIndex];
+				if (otherEntry.Binding == nullptr || otherEntry.Binding == entryToCheck.Binding)
+					continue;
+
+				for (size_t bindingIndex = 0; bindingIndex < entryToCheck.Binding->Value.Count; bindingIndex++)
+				{
+					const InputBinding& binding = entryToCheck.Binding->Value.Slots[bindingIndex];
+					if (binding.Type == InputBindingType::None)
+						continue;
+
+					for (size_t otherBindingIndex = 0; otherBindingIndex < otherEntry.Binding->Value.Count; otherBindingIndex++)
+					{
+						if (binding == otherEntry.Binding->Value.Slots[otherBindingIndex])
+							return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
 		static b8 DrawInputEntriesListTableGui(InputSettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempInputState& state)
 		{
 			const auto& style = Gui::GetStyle();
@@ -520,6 +601,8 @@ namespace PeepoDrumKit
 					else
 						Gui::PushID(("##InputSettingsEmptyLine_" + std::to_string(entryIndex)).c_str());
 					Gui::TableNextRow();
+					if (HasDuplicateInputBinding(entry, entries, entriesCount))
+						Gui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(190, 135, 25, 190));
 
 					Gui::TableSetColumnIndex(0);
 					(entry.Binding->HasValue) ? Gui::TextUnformatted("(User)") : Gui::TextDisabled("(Default)");
@@ -822,6 +905,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.TimelineAutoStepAfterNoteInput,
+							UI_Str("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT"),
+							UI_Str("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.EventShowSudden,
 							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN"),
 							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
@@ -858,6 +946,24 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT"),
 							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT_DESC"),
 							SettingsGui::WidgetType::F32_TimelineScrollSensitivity),
+
+						SettingsGui::SettingsEntry(
+							settings.General.GridBarDivisions,
+							UI_Str("SETTINGS_GRID_DIVISIONS"),
+							UI_Str("SETTINGS_GRID_DIVISIONS_DESC"),
+							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[0]),
+
+						SettingsGui::SettingsEntry(
+							settings.General.GridBarDivisionsRough,
+							UI_Str("SETTINGS_GRID_DIVISIONS_ROUGH"),
+							UI_Str("SETTINGS_GRID_DIVISIONS_ROUGH_DESC"),
+							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[1]),
+
+						SettingsGui::SettingsEntry(
+							settings.General.GridBarDivisionsPrecise,
+							UI_Str("SETTINGS_GRID_DIVISIONS_PRECISE"),
+							UI_Str("SETTINGS_GRID_DIVISIONS_PRECISE_DESC"),
+							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[2]),
 
 						SettingsGui::SettingsEntry(settings.Animation.EnableGuiScaleAnimation,
 							UI_Str("SETTINGS_ANIMATION_SMOOTH_ZOOM"),
@@ -1013,6 +1119,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_PlaceNoteKa, "Timeline: Place Note Ka", },
 						{ &settings.Input.Timeline_PlaceNoteBalloon, "Timeline: Place Note Balloon", },
 						{ &settings.Input.Timeline_PlaceNoteDrumroll, "Timeline: Place Note Drumroll", },
+						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
 						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
 						{ &settings.Input.Timeline_SelectBranchExpert, "Timeline: Select Expert Branch", },
 						{ &settings.Input.Timeline_SelectBranchMaster, "Timeline: Select Master Branch", },
@@ -1065,7 +1172,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_CompressItemTime_2To3, "Timeline: Compress Item/Range Time 2:3", },
 						{ &settings.Input.Timeline_CompressItemTime_3To4, "Timeline: Compress Item/Range Time 3:4", },
 						{ &settings.Input.Timeline_CompressItemTime_0To1, "Timeline: Compress Item/Range Time 0:1", },
-						{ &settings.Input.Timeline_QuantizeItemTime_1To1, "Timeline: Quantize Item/Range Time 1:1", },
+						{ &settings.Input.Timeline_QuantizeItemTime_1To1, "Timeline: Quantize Selected Items", },
 						{ &settings.Input.Timeline_ReverseItemTime_N1To1, "Timeline: Reverse Item/Range Time -1:1", },
 						{ &settings.Input.Timeline_ScaleItemTime_CustomA, "Timeline: Scale Item/Range Time Custom A", },
 						{ &settings.Input.Timeline_ScaleItemTime_CustomB, "Timeline: Scale Item/Range Time Custom B", },
@@ -1108,6 +1215,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_SetPlaybackSpeed_25, "Timeline: Set Playback Speed 25%", },
 						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
 						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, "Timeline: Toggle Playback Cursor Follow", },
+						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, "Timeline: Toggle Auto-Step After Note Input", },
 						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
 						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
 						{},

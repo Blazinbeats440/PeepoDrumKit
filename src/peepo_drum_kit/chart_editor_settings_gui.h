@@ -21,6 +21,7 @@ namespace PeepoDrumKit
 		f32 MultiBindingPopupFadeTarget = 0.0f;
 		InputBinding* TempAssignedBinding {};
 		CPUStopwatch AssignedBindingStopwatch = {};
+		std::array<std::string, 3> GridDivisionTexts = {};
 	};
 
 	struct ChartSettingsWindow

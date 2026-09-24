@@ -379,6 +379,54 @@ namespace PeepoDrumKit
 					timeline.ExecuteSelectionAction(context, SelectionAction::SelectToEnd, param.SetBeatCursor(context.GetCursorBeat()));
 				if (Gui::MenuItem(UI_Str("ACT_SELECTION_FROM_RANGE"), ToShortcutString(*Settings.Input.Timeline_SelectAllWithinRangeSelection).Data, nullptr, context.RangeSelection.IsActiveAndHasEnd()))
 					timeline.ExecuteSelectionAction(context, SelectionAction::SelectAllWithinRangeSelection, param);
+				if (Gui::BeginMenu(UI_Str("ACT_SELECTION_SELECT_BY_TYPE")))
+				{
+					static constexpr cstr noteTypeLabels[] =
+					{
+						"NOTE_TYPE_DON", "NOTE_TYPE_DON_BIG", "NOTE_TYPE_KA", "NOTE_TYPE_KA_BIG",
+						"NOTE_TYPE_DRUMROLL", "NOTE_TYPE_DRUMROLL_BIG", "NOTE_TYPE_BALLOON", "NOTE_TYPE_BALLOON_EX",
+						"NOTE_TYPE_DON_HAND", "NOTE_TYPE_KA_HAND", "NOTE_TYPE_KADON", "NOTE_TYPE_BOMB", "NOTE_TYPE_ADLIB", "NOTE_TYPE_FUSEROLL",
+					};
+					const SortedNotesList& notes = context.ChartSelectedCourse->GetNotes(context.ChartSelectedBranch);
+					if (!notes.empty() && Gui::BeginMenu(UI_Str("EVENT_NOTES")))
+					{
+						for (NoteType noteType = {}; noteType < NoteType::Count; IncrementEnum(noteType))
+						{
+							b8 isUsed = false;
+							for (const Note& note : notes)
+								isUsed |= (note.Type == noteType);
+							if (isUsed && Gui::MenuItem(UI_StrRuntime(noteTypeLabels[EnumToIndex(noteType)])))
+								timeline.ExecuteSelectionAction(context, SelectionAction::SelectNotesOfType, param.SetNoteTypeToSelect(noteType));
+						}
+						Gui::EndMenu();
+					}
+
+					static constexpr std::array eventListsAndLabels =
+					{
+						std::pair { GenericList::TempoChanges, "EVENT_TEMPO" },
+						std::pair { GenericList::SignatureChanges, "EVENT_TIME_SIGNATURE" },
+						std::pair { GenericList::BarLineChanges, "EVENT_BAR_LINE_VISIBILITY" },
+						std::pair { GenericList::GoGoRanges, "EVENT_GO_GO_TIME" },
+						std::pair { GenericList::Lyrics, "EVENT_LYRICS" },
+						std::pair { GenericList::ScrollType, "EVENT_SCROLL_TYPE" },
+						std::pair { GenericList::JPOSScroll, "EVENT_JPOS_SCROLL" },
+						std::pair { GenericList::Sudden, "EVENT_SUDDEN" },
+					};
+					const GenericList activeScrollChanges = BranchTypeToScrollChangesList(context.ChartSelectedBranch);
+					b8 hasEvents = GetGenericListCount(*context.ChartSelectedCourse, activeScrollChanges) != 0;
+					for (const auto& [list, label] : eventListsAndLabels)
+						hasEvents |= GetGenericListCount(*context.ChartSelectedCourse, list) != 0;
+					if (hasEvents && Gui::BeginMenu(UI_Str("ACT_SELECTION_EVENTS")))
+					{
+						if (GetGenericListCount(*context.ChartSelectedCourse, activeScrollChanges) != 0 && Gui::MenuItem(UI_Str("EVENT_SCROLL_SPEED")))
+							timeline.ExecuteSelectionAction(context, SelectionAction::SelectEventsOfType, param.SetEventListToSelect(activeScrollChanges));
+						for (const auto& [list, label] : eventListsAndLabels)
+							if (GetGenericListCount(*context.ChartSelectedCourse, list) != 0 && Gui::MenuItem(UI_StrRuntime(label)))
+								timeline.ExecuteSelectionAction(context, SelectionAction::SelectEventsOfType, param.SetEventListToSelect(list));
+						Gui::EndMenu();
+					}
+					Gui::EndMenu();
+				}
 				Gui::Separator();
 
 				if (Gui::BeginMenu(UI_Str("ACT_SELECTION_REFINE")))
@@ -470,6 +518,13 @@ namespace PeepoDrumKit
 					timeline.ExecuteTransformAction(context, TransformAction::FlipNoteType, param);
 				if (Gui::MenuItem(UI_Str("ACT_TRANSFORM_TOGGLE_NOTE_SIZES"), ToShortcutString(*Settings.Input.Timeline_ToggleNoteSize).Data, nullptr, isAnyNoteSelected))
 					timeline.ExecuteTransformAction(context, TransformAction::ToggleNoteSize, param);
+				if (Gui::MenuItem(UI_Str("ACT_TRANSFORM_QUANTIZE_ITEMS"), ToShortcutString(*Settings.Input.Timeline_QuantizeItemTime_1To1).Data, nullptr, isAnyItemSelected)) {
+					// Temporarily force quantizing without changing the user's scale settings.
+					auto wasQuantizing = *Settings.General.TransformScale_QuantizeToGrid;
+					*Settings_Mutable.General.TransformScale_QuantizeToGrid = true;
+					timeline.ExecuteTransformAction(context, TransformAction::ScaleItemTime, param.SetTimeRatio(1, 1));
+					*Settings_Mutable.General.TransformScale_QuantizeToGrid = wasQuantizing;
+				}
 
 				auto scaleMenu = [&](TransformAction scaleAction, b8 enabled)
 				{
@@ -492,13 +547,6 @@ namespace PeepoDrumKit
 					b8 willTouchTempo = (*Settings.General.TransformScale_ByTempo || *Settings.General.TransformScale_KeepTimePosition);
 					if (Gui::MenuItem(UI_Str("ACT_TRANSFORM_RATIO_0_1"), ToShortcutString(*Settings.Input.Timeline_CompressItemTime_0To1).Data, nullptr, enabled && !willTouchTempo))
 						timeline.ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(0, 1));
-					if (Gui::MenuItem(UI_Str("ACT_TRANSFORM_RATIO_1_1"), ToShortcutString(*Settings.Input.Timeline_QuantizeItemTime_1To1).Data, nullptr, enabled)) {
-						// temporarily force quantizing
-						auto wasQuantizing = *Settings.General.TransformScale_QuantizeToGrid;
-						*Settings_Mutable.General.TransformScale_QuantizeToGrid = true;
-						timeline.ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(1, 1));
-						*Settings_Mutable.General.TransformScale_QuantizeToGrid = wasQuantizing;
-					}
 					if (Gui::MenuItem(willTouchTempo ? UI_Str("ACT_TRANSFORM_RATIO_N1_1_SCROLL") : UI_Str("ACT_TRANSFORM_RATIO_N1_1_TIME"), ToShortcutString(*Settings.Input.Timeline_ReverseItemTime_N1To1).Data, nullptr, enabled))
 						timeline.ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(-1, 1));
 					Gui::Separator();
@@ -573,7 +621,6 @@ namespace PeepoDrumKit
 						std::tuple{ &UserSettingsData::GeneralData::TransformScale_KeepTimePosition, UI_Str("ACT_TRANSFORM_SCALE_KEEP_TIME_POSITION") },
 						std::tuple{ &UserSettingsData::GeneralData::TransformScale_KeepItemDuration, UI_Str("ACT_TRANSFORM_SCALE_KEEP_ITEM_DURATION") },
 						std::tuple{ &UserSettingsData::GeneralData::TransformScale_KeepEventValue, UI_Str("ACT_TRANSFORM_SCALE_KEEP_EVENT_VALUE") },
-						std::tuple{ &UserSettingsData::GeneralData::TransformScale_QuantizeToGrid, UI_Str("ACT_TRANSFORM_SCALE_QUANTIZE_TO_GRID") },
 						}) {
 						if (b8 v = *(Settings.General.*pSetting); Gui::Checkbox(label, &v)) {
 							(Settings_Mutable.General.*pSetting).Value = v;
