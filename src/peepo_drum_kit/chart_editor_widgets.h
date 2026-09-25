@@ -4,6 +4,7 @@
 #include "chart.h"
 #include "chart_editor_timeline.h"
 #include "chart_editor_context.h"
+#include "chart_editor_test_play_rules.h"
 #include "chart_editor_theme.h"
 #include "imgui/imgui_include.h"
 #include "imgui/backend/imgui_custom_draw.h"
@@ -332,6 +333,38 @@ namespace PeepoDrumKit
 	struct ChartGamePreview
 	{
 		GameCamera Camera = {};
+		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; };
+		std::vector<TestPlayNoteState> TestPlayNotes;
+		std::unordered_map<const Note*, ChartContext::TestPlayJudgementData> TestPlayAttemptJudgements;
+		struct TestPlayLongNoteState { Note* Source; Time StartTime; Time EndTime; i32 HitCount = 0; std::vector<Time> HitTimes; };
+		std::vector<TestPlayLongNoteState> TestPlayLongNotes;
+		std::optional<Time> TestPlayJumpTime;
+		ChartCourse* TestPlayCourse = nullptr;
+		BranchType TestPlayBranch = BranchType::Normal;
+		Time TestPlayStartTime = Time::Zero();
+		Time TestPlayEndTime = Time::Zero();
+		Time TestPlayAttemptStartTime = Time::Zero();
+		TestPlayInterval<Time> GetTestPlaySelectedRange(const ChartContext& context) const;
+		TestPlayInterval<Time> GetTestPlayInterval(const ChartContext& context) const;
+		f32 TestPlayPlaybackSpeed = 1.0f;
+		f32 TestPlayPreviousPlaybackSpeed = 1.0f;
+		i32 TestPlayDrumrollCount = 0, TestPlayBalloonHitCount = 0, TestPlayBalloonPopCount = 0;
+		i32 TestPlayCombo = 0, TestPlayMaxCombo = 0;
+		i32 TestPlayLastJudgement = 0, TestPlayLastTimingError = 0;
+		i32 TestPlayRecordFilter = 0;
+		i32 TestPlayRecordScope = 0;
+		b8 TestPlayLastWasHit = false;
+		Time TestPlayLastJudgementTime = Time::Zero();
+		b8 TestPlayFinished = false;
+		b8 IsTestPlaying = false;
+		enum class TestPlayStartMode { Beginning, Current, Marker };
+		void StartTestPlay(ChartContext& context, TestPlayStartMode mode);
+		void ResetTestPlayState(Time startTime);
+		void ResetTestPlayAttempt(ChartContext& context, Time startTime);
+		void SeekTestPlay(ChartContext& context, Time targetTime);
+		void ToggleTestPlayPause(ChartContext& context);
+		void ExitTestPlay(ChartContext& context);
+		void UpdateTestPlay(ChartContext& context);
 
 		struct NoteAttr {
 			Beat Beat;

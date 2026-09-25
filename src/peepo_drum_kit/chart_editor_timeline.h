@@ -258,6 +258,7 @@ namespace PeepoDrumKit
 
 		b8 IsCameraMouseGrabActive = false;
 		b8 IsCursorMouseScrubActive = false;
+		b8 IsTestPlayMinimapScrubActive = false;
 
 		enum class EDragTarget : u8 { None, Body, Tail };
 

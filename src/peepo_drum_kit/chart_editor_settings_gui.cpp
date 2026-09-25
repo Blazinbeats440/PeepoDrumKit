@@ -141,7 +141,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter,
 		};
 
 		struct SettingsEntry
@@ -323,6 +323,32 @@ namespace PeepoDrumKit
 								if (Gui::Selectable(strScrollSpeedViewType[it], isSelected)) { inOutI32->Value = it; changesWereMade = true; }
 								if (isSelected) Gui::SetItemDefaultFocus();
 							}
+							Gui::EndCombo();
+						}
+					}
+					else if (in.Widget == WidgetType::I32_TestPlayJudgementDisplayMode)
+					{
+						const cstr displayModes[] = { UI_Str("SETTINGS_TEST_PLAY_DISPLAY_JUDGEMENT"), UI_Str("SETTINGS_TEST_PLAY_DISPLAY_FAST_SLOW"), UI_Str("SETTINGS_TEST_PLAY_DISPLAY_MS"), UI_Str("SETTINGS_TEST_PLAY_DISPLAY_COMPACT_MS") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 3);
+						if (Gui::BeginCombo("##", displayModes[inOutI32->Value]))
+						{
+							for (i32 mode = 0; mode < 4; mode++)
+							{
+								const b8 isSelected = (mode == inOutI32->Value);
+								if (Gui::Selectable(displayModes[mode], isSelected)) { inOutI32->Value = mode; changesWereMade = true; }
+								if (isSelected) Gui::SetItemDefaultFocus();
+							}
+							Gui::EndCombo();
+						}
+					}
+					else if (in.Widget == WidgetType::I32_TestPlayPausedJudgementFilter)
+					{
+						const cstr filters[] = { UI_Str("TEST_PLAY_FILTER_ALL"), UI_Str("TEST_PLAY_FILTER_OK_BAD"), UI_Str("TEST_PLAY_FILTER_TIMING_THRESHOLD") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
+						if (Gui::BeginCombo("##", filters[inOutI32->Value]))
+						{
+							for (i32 filter = 0; filter < 3; filter++)
+								if (Gui::Selectable(filters[filter], filter == inOutI32->Value)) { inOutI32->Value = filter; changesWereMade = true; }
 							Gui::EndCombo();
 						}
 					}
@@ -515,17 +541,18 @@ namespace PeepoDrumKit
 		{
 			WithDefault<MultiInputBinding>* Binding;
 			std::string_view Name;
+			b8 IgnoreDuplicateHighlight = false;
 		};
 
 		static b8 HasDuplicateInputBinding(const InputSettingsEntry& entryToCheck, InputSettingsEntry* entries, size_t entriesCount)
 		{
-			if (entryToCheck.Binding == nullptr)
+			if (entryToCheck.Binding == nullptr || entryToCheck.IgnoreDuplicateHighlight)
 				return false;
 
 			for (size_t otherEntryIndex = 0; otherEntryIndex < entriesCount; otherEntryIndex++)
 			{
 				const InputSettingsEntry& otherEntry = entries[otherEntryIndex];
-				if (otherEntry.Binding == nullptr || otherEntry.Binding == entryToCheck.Binding)
+				if (otherEntry.Binding == nullptr || otherEntry.Binding == entryToCheck.Binding || otherEntry.IgnoreDuplicateHighlight)
 					continue;
 
 				for (size_t bindingIndex = 0; bindingIndex < entryToCheck.Binding->Value.Count; bindingIndex++)
@@ -895,6 +922,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.GamePreviewShowMeasureNumbers,
+							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
+							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.TimelinePlaybackCursorFollow,
 							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW"),
 							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC")),
@@ -1045,6 +1077,112 @@ namespace PeepoDrumKit
 					};
 
 					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup);
+				}
+				Gui::PopStyleVar();
+				Gui::EndTabItem();
+			}
+
+			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_TEST_PLAY")))
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
+				SettingsGui::SettingsEntry settingsEntriesTestPlay[] =
+				{
+					SettingsGui::SettingsEntry(settings.TestPlay.JudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
+					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_PAUSED_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
+					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementFilter, UI_Str("SETTINGS_TEST_PLAY_PAUSED_FILTER"), "", SettingsGui::WidgetType::I32_TestPlayPausedJudgementFilter),
+					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementThresholdMilliseconds, UI_Str("SETTINGS_TEST_PLAY_PAUSED_THRESHOLD"), ""),
+					SettingsGui::SettingsEntry(settings.TestPlay.LeadInMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LEAD_IN"), UI_Str("SETTINGS_TEST_PLAY_LEAD_IN_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.InputLatencyCompensationMilliseconds, UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET"), UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.GoodWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.OkWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.BadWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.TimingNeutralWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.JudgementDisplayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_DURATION"), ""),
+					SettingsGui::SettingsEntry(settings.TestPlay.LoopDelayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LOOP_DELAY"), ""),
+					SettingsGui::SettingsEntry(settings.TestPlay.PlaybackSpeedPercent, UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC")),
+					SettingsGui::SettingsEntry(settings.TestPlay.ShowStartButtonsInPreview, UI_Str("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS"), ""),
+				};
+				changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesTestPlay, ArrayCount(settingsEntriesTestPlay), nullptr, lastActiveGroup);
+				const i32 pausedThreshold = Clamp(settings.TestPlay.PausedJudgementThresholdMilliseconds.Value, 0, 1000);
+				if (settings.TestPlay.PausedJudgementThresholdMilliseconds.Value != pausedThreshold)
+				{
+					settings.TestPlay.PausedJudgementThresholdMilliseconds.Value = pausedThreshold;
+					settings.TestPlay.PausedJudgementThresholdMilliseconds.SetHasValueIfNotDefault();
+					changesWereMade = true;
+				}
+				const i32 loopDelay = Clamp(settings.TestPlay.LoopDelayMilliseconds.Value, 0, 5000);
+				if (settings.TestPlay.LoopDelayMilliseconds.Value != loopDelay)
+				{
+					settings.TestPlay.LoopDelayMilliseconds.Value = loopDelay;
+					settings.TestPlay.LoopDelayMilliseconds.SetHasValueIfNotDefault();
+					changesWereMade = true;
+				}
+				const i32 goodWindow = Clamp(settings.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
+				const i32 okWindow = Clamp(settings.TestPlay.OkWindowMilliseconds.Value, goodWindow, 1000);
+				const i32 badWindow = Clamp(settings.TestPlay.BadWindowMilliseconds.Value, okWindow, 1000);
+				if (settings.TestPlay.GoodWindowMilliseconds.Value != goodWindow || settings.TestPlay.OkWindowMilliseconds.Value != okWindow || settings.TestPlay.BadWindowMilliseconds.Value != badWindow)
+				{
+					settings.TestPlay.GoodWindowMilliseconds.Value = goodWindow;
+					settings.TestPlay.OkWindowMilliseconds.Value = okWindow;
+					settings.TestPlay.BadWindowMilliseconds.Value = badWindow;
+					settings.TestPlay.GoodWindowMilliseconds.SetHasValueIfNotDefault();
+					settings.TestPlay.OkWindowMilliseconds.SetHasValueIfNotDefault();
+					settings.TestPlay.BadWindowMilliseconds.SetHasValueIfNotDefault();
+					changesWereMade = true;
+				}
+				Gui::TextUnformatted(UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_DESC"));
+				if (Gui::Button(testPlayCalibrationActive ? UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_STOP") : UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_START")))
+				{
+					testPlayCalibrationActive = !testPlayCalibrationActive;
+					if (testPlayCalibrationActive)
+					{
+						testPlayCalibrationFirstTick = Gui::GetTime() + 1.0;
+						testPlayCalibrationLastCue = testPlayCalibrationLastTap = -1;
+						testPlayCalibrationErrors.clear();
+						testPlayCalibrationHasCandidate = false;
+					}
+				}
+				if (testPlayCalibrationActive)
+				{
+					const f64 elapsedTicks = (Gui::GetTime() - testPlayCalibrationFirstTick) * 2.0;
+					const i32 cueIndex = static_cast<i32>(Floor(elapsedTicks));
+					if (cueIndex >= 0 && cueIndex < 8 && cueIndex > testPlayCalibrationLastCue)
+					{
+						context.SfxVoicePool.PlaySound(SoundEffectType::TaikoDon);
+						testPlayCalibrationLastCue = cueIndex;
+					}
+					if (Gui::IsKeyPressed(ImGuiKey_Space, false))
+					{
+						const i32 tapIndex = static_cast<i32>(Round(elapsedTicks));
+						const i32 error = static_cast<i32>(Round((elapsedTicks - tapIndex) * 500.0));
+						if (tapIndex >= 0 && tapIndex < 8 && tapIndex != testPlayCalibrationLastTap && Absolute(error) <= 160)
+						{
+							testPlayCalibrationErrors.push_back(error);
+							testPlayCalibrationLastTap = tapIndex;
+						}
+					}
+					Gui::Text("%d / 8", static_cast<i32>(testPlayCalibrationErrors.size()));
+					if (elapsedTicks > 7.8)
+					{
+						testPlayCalibrationActive = false;
+						if (testPlayCalibrationErrors.size() >= 4)
+						{
+							i32 sum = 0;
+							for (i32 error : testPlayCalibrationErrors) sum += error;
+							testPlayCalibrationCandidate = Clamp(static_cast<i32>(Round(static_cast<f64>(sum) / testPlayCalibrationErrors.size())), -500, 500);
+							testPlayCalibrationHasCandidate = true;
+						}
+					}
+				}
+				if (testPlayCalibrationHasCandidate)
+				{
+					Gui::Text("%s: %+d ms", UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_CANDIDATE"), testPlayCalibrationCandidate);
+					if (Gui::Button(UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_APPLY")))
+					{
+						settings.TestPlay.InputLatencyCompensationMilliseconds.Value = testPlayCalibrationCandidate;
+						settings.TestPlay.InputLatencyCompensationMilliseconds.SetHasValueIfNotDefault();
+						changesWereMade = true;
+					}
 				}
 				Gui::PopStyleVar();
 				Gui::EndTabItem();
@@ -1218,6 +1356,17 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, "Timeline: Toggle Auto-Step After Note Input", },
 						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
 						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
+						{},
+						{ &settings.Input.TestPlay_DonLeft, UI_Str("SETTINGS_KEY_TEST_PLAY_DON_LEFT"), true },
+						{ &settings.Input.TestPlay_DonRight, UI_Str("SETTINGS_KEY_TEST_PLAY_DON_RIGHT"), true },
+						{ &settings.Input.TestPlay_KaLeft, UI_Str("SETTINGS_KEY_TEST_PLAY_KA_LEFT"), true },
+						{ &settings.Input.TestPlay_KaRight, UI_Str("SETTINGS_KEY_TEST_PLAY_KA_RIGHT"), true },
+						{ &settings.Input.TestPlay_StartBeginning, UI_Str("SETTINGS_KEY_TEST_PLAY_START_BEGINNING"), },
+						{ &settings.Input.TestPlay_StartCurrent, UI_Str("SETTINGS_KEY_TEST_PLAY_START_CURRENT"), },
+						{ &settings.Input.TestPlay_StartMarker, UI_Str("SETTINGS_KEY_TEST_PLAY_START_MARKER"), },
+						{ &settings.Input.TestPlay_TogglePause, UI_Str("SETTINGS_KEY_TEST_PLAY_PAUSE"), },
+						{ &settings.Input.TestPlay_Retry, UI_Str("SETTINGS_KEY_TEST_PLAY_RETRY"), },
+						{ &settings.Input.TestPlay_Exit, UI_Str("SETTINGS_KEY_TEST_PLAY_EXIT"), },
 						{},
 						{ &settings.Input.TempoCalculator_Tap, "Tempo Calculator: Tap", },
 						{ &settings.Input.TempoCalculator_Reset, "Tempo Calculator: Reset", },

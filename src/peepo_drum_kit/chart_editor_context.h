@@ -25,6 +25,12 @@ namespace PeepoDrumKit
 		BranchType ChartSelectedBranch = BranchType::Normal;
 
 		b8 CompareMode = false;
+		b8 TestPlayActive = false;
+		std::optional<Time> TestPlaySeekTime;
+		b8 TestPlaySmoothCursor = false;
+		b8 TestPlayFollowCursor = false;
+		struct TestPlayJudgementData { i32 Judgement; i32 TimingError; b8 WasHit; };
+		std::unordered_map<const Note*, TestPlayJudgementData> TestPlayJudgements;
 		std::unordered_map<const ChartCourse*, std::set<BranchType>> ChartsCompared; // should always include ChartSelected
 
 		// NOTE: Specifically for accurate playback preview sound future-offset calculations

@@ -2,6 +2,8 @@
 #include "chart_editor_undo.h"
 #include "chart_editor_theme.h"
 #include "chart_editor_i18n.h"
+#include "chart_editor_test_play_rules.h"
+#include "chart_editor_test_play_display.h"
 
 namespace PeepoDrumKit
 {
@@ -812,6 +814,7 @@ namespace PeepoDrumKit
 			// TODO: It looks like there'll also have to be one scroll speed lane per branch type
 			//		 which means the scroll speed change line should probably extend all to the way down to its corresponding note lane (?)
 
+			std::vector<Rect> testPlayLabelBounds;
 			for (const Note& it : list)
 			{
 				if (IsBeatInsideBranchRange(course, it.BeatTime) == isUnbranchedNotesRow)
@@ -835,6 +838,40 @@ namespace PeepoDrumKit
 
 				const f32 noteScaleFactor = GetTimelineNoteScaleFactor(param.IsPlayback, param.CursorTime, param.CursorBeatOnPlaybackStart, it, startTime);
 				DrawTimelineNote(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.Type);
+				if (context.TestPlayActive)
+				{
+					const auto record = context.TestPlayJudgements.find(&it);
+					if (record != context.TestPlayJudgements.end() && ShouldShowPausedTestPlayJudgement(
+						record->second.Judgement, record->second.TimingError, record->second.WasHit,
+						*Settings.TestPlay.PausedJudgementFilter, *Settings.TestPlay.PausedJudgementThresholdMilliseconds))
+					{
+						const auto& judgement = record->second;
+						const i32 displayMode = Clamp(*Settings.TestPlay.PausedJudgementDisplayMode, 0, 3);
+						const auto display = FormatTestPlayJudgement(judgement.Judgement, judgement.TimingError, judgement.WasHit,
+							displayMode, *Settings.TestPlay.TimingNeutralWindowMilliseconds, false);
+						const vec2 notePosition = timeline.LocalToScreenSpace(localCenter);
+						const vec2 labelSize = display.Label ? vec2(Gui::CalcTextSize(display.Label)) : vec2(0.0f);
+						const vec2 timingSize = Gui::CalcTextSize(display.Timing.c_str());
+						const f32 gap = display.Label && !display.Timing.empty() ? GuiScale(2.0f) : 0.0f;
+						const vec2 blockSize(Max(labelSize.x, timingSize.x), labelSize.y + timingSize.y + gap);
+						b8 labelPlaced = false;
+						const vec2 blockTop = PlaceTestPlayJudgementLabel(testPlayLabelBounds, notePosition,
+							notePosition.y - GuiScale(18.0f), blockSize, GuiScale(2.0f), &labelPlaced);
+						if (labelPlaced && !display.Timing.empty()) drawListContent->AddText(vec2(notePosition.x - timingSize.x * 0.5f, blockTop.y), display.TimingColor, display.Timing.c_str());
+						if (labelPlaced && display.Label) drawListContent->AddText(vec2(notePosition.x - labelSize.x * 0.5f, blockTop.y + timingSize.y + gap), 0xFFFFFFFF, display.Label);
+					}
+					if (record != context.TestPlayJudgements.end())
+					{
+						const vec2 notePosition = timeline.LocalToScreenSpace(localCenter);
+						if (ImGui::IsMouseHoveringRect(notePosition - vec2(GuiScale(14.0f)), notePosition + vec2(GuiScale(14.0f))))
+						{
+							const auto& judgement = record->second;
+							const cstr label = judgement.Judgement == 1 ? UI_Str("TEST_PLAY_GOOD") : judgement.Judgement == 2 ? UI_Str("TEST_PLAY_OK") : UI_Str("TEST_PLAY_MISS");
+							if (judgement.WasHit) ImGui::SetTooltip("%s  %+d ms", label, judgement.TimingError);
+							else ImGui::SetTooltip("%s (%s)", label, UI_Str("TEST_PLAY_MISSED"));
+						}
+					}
+				}
 
 				if (IsBalloonNote(it.Type) || it.BalloonPopCount > 0)
 					DrawTimelineNoteBalloonPopCount(context.Gfx, drawListContent, timeline.LocalToScreenSpace(localCenter), noteScaleFactor, it.BalloonPopCount);
@@ -1354,7 +1391,17 @@ namespace PeepoDrumKit
 				Regions.ContentScrollbarY.Rect() = Rect::FromTLSize(Regions.Content.GetTR(), vec2(0, Regions.Content.GetHeight()));
 			};
 
+			if (context.TestPlayActive)
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0f);
+				Gui::BeginDisabled();
+			}
 			DrawAllAtEndOfFrame(context, drawers);
+			if (context.TestPlayActive)
+			{
+				Gui::EndDisabled();
+				Gui::PopStyleVar();
+			}
 		}
 		timelineRegionEnd();
 	}
@@ -2518,7 +2565,7 @@ namespace PeepoDrumKit
 
 	void ChartTimeline::UpdateInputAtStartOfFrame(ChartContext& context, b8 hasGamePreviewFocus)
 	{
-		const b8 hasTimelineOrGamePreviewFocus = HasKeyboardFocus() || hasGamePreviewFocus;
+		const b8 hasTimelineOrGamePreviewFocus = (HasKeyboardFocus() || hasGamePreviewFocus) && !context.TestPlayActive;
 
 		MousePosLastFrame = MousePosThisFrame;
 		MousePosThisFrame = Gui::GetMousePos();
@@ -2582,7 +2629,7 @@ namespace PeepoDrumKit
 		{
 			if (context.GetIsPlayback() && Audio::Engine.GetIsStreamOpenRunning())
 			{
-				if (*Settings.General.TimelineLoopPlayback && context.RangeSelection.IsActiveAndHasEnd())
+				if (!context.TestPlayActive && *Settings.General.TimelineLoopPlayback && context.RangeSelection.IsActiveAndHasEnd())
 				{
 					const Beat rangeStart = context.RangeSelection.GetMin();
 					const Beat rangeEnd = context.RangeSelection.GetMax();
@@ -2604,16 +2651,110 @@ namespace PeepoDrumKit
 					}
 					else if (cursorPos >= Regions.Content.GetWidth() * TimelineAutoScrollLockContentWidthFactor)
 					{
-						const Time elapsedCursorTime = Time::FromSec(Gui::DeltaTime()) * context.GetPlaybackSpeed();
-						const f32 cameraScrollIncrement = Camera.TimeToWorldSpaceX(elapsedCursorTime) * Camera.ZoomCurrent.x;
-						Camera.PositionCurrentScrollBar.x = Camera.PositionCurrent.x += cameraScrollIncrement;
-						Camera.PositionTarget.x += cameraScrollIncrement;
+						const f32 autoScrollLockX = Regions.Content.GetWidth() * TimelineAutoScrollLockContentWidthFactor;
+						const f32 cameraScrollOffset = (cursorPos - autoScrollLockX) * (context.GetPlaybackSpeed() < 0.0f ? -1.0f : 1.0f);
+						Camera.PositionCurrentScrollBar.x = Camera.PositionCurrent.x += cameraScrollOffset;
+						Camera.PositionTarget.x += cameraScrollOffset;
 					}
 				}
 			}
 		}
 
 		// NOTE: Cursor controls
+		if (context.TestPlayActive)
+		{
+			if (Regions.ContentScrollbarX.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Left))
+				IsTestPlayMinimapScrubActive = true;
+			if (!Gui::IsMouseDown(ImGuiMouseButton_Left))
+				IsTestPlayMinimapScrubActive = false;
+			if (IsTestPlayMinimapScrubActive && Regions.ContentScrollbarX.GetWidth() > 0.0f)
+			{
+				if (context.GetIsPlayback()) context.SetIsPlayback(false);
+				const Time chartDuration = GetDisplayedTimelineDuration(Camera, Regions, context);
+				const f32 localMouseX = MousePosThisFrame.x - Regions.ContentScrollbarX.TL.x;
+				const f64 cursorTimeSec = ConvertRangeRClampInput(0.0f, Regions.ContentScrollbarX.GetWidth(), 0.0, chartDuration.ToSec(), localMouseX);
+				const Time targetTime = Time::FromSec(cursorTimeSec);
+				context.TestPlaySmoothCursor = false;
+				context.TestPlaySeekTime = targetTime;
+				ScrollToTimelinePosition(Camera, Regions, context, targetTime);
+			}
+			if (!context.GetIsPlayback())
+			{
+				if (HasKeyboardFocus() && Gui::GetActiveID() == 0 && !Gui::GetIO().WantTextInput)
+				{
+					const auto& io = Gui::GetIO();
+					const auto& divisions = io.KeyAlt ? Settings.General.GridBarDivisionsPrecise.Value
+						: io.KeyShift ? Settings.General.GridBarDivisionsRough.Value : Settings.General.GridBarDivisions.Value;
+					if (!io.KeyCtrl && !divisions.empty())
+					{
+						const b8 increaseGrid = Gui::IsAnyPressed(*Settings.Input.Timeline_IncreaseGridDivision, true, InputModifierBehavior::Relaxed);
+						const b8 decreaseGrid = Gui::IsAnyPressed(*Settings.Input.Timeline_DecreaseGridDivision, true, InputModifierBehavior::Relaxed);
+						const i32 step = io.KeyAlt ? 1 : io.KeyShift ? 12 : 4;
+						const i32 last = divisions.back();
+						if (increaseGrid)
+						{
+							if (CurrentGridBarDivision >= last)
+								CurrentGridBarDivision = last + step * (std::floor((CurrentGridBarDivision - last) / step) + 1);
+							else
+								CurrentGridBarDivision = *std::upper_bound(divisions.begin(), divisions.end(), CurrentGridBarDivision);
+						}
+						if (decreaseGrid)
+						{
+							if (CurrentGridBarDivision - step >= last)
+								CurrentGridBarDivision = last + step * (std::ceil((CurrentGridBarDivision - last) / step) - 1);
+							else
+							{
+								auto upper = std::lower_bound(divisions.begin(), divisions.end(), CurrentGridBarDivision);
+								CurrentGridBarDivision = upper == divisions.begin() ? divisions.front() : *std::prev(upper);
+							}
+						}
+					}
+					if (Gui::IsAnyPressed(*Settings.Input.Timeline_JumpToTimelineStart, false))
+						context.TestPlaySeekTime = Time::Zero();
+					if (Gui::IsAnyPressed(*Settings.Input.Timeline_JumpToTimelineEnd, false))
+						context.TestPlaySeekTime = context.GetUsedDuration();
+					if (context.TestPlaySeekTime) { context.TestPlaySmoothCursor = true; context.TestPlayFollowCursor = true; }
+					if (context.RangeSelection.IsActive && Gui::IsAnyPressed(*Settings.Input.Timeline_DeleteSelection, false))
+					{
+						context.RangeSelection = {};
+						context.TestPlaySeekTime = context.GetCursorTime();
+					}
+				}
+				if (HasKeyboardFocus() && Gui::GetActiveID() == 0 && !Gui::GetIO().WantTextInput && !Gui::GetIO().KeyCtrl)
+				{
+					const Beat step = Gui::GetIO().KeyShift ? Beat::FromBeats(1) : GetGridBeatSnap(CurrentGridBarDivision);
+					const b8 right = Gui::IsAnyPressed(*Settings.Input.Timeline_StepCursorRight, true, InputModifierBehavior::Relaxed);
+					const b8 left = !right && Gui::IsAnyPressed(*Settings.Input.Timeline_StepCursorLeft, true, InputModifierBehavior::Relaxed);
+					if (right || left)
+					{
+						const Beat targetBeat = Max(Beat::Zero(), RoundBeatToCurrentGrid(context.GetCursorBeat()) + step * (right ? +1 : -1));
+						context.TestPlaySeekTime = context.BeatToTime(targetBeat);
+						context.TestPlaySmoothCursor = true;
+						context.TestPlayFollowCursor = true;
+					}
+				}
+				if (Regions.ContentHeader.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Left)) IsCursorMouseScrubActive = true;
+				if (!Gui::IsMouseDown(ImGuiMouseButton_Left)) IsCursorMouseScrubActive = false;
+				if ((Regions.Content.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Left)) || IsCursorMouseScrubActive)
+				{
+					context.TestPlaySmoothCursor = false;
+					context.TestPlaySeekTime = Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x);
+				}
+				if (HasKeyboardFocus() && Gui::IsAnyPressed(*Settings.Input.Timeline_StartEndRangeSelection, false))
+				{
+					const b8 hadSelection = context.RangeSelection.IsActive;
+					StartEndRangeSelectionAtCursor(context);
+					if (hadSelection && !context.RangeSelection.IsActive)
+						context.TestPlaySeekTime = context.GetCursorTime();
+				}
+				if (context.TestPlayFollowCursor && !context.TestPlaySeekTime)
+				{
+					ScrollToTimelinePosition(Camera, Regions, context, context.GetCursorTime());
+					context.TestPlayFollowCursor = false;
+				}
+			}
+			return;
+		}
 		{
 			// NOTE: Selected items mouse drag
 			{
@@ -3482,7 +3623,7 @@ namespace PeepoDrumKit
 
 		// NOTE: Playback preview sounds / metronome
 		if (context.GetIsPlayback() && (PlaybackSoundsEnabled || Metronome.IsEnabled))
-			UpdateTimelinePlaybackAndMetronomneSounds(context, PlaybackSoundsEnabled, Metronome);
+			UpdateTimelinePlaybackAndMetronomneSounds(context, PlaybackSoundsEnabled && !context.TestPlayActive, Metronome);
 
 		// NOTE: Mouse selection box
 		{
@@ -3626,7 +3767,10 @@ namespace PeepoDrumKit
 		Gui::AnimateExponential(&RangeSelectionExpansionAnimationCurrent, RangeSelectionExpansionAnimationTarget, *Settings.Animation.TimelineRangeSelectionExpansionSpeed);
 
 		const f32 worldSpaceCursorXAnimationTarget = Camera.TimeToWorldSpaceX(context.GetCursorTime());
-		Gui::AnimateExponential(&WorldSpaceCursorXAnimationCurrent, worldSpaceCursorXAnimationTarget, *Settings.Animation.TimelineWorldSpaceCursorXSpeed);
+		if (context.TestPlayActive && !context.TestPlaySmoothCursor) WorldSpaceCursorXAnimationCurrent = worldSpaceCursorXAnimationTarget;
+		else Gui::AnimateExponential(&WorldSpaceCursorXAnimationCurrent, worldSpaceCursorXAnimationTarget, *Settings.Animation.TimelineWorldSpaceCursorXSpeed);
+		if (context.TestPlaySmoothCursor && Absolute(WorldSpaceCursorXAnimationCurrent - worldSpaceCursorXAnimationTarget) < 0.5f)
+			context.TestPlaySmoothCursor = false;
 
 		for (auto& course : context.Chart.Courses)
 		{
@@ -3834,7 +3978,7 @@ namespace PeepoDrumKit
 
 				const f32 animatedCursorLocalSpaceX = TimeToScrollbarLocalSpaceXClamped(Camera.WorldSpaceXToTime(WorldSpaceCursorXAnimationCurrent), Regions, chartDuration);
 				const f32 currentCursorLocalSpaceX = TimeToScrollbarLocalSpaceXClamped(cursorTime, Regions, chartDuration);
-				const f32 cursorLocalSpaceX = isPlayback ? currentCursorLocalSpaceX : animatedCursorLocalSpaceX;
+				const f32 cursorLocalSpaceX = (isPlayback || (context.TestPlayActive && !context.TestPlaySmoothCursor)) ? currentCursorLocalSpaceX : animatedCursorLocalSpaceX;
 
 				// BUG: Drawn cursor doesn't perfectly line up on the left side with the scroll grab hand (?)
 				Gui::GetWindowDrawList()->AddLine(
@@ -3885,7 +4029,7 @@ namespace PeepoDrumKit
 		const f32 animatedCursorLocalSpaceX = Camera.WorldToLocalSpace(vec2(WorldSpaceCursorXAnimationCurrent, 0.0f)).x;
 		const f32 currentCursorLocalSpaceX = Camera.TimeToLocalSpaceX(cursorTime);
 
-		const f32 cursorLocalSpaceX = isPlayback ? currentCursorLocalSpaceX : animatedCursorLocalSpaceX;
+		const f32 cursorLocalSpaceX = (isPlayback || (context.TestPlayActive && !context.TestPlaySmoothCursor)) ? currentCursorLocalSpaceX : animatedCursorLocalSpaceX;
 		const f32 cursorHeaderTriangleLocalSpaceX = cursorLocalSpaceX + 0.5f;
 
 		// NOTE: Row labels, lines and items
@@ -4012,7 +4156,7 @@ namespace PeepoDrumKit
 		}
 
 		// NOTE: Bar Line Drag Logic
-		if (BarLineDrag.IsActive)
+		if (BarLineDrag.IsActive && !context.TestPlayActive)
 		{
 			if (!Gui::IsMouseDown(ImGuiMouseButton_Left))
 			{
@@ -4074,7 +4218,7 @@ namespace PeepoDrumKit
 					{
 						// Too easy to misdrag; only allow dragging on header
 						b8 isHoveredForDrag = false;
-						if (!BarLineDrag.IsActive && SelectedItemDrag.ActiveTarget == EDragTarget::None && !IsCameraMouseGrabActive && Regions.ContentHeader.IsHovered)
+						if (!context.TestPlayActive && !BarLineDrag.IsActive && SelectedItemDrag.ActiveTarget == EDragTarget::None && !IsCameraMouseGrabActive && Regions.ContentHeader.IsHovered)
 						{
 							if (Gui::GetIO().KeyCtrl)
 							{

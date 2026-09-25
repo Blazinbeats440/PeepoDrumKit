@@ -143,6 +143,91 @@ X("ACT_BALLOON_CALCULATE_POP_COUNT", "Calculate Pop Count") \
 X("SETTINGS_TAB_GENERAL", "General") \
 X("SETTINGS_TAB_INPUT_BINDINGS", "Keys") \
 X("SETTINGS_TAB_AUDIO", "Audio") \
+X("SETTINGS_TAB_TEST_PLAY", "Test Play") \
+X("SETTINGS_TEST_PLAY_GOOD_WINDOW", "Good judgement window (ms)") \
+X("SETTINGS_TEST_PLAY_LEAD_IN", "Lead-in before start (ms)") \
+X("SETTINGS_TEST_PLAY_INPUT_OFFSET", "Input latency compensation (ms)") \
+X("SETTINGS_TEST_PLAY_INPUT_OFFSET_DESC", "Positive values move input timing earlier.") \
+X("SETTINGS_TEST_PLAY_LEAD_IN_DESC", "Playback starts this many milliseconds before the cursor.") \
+X("SETTINGS_TEST_PLAY_GOOD_WINDOW_DESC", "Maximum timing difference for a Good hit.") \
+X("SETTINGS_TEST_PLAY_OK_WINDOW", "Ok judgement window (ms)") \
+X("SETTINGS_TEST_PLAY_OK_WINDOW_DESC", "Maximum timing difference for an Ok hit.") \
+X("SETTINGS_TEST_PLAY_BAD_WINDOW", "Bad judgement window (ms)") \
+X("SETTINGS_TEST_PLAY_BAD_WINDOW_DESC", "Maximum timing difference for a Bad hit.") \
+X("SETTINGS_TEST_PLAY_DISPLAY_MODE", "Judgement display while playing") \
+X("SETTINGS_TEST_PLAY_PAUSED_DISPLAY_MODE", "Per-note display while paused") \
+X("TEST_PLAY_PAUSED_STATUS", "Paused") \
+X("TEST_PLAY_END_STATUS", "End of chart") \
+X("TEST_PLAY_LOOP_STATUS", "Looping selected range") \
+X("SETTINGS_TEST_PLAY_DISPLAY_JUDGEMENT", "Judgement only") \
+X("SETTINGS_TEST_PLAY_DISPLAY_FAST_SLOW", "Judgement and FAST/SLOW") \
+X("SETTINGS_TEST_PLAY_DISPLAY_MS", "Judgement, FAST/SLOW and signed ms") \
+X("SETTINGS_TEST_PLAY_DISPLAY_COMPACT_MS", "Colored signed ms only (except misses)") \
+X("TEST_PLAY_FILTER_ALL", "All results") \
+X("TEST_PLAY_FILTER_OK_BAD", "Ok and Bad only") \
+X("TEST_PLAY_FILTER_TIMING_THRESHOLD", "Misses and timing threshold") \
+X("SETTINGS_TEST_PLAY_PAUSED_FILTER", "Paused judgement filter") \
+X("SETTINGS_TEST_PLAY_PAUSED_THRESHOLD", "Timing threshold (ms)") \
+X("TEST_PLAY_SCOPE_ALL", "All records") \
+X("TEST_PLAY_SCOPE_SELECTION", "Selected range") \
+X("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW", "White FAST/SLOW range (ms)") \
+X("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW_DESC", "Timing differences within this range are shown in white.") \
+X("SETTINGS_TEST_PLAY_DISPLAY_DURATION", "Judgement display duration (ms)") \
+X("SETTINGS_TEST_PLAY_LOOP_RANGE", "Repeat selected range") \
+X("SETTINGS_TEST_PLAY_LOOP_DELAY", "Delay between repeats (ms)") \
+X("SETTINGS_TEST_PLAY_PLAYBACK_SPEED", "Playback speed (%)") \
+X("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC", "Judgement windows stay measured in real milliseconds.") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_DESC", "Tap Space with the eight evenly spaced drum sounds to estimate input latency.") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_START", "Measure input latency") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_STOP", "Stop measuring") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_CANDIDATE", "Suggested compensation") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_APPLY", "Apply suggested value") \
+X("SETTINGS_TEST_PLAY_DON_LEFT", "Don left") \
+X("SETTINGS_TEST_PLAY_DON_RIGHT", "Don right") \
+X("SETTINGS_TEST_PLAY_KA_LEFT", "Ka left") \
+X("SETTINGS_TEST_PLAY_KA_RIGHT", "Ka right") \
+X("SETTINGS_KEY_TEST_PLAY_DON_LEFT", "Testplay: Don left") \
+X("SETTINGS_KEY_TEST_PLAY_DON_RIGHT", "Testplay: Don right") \
+X("SETTINGS_KEY_TEST_PLAY_KA_LEFT", "Testplay: Ka left") \
+X("SETTINGS_KEY_TEST_PLAY_KA_RIGHT", "Testplay: Ka right") \
+X("SETTINGS_KEY_TEST_PLAY_START_BEGINNING", "Testplay: Start from Beginning") \
+X("SETTINGS_KEY_TEST_PLAY_START_CURRENT", "Testplay: Start from Current Position") \
+X("SETTINGS_KEY_TEST_PLAY_START_MARKER", "Testplay: Start from Marker") \
+X("SETTINGS_KEY_TEST_PLAY_PAUSE", "Testplay: Pause / Resume") \
+X("SETTINGS_KEY_TEST_PLAY_RETRY", "Testplay: Retry") \
+X("SETTINGS_KEY_TEST_PLAY_EXIT", "Testplay: Exit") \
+X("SETTINGS_TEST_PLAY_DON", "Don") \
+X("SETTINGS_TEST_PLAY_KA", "Ka") \
+X("SETTINGS_TEST_PLAY_RETRY", "Retry") \
+X("SETTINGS_TEST_PLAY_EXIT", "Exit") \
+X("TEST_PLAY_START_BEGINNING", "Start from Beginning") \
+X("TEST_PLAY_START_CURRENT", "Start from Current Position") \
+X("TEST_PLAY_START_MARKER", "Start from Marker") \
+X("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS", "Show start buttons in chart preview") \
+X("TEST_PLAY_PAUSE", "Pause") \
+X("TEST_PLAY_RESUME", "Resume") \
+X("TEST_PLAY_GOOD", "Good") \
+X("TEST_PLAY_OK", "Ok") \
+X("TEST_PLAY_MISS", "Miss") \
+X("TEST_PLAY_COMBO", "Combo") \
+X("TEST_PLAY_MAX_COMBO", "Max") \
+X("TEST_PLAY_FINISHED", "Test Play finished") \
+X("TEST_PLAY_RECORDS", "Records") \
+X("TEST_PLAY_AVERAGE_MS", "Judgement average") \
+X("TEST_PLAY_STDDEV_MS", "Standard deviation") \
+X("TEST_PLAY_CLEAR_ALL_RECORDS", "Clear all records") \
+X("TEST_PLAY_CLEAR_RANGE_RECORDS", "Clear selected range records") \
+X("TEST_PLAY_CLEAR_RANGE", "Clear selected range") \
+X("TEST_PLAY_CURRENT_ATTEMPT", "Current attempt") \
+X("TEST_PLAY_SAVED_RECORDS_STATS", "Saved note records") \
+X("TEST_PLAY_FAST", "FAST") \
+X("TEST_PLAY_SLOW", "SLOW") \
+X("TEST_PLAY_JUMP_TO_NOTE", "Jump to note") \
+X("TEST_PLAY_MISSED", "Missed") \
+X("TEST_PLAY_DRUMROLL_HITS", "Drumroll hits") \
+X("TEST_PLAY_BALLOON_HITS", "Balloon hits") \
+X("TEST_PLAY_BALLOON_POP", "Balloons popped") \
+X("TEST_PLAY_EDITOR_LOCKED", "Timeline editing is disabled during Test Play.") \
 X("SETTINGS_TAB_APPEARANCE", "Appearance") \
 X("SETTINGS_APPEARANCE_MARKER_LINE_COLOR", "Marker Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
@@ -184,6 +269,8 @@ X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS", "Chart Branches: Show Forced Bra
 X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing the Normal, Expert, or Master branch in the Chart Branches window.") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
+X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
+X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Display measure numbers at the bar lines in the game preview window.") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \

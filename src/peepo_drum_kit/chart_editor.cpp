@@ -297,6 +297,19 @@ namespace PeepoDrumKit
 	{
 		if (Gui::BeginMenuBar())
 		{
+			if (context.TestPlayActive)
+			{
+				Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+				if (Gui::BeginMenu(UI_Str("MENU_SELECTION")))
+				{
+					const b8 setRangeSelectionStartNext = (!context.RangeSelection.IsActive || context.RangeSelection.HasEnd);
+					if (Gui::MenuItem(setRangeSelectionStartNext ? UI_Str("ACT_SELECTION_START_RANGE") : UI_Str("ACT_SELECTION_END_RANGE"), ToShortcutString(*Settings.Input.Timeline_StartEndRangeSelection).Data, nullptr, !context.GetIsPlayback()))
+						timeline.StartEndRangeSelectionAtCursor(context);
+					Gui::EndMenu();
+				}
+				Gui::EndMenuBar();
+				return;
+			}
 			if (Gui::BeginMenu(UI_Str("MENU_FILE")))
 			{
 				if (Gui::MenuItem(UI_Str("ACT_FILE_NEW_CHART"), ToShortcutString(*Settings.Input.Editor_ChartNew).Data)) { CheckOpenSaveConfirmationPopupThenCall([&] { CreateNewChart(context); }); }
@@ -1211,7 +1224,18 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_DecreaseMasterVolume10, false)) Settings_Mutable.Audio.MasterVolume.Value = Clamp(Settings_Mutable.Audio.MasterVolume.Value - 0.10f, Audio::AudioEngine::MinVolume, Audio::AudioEngine::MaxVolume);
 			}
 
-			if (noActiveID && noOpenPopup)
+			if (noActiveID && noOpenPopup && !context.TestPlayActive)
+			{
+				if (Gui::IsAnyPressed(*Settings.Input.TestPlay_StartBeginning, false))
+					gamePreview.StartTestPlay(context, ChartGamePreview::TestPlayStartMode::Beginning);
+				else if (Gui::IsAnyPressed(*Settings.Input.TestPlay_StartCurrent, false))
+					gamePreview.StartTestPlay(context, ChartGamePreview::TestPlayStartMode::Current);
+				else if (Gui::IsAnyPressed(*Settings.Input.TestPlay_StartMarker, false))
+					gamePreview.StartTestPlay(context, ChartGamePreview::TestPlayStartMode::Marker);
+				if (context.TestPlayActive) Gui::SetWindowFocus(UI_WindowName("TAB_GAME_PREVIEW"));
+			}
+
+			if (noActiveID && noOpenPopup && !context.TestPlayActive)
 			{
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_Undo, true))
 					context.Undo.Undo();
@@ -1284,13 +1308,15 @@ namespace PeepoDrumKit
 		}
 		if (Gui::Begin(UI_WindowName("TAB_INSPECTOR"), nullptr, ImGuiWindowFlags_None))
 		{
-			chartInspectorWindow.DrawGui(context, timeline);
+			if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+			else chartInspectorWindow.DrawGui(context, timeline);
 		}
 		Gui::End();
 
 		if (Gui::Begin(UI_WindowName("TAB_UNDO_HISTORY"), nullptr, ImGuiWindowFlags_None))
 		{
-			undoHistoryWindow.DrawGui(context);
+			if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+			else undoHistoryWindow.DrawGui(context);
 		}
 		Gui::End();
 
@@ -1304,7 +1330,8 @@ namespace PeepoDrumKit
 		{
 			if (Gui::Begin(UI_WindowName("TAB_LYRICS"), &PersistentApp.LastSession.ShowWindow_Lyrics, ImGuiWindowFlags_None))
 			{
-				lyricsWindow.DrawGui(context, timeline);
+				if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+				else lyricsWindow.DrawGui(context, timeline);
 			}
 			if (focusLyricsWindowNextFrame) { focusLyricsWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();
@@ -1313,14 +1340,16 @@ namespace PeepoDrumKit
 		if (PersistentApp.LastSession.ShowWindow_TextEditor)
 		{
 			if (Gui::Begin(UI_WindowName("TAB_TEXT_EDITOR"), &PersistentApp.LastSession.ShowWindow_TextEditor, ImGuiWindowFlags_None))
-				DrawTextEditorWindow();
+				if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+				else DrawTextEditorWindow();
 			if (focusTextEditorWindowNextFrame) { focusTextEditorWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();
 		}
 
 		if (Gui::Begin(UI_WindowName("TAB_EVENTS"), nullptr, ImGuiWindowFlags_None))
 		{
-			tempoWindow.DrawGui(context, timeline);
+			if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+			else tempoWindow.DrawGui(context, timeline);
 		}
 		Gui::End();
 
@@ -1328,7 +1357,8 @@ namespace PeepoDrumKit
 		{
 			if (Gui::Begin(UI_WindowName("TAB_CHART_BRANCHES"), &PersistentApp.LastSession.ShowWindow_ChartBranches, ImGuiWindowFlags_None))
 			{
-				branchWindow.DrawGui(context, timeline);
+				if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+				else branchWindow.DrawGui(context, timeline);
 			}
 			Gui::End();
 		}
@@ -1337,6 +1367,12 @@ namespace PeepoDrumKit
 			Gui::SetNextWindowFocus();
 		if (Gui::Begin(UI_WindowName("TAB_CHART_PROPERTIES"), nullptr, ImGuiWindowFlags_None))
 		{
+			if (context.TestPlayActive)
+			{
+				Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+			}
+			else
+			{
 			ChartPropertiesWindowIn in = {};
 			in.IsSongAsyncLoading = loadSongFuture.valid();
 			in.IsJacketAsyncLoading = loadJacketFuture.valid();
@@ -1352,6 +1388,7 @@ namespace PeepoDrumKit
 				SetAndStartLoadingSongJacketFileName(out.NewJacketFilePath, context.Undo);
 			else if (out.BrowseOpenJacket)
 				OpenLoadJacketFileDialog(context.Undo);
+			}
 		}
 		Gui::End();
 
@@ -1373,13 +1410,21 @@ namespace PeepoDrumKit
 		if (Gui::Begin(UI_WindowName("TAB_TIMELINE_DEBUG"))) { /* ... */ } Gui::End();
 #endif
 
-		if (Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW"), nullptr, ImGuiWindowFlags_None))
+		gamePreview.UpdateTestPlay(context);
+		const b8 gamePreviewVisible = Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW"), nullptr, ImGuiWindowFlags_None);
+		if (gamePreviewVisible)
 		{
 			gamePreview.DrawGui(context, timeline.Camera.WorldSpaceXToTime(timeline.WorldSpaceCursorXAnimationCurrent));
+			if (gamePreview.TestPlayJumpTime)
+			{
+				timeline.Camera.PositionTarget.x = std::max(TimelineCameraBaseScrollX,
+					timeline.Camera.TimeToWorldSpaceX(*gamePreview.TestPlayJumpTime) * timeline.Camera.ZoomTarget.x - timeline.Regions.Content.GetWidth() * 0.5f);
+				gamePreview.TestPlayJumpTime.reset();
+			}
 		}
+		else gamePreview.IsAnyChildWindowFocused = false;
 		Gui::End();
 
-		// NOTE: Always update the timeline even if the window isn't visible so that child-windows can be docked properly and hit sounds can always be heard
 		Gui::Begin(UI_WindowName("TAB_TIMELINE"), nullptr, ImGuiWindowFlags_None);
 		timeline.DrawGui(context, gamePreview.HasKeyboardFocus());
 		Gui::End();
