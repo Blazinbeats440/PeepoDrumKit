@@ -228,23 +228,25 @@ namespace PeepoDrumKit
 			return jPosCoord * coordRatio;
 		}
 
-		vec2 GetHitCircleCoordinatesJPOSScroll(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const TempoMapAccelerationStructure& accelerationStructure) const
+		vec2 GetHitCircleCoordinatesJPOSScroll(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const SortedTempoMap& tempoMap, size_t branch) const
 		{
 			if (jposScrollChanges.empty())
 				return { 0, 0 };
 
 			f32 x = 0;
 			f32 y = 0;
-			Time jposTimeStamp = accelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(jposScrollChanges[0].BeatTime);
+			Time jposTimeStamp;
 			Time nextJposTimeStamp;
-			for (size_t i = 0; i < jposScrollChanges.size() && timeStamp >= jposTimeStamp; i++) {
+			for (size_t i = 0; i < jposScrollChanges.size(); i++) {
 				JPOSScrollChange jposChange = jposScrollChanges[i];
+				jposTimeStamp = tempoMap.BeatToTime(jposChange.BeatTime, branch);
+				if (timeStamp < jposTimeStamp) continue;
 				nextJposTimeStamp = !(i + 1 < jposScrollChanges.size()) ? Time::FromSec(F32Max)
-					: accelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(jposScrollChanges[i + 1].BeatTime);
+					: tempoMap.BeatToTime(jposScrollChanges[i + 1].BeatTime, branch);
 
 				Complex jposMove = jposChange.Move;
 				Time jposDuration = Time::FromSec(jposChange.Duration);
-				Time jposDurationMax = nextJposTimeStamp - jposTimeStamp;
+				Time jposDurationMax = Max(Time::Zero(), nextJposTimeStamp - jposTimeStamp);
 
 				f32 xMove = jposMove.GetRealPart();
 				f32 yMove = jposMove.GetImaginaryPart();
@@ -260,9 +262,9 @@ namespace PeepoDrumKit
 			return vec2(x, y);
 		}
 
-		vec2 GetHitCircleCoordinatesLane(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const TempoMapAccelerationStructure& accelerationStructure) const
+		vec2 GetHitCircleCoordinatesLane(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const SortedTempoMap& tempoMap, size_t branch) const
 		{
-			return JPOSScrollToLaneSpace(GetHitCircleCoordinatesJPOSScroll(jposScrollChanges, timeStamp, accelerationStructure));
+			return JPOSScrollToLaneSpace(GetHitCircleCoordinatesJPOSScroll(jposScrollChanges, timeStamp, tempoMap, branch));
 		}
 
 		vec2 GetNoteCoordinatesLane(
@@ -275,21 +277,21 @@ namespace PeepoDrumKit
 			Complex scrollSpeed,
 			ScrollMethod scrollType,
 			f64 pxWorldPer4Beats,
-			const TempoMapAccelerationStructure& accelerationStructure,
+			const SortedTempoMap& tempoMap, size_t branch,
 			const SortedJPOSScrollChangesList& jposScrollChanges
 		) const
 		{
 			Complex readaptedScrollSpeed = (scrollType == ScrollMethod::BMSCROLL) ? Complex(1.f, 0.f) : scrollSpeed;
 
 			return vec2(
-				originLane.x + TimeToLaneSpace(cursorTime, cursorHBScrollBeatTick, noteTime, noteBeat, tempo, readaptedScrollSpeed.GetRealPart(), scrollType, pxWorldPer4Beats, accelerationStructure),
-				originLane.y + TimeToLaneSpace(cursorTime, cursorHBScrollBeatTick, noteTime, noteBeat, tempo, readaptedScrollSpeed.GetImaginaryPart(), scrollType, pxWorldPer4Beats, accelerationStructure)
+				originLane.x + TimeToLaneSpace(cursorTime, cursorHBScrollBeatTick, noteTime, noteBeat, tempo, readaptedScrollSpeed.GetRealPart(), scrollType, pxWorldPer4Beats, tempoMap, branch),
+				originLane.y + TimeToLaneSpace(cursorTime, cursorHBScrollBeatTick, noteTime, noteBeat, tempo, readaptedScrollSpeed.GetImaginaryPart(), scrollType, pxWorldPer4Beats, tempoMap, branch)
 			);
 		}
 
-		vec2 GetHitCircleCoordinatesScreen(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const TempoMapAccelerationStructure& accelerationStructure) const
+		vec2 GetHitCircleCoordinatesScreen(const SortedJPOSScrollChangesList& jposScrollChanges, Time timeStamp, const SortedTempoMap& tempoMap, size_t branch) const
 		{
-			return LaneToScreenSpace(GetHitCircleCoordinatesLane(jposScrollChanges, timeStamp, accelerationStructure));
+			return LaneToScreenSpace(GetHitCircleCoordinatesLane(jposScrollChanges, timeStamp, tempoMap, branch));
 		}
 
 		// NOTE: Same scale as world space but with (0,0) starting at the hit-circle center point
@@ -302,14 +304,14 @@ namespace PeepoDrumKit
 			f32 scrollSpeed, 
 			ScrollMethod scrollType, 
 			f64 pxWorldPer4Beats,
-			const TempoMapAccelerationStructure& accelerationStructure
+			const SortedTempoMap& tempoMap, size_t branch
 		) const
 		{
 			switch (scrollType) {
 				case (ScrollMethod::HBSCROLL):
 				case (ScrollMethod::BMSCROLL):
 				{
-					f64 noteHBScrollBeatTick = accelerationStructure.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(noteBeat, noteTime);
+					f64 noteHBScrollBeatTick = tempoMap.BeatAndTimeToHBScrollBeatTick(noteBeat, noteTime, branch);
 					return scrollSpeed * ((noteHBScrollBeatTick - cursorHBScrollBeatTick) / Beat::TicksPerBeat) * (pxWorldPer4Beats / 4);
 				}
 				case (ScrollMethod::NMSCROLL):

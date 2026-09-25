@@ -425,7 +425,7 @@ namespace PeepoDrumKit
 			if (!VisibleOrDefault(barLineChangeIt.Next(course.BarLineChanges.Sorted, it.Beat)))
 				return ControlFlow::Continue;
 
-			const Time time = course.TempoMap.BeatToTime(it.Beat);
+			const Time time = course.TempoMap.BeatToTime(it.Beat, EnumToIndex(branch));
 			perBarFunc(ForEachBarLaneData { it.Beat, time,
 				TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, it.Beat)),
 				scrollTypeToView(ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, it.Beat))),
@@ -455,9 +455,9 @@ namespace PeepoDrumKit
 		for (Note& note : course.GetNotes(branch))
 		{
 			const Beat beat = note.BeatTime;
-			const Time head = (course.TempoMap.BeatToTime(beat) + note.TimeOffset);
+			const Time head = course.TempoMap.BeatToTime(beat, EnumToIndex(branch));
 			const Beat beatTail = (note.BeatDuration > Beat::Zero()) ? (beat + note.BeatDuration) : beat;
-			const Time tail = (note.BeatDuration > Beat::Zero()) ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
+			const Time tail = (note.BeatDuration > Beat::Zero()) ? course.TempoMap.BeatToTime(beatTail, EnumToIndex(branch)) : head;
 			const Complex scrollSpeed = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beat));
 			const Complex scrollSpeedTail = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beatTail));
 			perNoteFunc(ForEachNoteLaneData {
@@ -773,18 +773,18 @@ namespace PeepoDrumKit
 			const SortedGoGoRangesList& gogoRanges = course->GoGoRanges;
 
 			const b8 isPlayback = context.GetIsPlayback();
-			const BeatAndTime exactCursorBeatAndTime = context.GetCursorBeatAndTime(course, true);
+			const BeatAndTime exactCursorBeatAndTime = context.GetCursorBeatAndTime(course, branch, true);
 			const Time cursorTimeOrAnimated = isPlayback ? exactCursorBeatAndTime.Time : animatedCursorTime;
-			const Beat cursorBeatOrAnimatedTrunc = isPlayback ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true);
-			const f64 cursorHBScrollBeatOrAnimated = course->TempoMap.BeatAndTimeToHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated);
+			const Beat cursorBeatOrAnimatedTrunc = isPlayback ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true, EnumToIndex(branch), context.CursorBeatHint);
+			const f64 cursorHBScrollBeatOrAnimated = course->TempoMap.BeatAndTimeToHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated, EnumToIndex(branch));
 			const Beat chartBeatDuration = context.GetUsedBeatDurationFast(*course);
 
 			const auto* lastGogo = gogoRanges.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
 			const b8 isGogo = (lastGogo != nullptr && cursorBeatOrAnimatedTrunc < lastGogo->GetEnd());
 			const Time timeSinceGogo = (lastGogo == nullptr) ? Time::FromSec(F64Max)
-				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->BeatTime), cursorTimeOrAnimated);
+				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->BeatTime, EnumToIndex(branch)), cursorTimeOrAnimated);
 			const Time timeAfterGogo = (lastGogo == nullptr) ? Time::FromSec(F64Max)
-				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->GetEnd()), cursorTimeOrAnimated);
+				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->GetEnd(), EnumToIndex(branch)), cursorTimeOrAnimated);
 			const auto [gogoFireZoom, gogoFireAlpha, gogoLaneZoom, gogoLaneAlpha] = getGogoTransition(isGogo, timeSinceGogo, timeAfterGogo);
 
 			auto laneBorderColor = isFocusedLane ? GameLaneBorderFocusedColor : GameLaneBorderColor;
@@ -852,7 +852,7 @@ namespace PeepoDrumKit
 			};
 
 			// NOTE: Hit indicator circle
-			const vec2 hitCirclePosJPos = Camera.GetHitCircleCoordinatesJPOSScroll(jposScrollChanges, cursorTimeOrAnimated, tempoChanges);
+			const vec2 hitCirclePosJPos = Camera.GetHitCircleCoordinatesJPOSScroll(jposScrollChanges, cursorTimeOrAnimated, course->TempoMap, EnumToIndex(branch));
 			const vec2 hitCirclePosLane = Camera.JPOSScrollToLaneSpace(hitCirclePosJPos);
 			const vec2 hitCirclePos = Camera.LaneToScreenSpace(hitCirclePosLane);
 			if (gogoFireZoom > 0) {
@@ -893,7 +893,7 @@ namespace PeepoDrumKit
 			drawList->ChannelsSetCurrent(2);
 			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](const ForEachBarLaneData& it)
 			{
-				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, course->TempoMap, EnumToIndex(branch), jposScrollChanges);
 				const f32 laneX = lane.x, laneY = lane.y;
 
 				if (Camera.IsPointVisibleOnLane(laneX))
@@ -936,8 +936,8 @@ namespace PeepoDrumKit
 			drawList->ChannelsSetCurrent(3);
 			ForEachNoteOnNoteLane(*course, branch, scrollSpeedToView, [&](const ForEachNoteLaneData& it)
 			{
-				vec2 laneHeadOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-				vec2 laneTailOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				vec2 laneHeadOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, course->TempoMap, EnumToIndex(branch), jposScrollChanges);
+				vec2 laneTailOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, course->TempoMap, EnumToIndex(branch), jposScrollChanges);
 
 				const Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
 				const Time timeSinceTailHit = TimeSinceNoteHit(it.Tail.Time, cursorTimeOrAnimated);
@@ -955,14 +955,14 @@ namespace PeepoDrumKit
 				b8 isPreMoveTail = !(cursorTimeOrAnimated >= suddenMoveTimeTail);
 				if (isPreMoveHead) {
 					positionTime = suddenMoveTimeHead;
-					positionHBScrollBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTime, true), positionTime);
+					positionHBScrollBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTime, true, EnumToIndex(branch), it.Beat), positionTime, EnumToIndex(branch));
 				}
 				if (isPreMoveTail) {
 					positionTimeEnd = suddenMoveTimeTail;
-					positionHBScrollBeatEnd = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTimeEnd, true), positionTimeEnd);
+					positionHBScrollBeatEnd = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTimeEnd, true, EnumToIndex(branch), it.Tail.Beat), positionTimeEnd, EnumToIndex(branch));
 				}
-				vec2 laneHeadMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTime, positionHBScrollBeat, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-				vec2 laneTailMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTimeEnd, positionHBScrollBeatEnd, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				vec2 laneHeadMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTime, positionHBScrollBeat, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, course->TempoMap, EnumToIndex(branch), jposScrollChanges);
+				vec2 laneTailMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTimeEnd, positionHBScrollBeatEnd, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, course->TempoMap, EnumToIndex(branch), jposScrollChanges);
 
 				// TJAP3 behavior
 				laneHeadMove.y = laneHeadOrig.y;
@@ -1117,7 +1117,7 @@ namespace PeepoDrumKit
 								{
 									// TODO: Scale duration, animation speed and path by extended lane width
 									const auto hitAnimation = GetNoteHitPathAnimation(timeSinceSubHit, Camera.ExtendedLaneWidthFactor(), nLanes, iLane, it->OriginalNote->Type);
-									const vec2 laneOrigin = Camera.GetHitCircleCoordinatesLane(jposScrollChanges, subHitTime, tempoChanges);
+									const vec2 laneOrigin = Camera.GetHitCircleCoordinatesLane(jposScrollChanges, subHitTime, course->TempoMap, EnumToIndex(branch));
 									const vec2 noteCenter = Camera.LaneToWorldSpace(laneOrigin.x, laneOrigin.y) + hitAnimation.PositionOffset;
 
 									if (hitAnimation.AlphaFadeOut >= 1.0f)
@@ -1132,7 +1132,7 @@ namespace PeepoDrumKit
 					// TODO: Instead of offseting the lane x position just draw as HitCenter + PositionOffset directly (?)
 					auto hitAnimation = GetNoteHitPathAnimation(timeSinceHit, Camera.ExtendedLaneWidthFactor(), nLanes, iLane, it->OriginalNote->Type);
 					const vec2 noteOrigin = (timeSinceHit < Time::Zero()) ? it->LaneHead
-						: Camera.GetHitCircleCoordinatesLane(jposScrollChanges, it->Time, tempoChanges); // keep flying note's start position
+						: Camera.GetHitCircleCoordinatesLane(jposScrollChanges, it->Time, course->TempoMap, EnumToIndex(branch)); // keep flying note's start position
 					laneTailDisplay = laneHeadDisplay = noteOrigin + hitAnimation.PositionOffset;
 					const vec2 noteCenter = Camera.LaneToWorldSpace(laneHeadDisplay.x, laneHeadDisplay.y);
 
@@ -1207,7 +1207,7 @@ namespace PeepoDrumKit
 								{ return ASCII::ToString(attr.Beat.Ticks / f32{ Beat::TicksPerBeat }) + " beats"; }));
 								ImGui::TextUnformatted("HBScroll Beat: " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{
-									f32 ticksHBScrollBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(attr.Beat, attr.Time);
+									f32 ticksHBScrollBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(attr.Beat, attr.Time, EnumToIndex(branch));
 									return ASCII::ToString(ticksHBScrollBeat / Beat::TicksPerBeat) + " beats";
 								}));
 								ImGui::TextUnformatted("Tempo: " + fmt([&](const NoteAttr& attr, const vec2& pos)

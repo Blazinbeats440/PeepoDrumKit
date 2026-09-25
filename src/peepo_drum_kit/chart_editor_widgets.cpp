@@ -2489,7 +2489,7 @@ namespace PeepoDrumKit
 			{
 				if (Gui::Property::BeginTable(ImGuiTableFlags_BordersInner))
 				{
-					const cstr listTypeNames[] = { UI_Str("SELECTED_EVENTS_TEMPOS"), UI_Str("SELECTED_EVENTS_TIME_SIGNATURES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_BAR_LINE_VISIBILITIES"), UI_Str("SELECTED_EVENTS_GO_GO_RANGES"), UI_Str("EVENT_LYRICS"), UI_Str("SELECTED_EVENTS_SCROLL_TYPES"), UI_Str("SELECTED_EVENTS_JPOS_SCROLLS"), UI_Str("SELECTED_EVENTS_SUDDEN"), };
+					const cstr listTypeNames[] = { UI_Str("SELECTED_EVENTS_TEMPOS"), UI_Str("SELECTED_EVENTS_TIME_SIGNATURES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_BAR_LINE_VISIBILITIES"), UI_Str("SELECTED_EVENTS_GO_GO_RANGES"), UI_Str("EVENT_LYRICS"), UI_Str("SELECTED_EVENTS_SCROLL_TYPES"), UI_Str("SELECTED_EVENTS_JPOS_SCROLLS"), UI_Str("SELECTED_EVENTS_SUDDEN"), UI_Str("EVENT_DELAY"), UI_Str("EVENT_DELAY"), UI_Str("EVENT_DELAY") };
 					static_assert(ArrayCount(listTypeNames) == EnumCount<GenericList>);
 
 					Gui::Property::Property([&]
@@ -2555,6 +2555,7 @@ namespace PeepoDrumKit
 						GenericMember::Tempo_V, GenericMember::TimeSignature_V, GenericMember::F32_ScrollSpeed, GenericMember::B8_BarLineVisible,
 						GenericMember::I8_ScrollType, GenericMember::F32_JPOSScroll, GenericMember::F32_JPOSScrollDuration,
 						GenericMember::Time_AppearanceOffset, GenericMember::Time_MovementOffset, GenericMember::B8_SuddenHideRoll,
+						GenericMember::Time_Offset,
 						}) {
 						if (!(commonAvailableMemberFlags & EnumToFlag(member)))
 							continue;
@@ -2874,7 +2875,7 @@ namespace PeepoDrumKit
 						} break;
 						case GenericMember::Time_Offset:
 						{
-							cstr label = UI_Str("EVENT_PROP_TIME_OFFSET");
+							cstr label = UI_Str("EVENT_DELAY_AMOUNT");
 							MultiEditWidgetParam widgetIn = {};
 							widgetIn.EnableStepButtons = true;
 							widgetIn.Value.F32 = sharedValues.TimeOffset().ToMS_F32();
@@ -3761,6 +3762,36 @@ namespace PeepoDrumKit
 				const b8 showScrollType = *Settings.General.EventShowScrollType || !course.ScrollTypes.Sorted.empty();
 				const b8 showJPOSScroll = *Settings.General.EventShowJPOSScroll || !course.JPOSScrollChanges.Sorted.empty();
 				const b8 showSudden = *Settings.General.EventShowSudden || !course.SuddenChanges.Sorted.empty();
+				if (*Settings.General.EventShowDelay || std::any_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [](const auto& value) { return value->HasDelays(); }))
+				{
+					auto& delays = course.GetDelays(context.ChartSelectedBranch);
+					const auto* existing = delays.TryFindExactAtBeat(cursorBeat);
+					Time value = existing ? existing->Duration : Time::Zero();
+					auto setDelay = [&](Time duration)
+					{
+						if (!std::isfinite(duration.Seconds)) return;
+						if (delays.TryFindExactAtBeat(cursorBeat))
+							context.Undo.Execute<Commands::UpdateDelay>(&course, &delays, DelayChange { cursorBeat, duration });
+						else
+							context.Undo.Execute<Commands::AddDelay>(&course, &delays, DelayChange { cursorBeat, duration });
+					};
+					Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_DELAY"), [&]
+					{
+						Gui::BeginDisabled(disableEditingAtPlayCursor);
+						Gui::SetNextItemWidth(-1.0f);
+						f32 seconds = value.ToSec_F32();
+						if (Gui::SpinFloat("##DelayAtCursor", &seconds, 0.001f, 0.01f, "%+g s")) setDelay(Time::FromSec(seconds));
+						Gui::PushID(&delays);
+						if (!disallowRemoveButton && existing)
+						{
+							if (Gui::Button(UI_WindowName("ACT_EVENT_REMOVE"), { getInsertButtonWidth(), 0.0f }))
+								context.Undo.Execute<Commands::RemoveDelay>(&course, &delays, cursorBeat);
+						}
+						else if (Gui::Button(UI_WindowName("ACT_EVENT_ADD"), { getInsertButtonWidth(), 0.0f })) setDelay(value);
+						Gui::PopID();
+						Gui::EndDisabled();
+					});
+				}
 
 				const TempoChange* tempoChangeAtCursor = course.TempoMap.Tempo.TryFindLastAtBeat(cursorBeat);
 				const Tempo tempoAtCursor = (tempoChangeAtCursor != nullptr) ? tempoChangeAtCursor->Tempo : FallbackEvent<TempoChange>.Tempo;

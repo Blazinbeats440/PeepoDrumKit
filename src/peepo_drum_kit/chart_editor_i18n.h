@@ -191,6 +191,14 @@ X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the se
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Auto-Step After Note Input") \
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC", "When enabled, the cursor advances by the current grid interval after placing a note. The shortcut is F7.") \
 X("SETTINGS_EVENT_SHOW_SUDDEN", "Chart Events: Show Sudden") \
+X("SETTINGS_EVENT_SHOW_DELAY", "Chart Events: Show DELAY") \
+X("SETTINGS_EVENT_SHOW_DELAY_DESC", "Show DELAY in Chart Events. Always shown when the course contains #DELAY. The timeline row appears only when DELAY is used.") \
+X("EVENT_DELAY", "DELAY") \
+X("EVENT_DELAY_AMOUNT", "Delay amount") \
+X("INPUT_TIMELINE_TOGGLE_DELAY_VIEW", "Timeline: Toggle DELAY view A/B") \
+X("TIMELINE_DELAY_TOOLTIP", "DELAY %+.3f ms\nTotal %+.3f ms") \
+X("TIMELINE_DELAY_SCORE_VIEW", "A: Score order") \
+X("TIMELINE_DELAY_TIME_VIEW", "B: Playback time") \
 X("SETTINGS_EVENT_SHOW_SUDDEN_DESC", "Show the Sudden field in the Chart Events window. It is always shown when the chart contains #SUDDEN.") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC", "Show the JPOS Scroll field in the Chart Events window. It is always shown when the chart contains #JPOSSCROLL.") \

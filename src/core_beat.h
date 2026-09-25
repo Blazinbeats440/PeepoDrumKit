@@ -163,6 +163,13 @@ namespace PeepoDrumKit {
 		TimeSignature Signature = {};
 		b8 IsSelected = false;
 	};
+
+	struct DelayChange
+	{
+		Beat BeatTime;
+		Time Duration;
+		b8 IsSelected = false;
+	};
 }
 
 using PeepoDrumKit::TempoChange;
@@ -259,6 +266,7 @@ struct SortedTempoMap
 	// NOTE: These must always remain sorted and only have changes with (Beat.Ticks >= 0)
 	SortedTempoChangesList Tempo;
 	SortedSignatureChangesList Signature;
+	BeatSortedList<PeepoDrumKit::DelayChange> Delays[3];
 	TempoMapAccelerationStructure AccelerationStructure;
 
 public:
@@ -266,10 +274,16 @@ public:
 
 	// NOTE: Must manually be called every time a TempoChange has been edited otherwise Beat <-> Time conversions will be incorrect
 	inline void RebuildAccelerationStructure() { AccelerationStructure.Rebuild(Tempo.data(), Tempo.size()); }
-	inline Time BeatToTime(Beat beat) const { return AccelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(beat); }
+	inline Time BeatToTimeWithoutDelay(Beat beat) const { return AccelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(beat); }
+	Time GetDelayAtBeat(Beat beat, size_t branch = 0, bool includeAtBeat = true) const;
+	size_t GetDelaySegment(Beat beat, size_t branch = 0) const;
+	size_t GetDelaySegmentAtTime(Time time, Beat preferredBeat, size_t branch = 0) const;
+	inline Time BeatToTime(Beat beat, size_t branch = 0) const { return BeatToTimeWithoutDelay(beat) + GetDelayAtBeat(beat, branch); }
 	inline Beat TimeToBeat(Time time) const { return TimeToBeat(time, false); }
-	inline Beat TimeToBeat(Time time, bool truncTo0) const { return AccelerationStructure.ConvertTimeToBeatUsingLookupTableBinarySearch(time, truncTo0); }
-	inline f64 BeatAndTimeToHBScrollBeatTick(Beat beat, Time time) const { return AccelerationStructure.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(beat, time); }
+	inline Beat TimeToBeatWithoutDelay(Time time, bool truncTo0 = false) const { return AccelerationStructure.ConvertTimeToBeatUsingLookupTableBinarySearch(time, truncTo0); }
+	Beat TimeToBeat(Time time, bool truncTo0, size_t branch = 0, Beat preferredBeat = Beat::Zero()) const;
+	std::vector<Beat> TimeToBeats(Time time, size_t branch = 0, bool truncTo0 = false) const;
+	inline f64 BeatAndTimeToHBScrollBeatTick(Beat beat, Time time, size_t branch = 0) const { return AccelerationStructure.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(beat, time - GetDelayAtBeat(beat, branch)); }
 
 	struct ForEachBeatBarData { TimeSignature Signature; Beat Beat; i32 BarIndex; b8 IsBar; };
 	template <typename Func>

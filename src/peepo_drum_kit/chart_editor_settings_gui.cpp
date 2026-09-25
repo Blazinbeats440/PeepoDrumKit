@@ -915,6 +915,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.EventShowDelay,
+							UI_Str("SETTINGS_EVENT_SHOW_DELAY"),
+							UI_Str("SETTINGS_EVENT_SHOW_DELAY_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.EventShowJPOSScroll,
 							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL"),
 							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC")),
@@ -1214,6 +1219,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_SetPlaybackSpeed_50, "Timeline: Set Playback Speed 50%", },
 						{ &settings.Input.Timeline_SetPlaybackSpeed_25, "Timeline: Set Playback Speed 25%", },
 						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
+						{ &settings.Input.Timeline_ToggleDelayView, UI_Str("INPUT_TIMELINE_TOGGLE_DELAY_VIEW"), },
 						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, "Timeline: Toggle Playback Cursor Follow", },
 						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, "Timeline: Toggle Auto-Step After Note Input", },
 						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
