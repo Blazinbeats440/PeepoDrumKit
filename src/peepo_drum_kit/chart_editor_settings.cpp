@@ -398,8 +398,50 @@ namespace PeepoDrumKit
 				}
 			}
 		});
+		// Carry forward bindings saved before the four test-play hit keys were separated.
+		if (out.Input.TestPlay_Don.HasValue)
+		{
+			if (!out.Input.TestPlay_DonLeft.HasValue && out.Input.TestPlay_Don.Value.Count > 0)
+			{
+				out.Input.TestPlay_DonLeft.Value = MultiInputBinding(out.Input.TestPlay_Don.Value.Slots[0]);
+				out.Input.TestPlay_DonLeft.SetHasValueIfNotDefault();
+			}
+			if (!out.Input.TestPlay_DonRight.HasValue && out.Input.TestPlay_Don.Value.Count > 1)
+			{
+				out.Input.TestPlay_DonRight.Value = MultiInputBinding(out.Input.TestPlay_Don.Value.Slots[1]);
+				out.Input.TestPlay_DonRight.SetHasValueIfNotDefault();
+			}
+			out.Input.TestPlay_Don.ResetToDefault();
+		}
+		if (out.Input.TestPlay_Ka.HasValue)
+		{
+			if (!out.Input.TestPlay_KaLeft.HasValue && out.Input.TestPlay_Ka.Value.Count > 0)
+			{
+				out.Input.TestPlay_KaLeft.Value = MultiInputBinding(out.Input.TestPlay_Ka.Value.Slots[0]);
+				out.Input.TestPlay_KaLeft.SetHasValueIfNotDefault();
+			}
+			if (!out.Input.TestPlay_KaRight.HasValue && out.Input.TestPlay_Ka.Value.Count > 1)
+			{
+				out.Input.TestPlay_KaRight.Value = MultiInputBinding(out.Input.TestPlay_Ka.Value.Slots[1]);
+				out.Input.TestPlay_KaRight.SetHasValueIfNotDefault();
+			}
+			out.Input.TestPlay_Ka.ResetToDefault();
+		}
 
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
+		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
+		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
+		out.TestPlay.GoodWindowMilliseconds.Value = Clamp(out.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
+		out.TestPlay.OkWindowMilliseconds.Value = Clamp(out.TestPlay.OkWindowMilliseconds.Value, out.TestPlay.GoodWindowMilliseconds.Value, 1000);
+		out.TestPlay.BadWindowMilliseconds.Value = Clamp(out.TestPlay.BadWindowMilliseconds.Value, out.TestPlay.OkWindowMilliseconds.Value, 1000);
+		out.TestPlay.JudgementDisplayMode.Value = Clamp(out.TestPlay.JudgementDisplayMode.Value, 0, 3);
+		out.TestPlay.PausedJudgementDisplayMode.Value = Clamp(out.TestPlay.PausedJudgementDisplayMode.Value, 0, 3);
+		out.TestPlay.PausedJudgementFilter.Value = Clamp(out.TestPlay.PausedJudgementFilter.Value, 0, 2);
+		out.TestPlay.PausedJudgementThresholdMilliseconds.Value = Clamp(out.TestPlay.PausedJudgementThresholdMilliseconds.Value, 0, 1000);
+		out.TestPlay.TimingNeutralWindowMilliseconds.Value = Clamp(out.TestPlay.TimingNeutralWindowMilliseconds.Value, 0, 1000);
+		out.TestPlay.JudgementDisplayMilliseconds.Value = Clamp(out.TestPlay.JudgementDisplayMilliseconds.Value, 100, 5000);
+		out.TestPlay.LoopDelayMilliseconds.Value = Clamp(out.TestPlay.LoopDelayMilliseconds.Value, 0, 5000);
+		out.TestPlay.PlaybackSpeedPercent.Value = Clamp(out.TestPlay.PlaybackSpeedPercent.Value, 25, 100);
 		out.General.BalloonExpectedHitsPerSecond.Value = Clamp(out.General.BalloonExpectedHitsPerSecond.Value, 0.1f, 100.0f);
 		out.Audio.MasterVolume.Value = Clamp(out.Audio.MasterVolume.Value, 0.0f, 1.0f);
 		out.Audio.BalloonVolume.Value = Clamp(out.Audio.BalloonVolume.Value, 0.0f, 1.0f);
@@ -478,6 +520,7 @@ namespace PeepoDrumKit
 			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
+			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
 			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
 			X(General.TimelineAutoStepAfterNoteInput, "timeline_auto_step_after_note_input");
@@ -665,6 +708,35 @@ namespace PeepoDrumKit
 			X(Input.Timeline_TogglePlaybackCursorFollow, "timeline_toggle_playback_cursor_follow");
 			X(Input.Timeline_ToggleAutoStepAfterNoteInput, "timeline_toggle_auto_step_after_note_input");
 			X(Input.Timeline_ToggleLoopPlayback, "timeline_toggle_loop_playback");
+			X(Input.TestPlay_Don, "test_play_don");
+			X(Input.TestPlay_Ka, "test_play_ka");
+			X(Input.TestPlay_DonLeft, "test_play_don_left");
+			X(Input.TestPlay_DonRight, "test_play_don_right");
+			X(Input.TestPlay_KaLeft, "test_play_ka_left");
+			X(Input.TestPlay_KaRight, "test_play_ka_right");
+			X(Input.TestPlay_StartBeginning, "test_play_start_beginning");
+			X(Input.TestPlay_StartCurrent, "test_play_start_current");
+			X(Input.TestPlay_StartMarker, "test_play_start_marker");
+			X(Input.TestPlay_TogglePause, "test_play_toggle_pause");
+			X(Input.TestPlay_Retry, "test_play_retry");
+			X(Input.TestPlay_Exit, "test_play_exit");
+			SECTION("test_play");
+			X(TestPlay.LeadInMilliseconds, "lead_in_ms");
+			X(TestPlay.InputLatencyCompensationMilliseconds, "input_latency_compensation_ms");
+			X(TestPlay.GoodWindowMilliseconds, "test_play_good_window_ms");
+			X(TestPlay.OkWindowMilliseconds, "test_play_ok_window_ms");
+			X(TestPlay.BadWindowMilliseconds, "test_play_bad_window_ms");
+			X(TestPlay.JudgementDisplayMode, "judgement_display_mode");
+			X(TestPlay.PausedJudgementDisplayMode, "paused_judgement_display_mode");
+			X(TestPlay.PausedJudgementFilter, "paused_judgement_filter");
+			X(TestPlay.PausedJudgementThresholdMilliseconds, "paused_judgement_threshold_ms");
+			X(TestPlay.TimingNeutralWindowMilliseconds, "timing_neutral_window_ms");
+			X(TestPlay.JudgementDisplayMilliseconds, "judgement_display_ms");
+			X(TestPlay.LoopRange, "loop_range");
+			X(TestPlay.LoopDelayMilliseconds, "loop_delay_ms");
+			X(TestPlay.PlaybackSpeedPercent, "playback_speed_percent");
+			X(TestPlay.ShowStartButtonsInPreview, "show_start_buttons_in_preview");
+			SECTION("input");
 			X(Input.Timeline_ToggleMetronome, "timeline_toggle_metronome");
 			X(Input.TempoCalculator_Tap, "tempo_calculator_tap");
 			X(Input.TempoCalculator_Reset, "tempo_calculator_reset");

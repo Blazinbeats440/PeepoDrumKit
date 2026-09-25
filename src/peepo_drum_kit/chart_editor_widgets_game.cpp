@@ -1,4 +1,5 @@
 #include "chart_editor_widgets.h"
+#include "chart_editor_test_play_display.h"
 #define STBI_ONLY_PNG
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -619,10 +620,451 @@ namespace PeepoDrumKit
 		}
 	}
 
+	void ChartGamePreview::StartTestPlay(ChartContext& context, TestPlayStartMode mode)
+	{
+		if (IsTestPlaying || context.CompareMode || context.ChartSelectedCourse == nullptr || (mode == TestPlayStartMode::Marker && !context.Marker.IsActive)) return;
+		TestPlayCourse = context.ChartSelectedCourse;
+		TestPlayBranch = context.ChartSelectedBranch;
+		if (mode == TestPlayStartMode::Beginning)
+		{
+			context.RangeSelection = {};
+			TestPlayStartTime = Time::Zero();
+		}
+		else if (mode == TestPlayStartMode::Marker)
+		{
+			const Beat markerBeat = context.Marker.BeatTime;
+			context.RangeSelection = {};
+			TestPlayStartTime = context.BeatToTime(markerBeat);
+		}
+		else
+			TestPlayStartTime = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero()
+				? context.BeatToTime(context.RangeSelection.GetMin()) : context.GetCursorTime();
+		TestPlayEndTime = context.GetUsedDuration(*TestPlayCourse);
+		TestPlayAttemptStartTime = TestPlayStartTime;
+		context.TestPlaySeekTime.reset();
+		context.TestPlaySmoothCursor = false;
+		context.TestPlayFollowCursor = false;
+		context.TestPlayJudgements.clear();
+		TestPlayRecordFilter = 0;
+		TestPlayRecordScope = 0;
+		TestPlayNotes.clear();
+		TestPlayLongNotes.clear();
+		for (Note& note : TestPlayCourse->GetNotes(TestPlayBranch))
+		{
+			if (IsComboNote(note.Type))
+			{
+				const Time noteTime = TestPlayCourse->TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset;
+				if (noteTime <= TestPlayEndTime)
+					TestPlayNotes.push_back({ &note, noteTime, 0, Time::Zero() });
+			}
+			if (IsLongNote(note.Type))
+			{
+				const Time startTime = TestPlayCourse->TempoMap.BeatToTime(note.GetStart()) + note.TimeOffset;
+				const Time endTime = TestPlayCourse->TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset;
+				if (endTime >= Time::Zero() && startTime <= TestPlayEndTime)
+					TestPlayLongNotes.push_back({ &note, startTime, endTime });
+			}
+		}
+		TestPlayEndTime = Max(TestPlayEndTime, TestPlayStartTime);
+		TestPlayPreviousPlaybackSpeed = context.GetPlaybackSpeed();
+		TestPlayPlaybackSpeed = Clamp(*Settings.TestPlay.PlaybackSpeedPercent, 25, 100) / 100.0f;
+		context.TestPlayActive = IsTestPlaying = true;
+		context.SfxVoicePool.PauseAllFutureVoices();
+		ResetTestPlayAttempt(context, TestPlayStartTime);
+	}
+
+	void ChartGamePreview::ResetTestPlayState(Time startTime)
+	{
+		TestPlayAttemptStartTime = startTime;
+		TestPlayAttemptJudgements.clear();
+		for (auto& note : TestPlayNotes) { note.Judgement = note.NoteTime < startTime ? 4 : 0; note.HitTime = Time::Zero(); note.TimingError = 0; note.WasHit = false; }
+		for (auto& note : TestPlayLongNotes) { note.HitCount = 0; note.HitTimes.clear(); }
+		TestPlayCombo = TestPlayMaxCombo = 0;
+		TestPlayDrumrollCount = TestPlayBalloonHitCount = TestPlayBalloonPopCount = 0;
+		TestPlayLastJudgement = 0; TestPlayLastWasHit = false; TestPlayFinished = false;
+	}
+
+	TestPlayInterval<Time> ChartGamePreview::GetTestPlaySelectedRange(const ChartContext& context) const
+	{
+		if (context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero())
+			return { Clamp(context.BeatToTime(context.RangeSelection.GetMin()), Time::Zero(), TestPlayEndTime),
+				Clamp(context.BeatToTime(context.RangeSelection.GetMax()), Time::Zero(), TestPlayEndTime) };
+		return { Time::Zero(), Time::Zero() };
+	}
+
+	TestPlayInterval<Time> ChartGamePreview::GetTestPlayInterval(const ChartContext& context) const
+	{
+		const auto selectedRange = GetTestPlaySelectedRange(context);
+		if (selectedRange.IsValid())
+			return GetTestPlayAttemptInterval(selectedRange, TestPlayAttemptStartTime);
+		return { TestPlayAttemptStartTime, TestPlayEndTime };
+	}
+
+	void ChartGamePreview::ResetTestPlayAttempt(ChartContext& context, Time startTime)
+	{
+		startTime = Clamp(startTime, Time::Zero(), TestPlayEndTime);
+		ResetTestPlayState(startTime);
+		context.SfxVoicePool.PauseAllFutureVoices();
+		context.SetPlaybackSpeed(TestPlayPlaybackSpeed);
+		context.SetCursorTime(Max(Time::Zero(), startTime - Time::FromMS(*Settings.TestPlay.LeadInMilliseconds * TestPlayPlaybackSpeed)));
+		context.SetIsPlayback(true);
+	}
+
+	void ChartGamePreview::SeekTestPlay(ChartContext& context, Time targetTime)
+	{
+		const Time target = Clamp(targetTime, Time::Zero(), TestPlayEndTime);
+		context.SetIsPlayback(false);
+		context.SetCursorTime(target);
+		TestPlayAttemptStartTime = target;
+		TestPlayFinished = false;
+	}
+
+	void ChartGamePreview::ToggleTestPlayPause(ChartContext& context)
+	{
+		const auto action = GetTestPlayPauseAction(context.GetIsPlayback(), TestPlayFinished,
+			context.GetCursorTime() == TestPlayAttemptStartTime);
+		if (action == TestPlayPauseAction::Pause)
+		{
+			context.SetIsPlayback(false);
+			return;
+		}
+		const Time cursorTime = context.GetCursorTime();
+		const TestPlayInterval<Time> selectedRange = GetTestPlaySelectedRange(context);
+		if (!CanResumeTestPlay(TestPlayFinished, selectedRange.IsValid(), selectedRange, cursorTime)) return;
+		const Time resumeTime = GetTestPlayResumeTime(cursorTime, selectedRange, selectedRange.IsValid());
+		const b8 useLeadIn = resumeTime != cursorTime || action == TestPlayPauseAction::ResumeWithLeadIn;
+		ResetTestPlayState(resumeTime);
+		if (useLeadIn)
+			context.SetCursorTime(Max(Time::Zero(), resumeTime - Time::FromMS(*Settings.TestPlay.LeadInMilliseconds * TestPlayPlaybackSpeed)));
+		context.SetIsPlayback(true);
+	}
+
+	void ChartGamePreview::ExitTestPlay(ChartContext& context)
+	{
+		context.SetIsPlayback(false);
+		context.SetPlaybackSpeed(TestPlayPreviousPlaybackSpeed);
+		context.TestPlayActive = IsTestPlaying = false;
+		context.TestPlaySeekTime.reset();
+		context.TestPlaySmoothCursor = context.TestPlayFollowCursor = false;
+		context.SetCursorTime(TestPlayStartTime);
+		TestPlayNotes.clear();
+		TestPlayAttemptJudgements.clear();
+		TestPlayLongNotes.clear();
+	}
+
+	void ChartGamePreview::UpdateTestPlay(ChartContext& context)
+	{
+		if (!IsTestPlaying) return;
+
+		const b8 acceptKeyboard = !Gui::GetIO().WantTextInput;
+		b8 barNavigationTriggered = false;
+		if (!context.GetIsPlayback() && acceptKeyboard)
+		{
+			const b8 previousBar = Gui::IsAnyPressed(*Settings.Input.TestPlay_KaLeft, false);
+			const b8 nextBar = !previousBar && Gui::IsAnyPressed(*Settings.Input.TestPlay_KaRight, false);
+			if (previousBar || nextBar)
+			{
+				context.SfxVoicePool.PlaySound(SoundEffectType::TaikoKa);
+				barNavigationTriggered = true;
+				context.TestPlaySmoothCursor = true;
+				context.TestPlayFollowCursor = true;
+				const Beat currentBeat = context.TimeToBeat(context.GetCursorTime());
+				Beat previousBeat = Beat::Zero();
+				Beat nextBeat = context.TimeToBeat(TestPlayEndTime);
+				TestPlayCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+				{
+					if (!bar.IsBar) return ControlFlow::Fallthrough;
+					if (bar.Beat < currentBeat) previousBeat = bar.Beat;
+					else if (bar.Beat > currentBeat) { nextBeat = bar.Beat; return ControlFlow::Break; }
+					return ControlFlow::Fallthrough;
+				});
+				context.TestPlaySeekTime = TestPlayCourse->TempoMap.BeatToTime(previousBar ? previousBeat : nextBeat);
+			}
+		}
+		if (context.TestPlaySeekTime)
+		{
+			const Time target = *context.TestPlaySeekTime;
+			context.TestPlaySeekTime.reset();
+			SeekTestPlay(context, target);
+		}
+		if (acceptKeyboard && !barNavigationTriggered)
+		{
+			if (Gui::IsAnyPressed(*Settings.Input.TestPlay_Exit, false)) { ExitTestPlay(context); return; }
+			if (Gui::IsAnyPressed(*Settings.Input.TestPlay_Retry, false))
+				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
+			else if (Gui::IsAnyPressed(*Settings.Input.TestPlay_TogglePause, false))
+				ToggleTestPlayPause(context);
+		}
+		if (!context.GetIsPlayback() && acceptKeyboard)
+		{
+			const f32 speedStep = Settings.General.PlaybackSpeedStepPercent.Value / 100.0f;
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_IncreasePlaybackSpeed, true, InputModifierBehavior::Relaxed))
+				TestPlayPlaybackSpeed = Clamp(TestPlayPlaybackSpeed + speedStep, 0.25f, 1.0f);
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_DecreasePlaybackSpeed, true, InputModifierBehavior::Relaxed))
+				TestPlayPlaybackSpeed = Clamp(TestPlayPlaybackSpeed - speedStep, 0.25f, 1.0f);
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_SetPlaybackSpeed_100, false)) TestPlayPlaybackSpeed = 1.0f;
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_SetPlaybackSpeed_75, false)) TestPlayPlaybackSpeed = 0.75f;
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_SetPlaybackSpeed_50, false)) TestPlayPlaybackSpeed = 0.5f;
+			if (Gui::IsAnyPressed(*Settings.Input.Timeline_SetPlaybackSpeed_25, false)) TestPlayPlaybackSpeed = 0.25f;
+			context.SetPlaybackSpeed(TestPlayPlaybackSpeed);
+		}
+		if (!context.GetIsPlayback()) return;
+
+		const i32 okWindowMilliseconds = Clamp(*Settings.TestPlay.OkWindowMilliseconds, 1, 1000);
+		const i32 goodWindowMilliseconds = Clamp(*Settings.TestPlay.GoodWindowMilliseconds, 1, okWindowMilliseconds);
+		const i32 badWindowMilliseconds = Clamp(*Settings.TestPlay.BadWindowMilliseconds, okWindowMilliseconds, 1000);
+		const TestPlayInterval<Time> selectedRange = GetTestPlaySelectedRange(context);
+		const b8 loopRange = selectedRange.IsValid();
+		if (loopRange)
+		{
+			if (IsTestPlayLoopDue(context.GetCursorTime(), selectedRange.End,
+				Time::FromMS((badWindowMilliseconds + Clamp(*Settings.TestPlay.LoopDelayMilliseconds, 0, 5000)) * TestPlayPlaybackSpeed)))
+				ResetTestPlayAttempt(context, selectedRange.Start);
+		}
+		if (TestPlayFinished) return;
+		const TestPlayInterval<Time> interval = GetTestPlayInterval(context);
+
+		const Time now = context.GetCursorTime() - Time::FromMS(*Settings.TestPlay.InputLatencyCompensationMilliseconds * TestPlayPlaybackSpeed);
+		auto recordJudgement = [&](TestPlayNoteState& note, i32 judgement, i32 timingError, b8 wasHit)
+		{
+			note.Judgement = judgement;
+			note.TimingError = timingError;
+			note.WasHit = wasHit;
+			StoreLatestTestPlayResult(context.TestPlayJudgements, note.Source,
+				ChartContext::TestPlayJudgementData { judgement, timingError, wasHit });
+			StoreLatestTestPlayResult(TestPlayAttemptJudgements, note.Source,
+				ChartContext::TestPlayJudgementData { judgement, timingError, wasHit });
+			note.HitTime = context.GetCursorTime();
+			TestPlayLastJudgement = judgement;
+			TestPlayLastTimingError = timingError;
+			TestPlayLastWasHit = wasHit;
+			TestPlayLastJudgementTime = context.GetCursorTime();
+			if (judgement == 3) TestPlayCombo = 0;
+			else TestPlayMaxCombo = std::max(TestPlayMaxCombo, ++TestPlayCombo);
+		};
+		auto judgeInput = [&](b8 don)
+		{
+			const SoundEffectType hitSound = don ? SoundEffectType::TaikoDon : SoundEffectType::TaikoKa;
+			TestPlayNoteState* nearest = nullptr;
+			Time nearestError = Time::FromSec(1000.0);
+			for (auto& note : TestPlayNotes)
+			{
+				if (note.Judgement != 0 || !interval.Contains(note.NoteTime) || IsDonNote(note.Source->Type) != don) continue;
+				const Time error = Time::FromSec(Absolute((now - note.NoteTime).Seconds));
+				if (error < nearestError) { nearestError = error; nearest = &note; }
+			}
+			const i32 judgement = nearest ? GetTestPlayJudgement(nearestError.ToMS() / TestPlayPlaybackSpeed,
+				goodWindowMilliseconds, okWindowMilliseconds, badWindowMilliseconds) : 0;
+			if (nearest && judgement != 0)
+			{
+				context.SfxVoicePool.PlaySound(hitSound);
+				recordJudgement(*nearest, judgement, static_cast<i32>((now - nearest->NoteTime).ToMS() / TestPlayPlaybackSpeed), true);
+				return;
+			}
+			for (auto& longNote : TestPlayLongNotes)
+			{
+				if (!IsTestPlayLongNoteActive(now, longNote.StartTime, longNote.EndTime, interval)) continue;
+				if (IsBalloonNote(longNote.Source->Type) && !don) continue;
+				if (IsBalloonNote(longNote.Source->Type) && longNote.HitCount >= longNote.Source->BalloonPopCount) continue;
+				++longNote.HitCount;
+				longNote.HitTimes.push_back(context.GetCursorTime());
+				if (IsDrumrollNote(longNote.Source->Type)) ++TestPlayDrumrollCount;
+				else
+				{
+					++TestPlayBalloonHitCount;
+					if (longNote.HitCount == longNote.Source->BalloonPopCount) ++TestPlayBalloonPopCount;
+				}
+				context.SfxVoicePool.PlaySound(IsBalloonNote(longNote.Source->Type) && longNote.HitCount == longNote.Source->BalloonPopCount ? SoundEffectType::Balloon : hitSound);
+				return;
+			}
+			context.SfxVoicePool.PlaySound(hitSound);
+		};
+		std::vector<InputBinding> handledBindings;
+		auto judgeBindings = [&](const MultiInputBinding& bindings, b8 don)
+		{
+			for (const InputBinding& binding : bindings)
+			{
+				if (!context.GetIsPlayback()) break;
+				if (binding.Type != InputBindingType::None && std::find(handledBindings.begin(), handledBindings.end(), binding) == handledBindings.end() && Gui::IsPressed(binding, false))
+				{
+					handledBindings.push_back(binding);
+					judgeInput(don);
+				}
+			}
+		};
+		if (acceptKeyboard)
+		{
+			judgeBindings(*Settings.Input.TestPlay_DonLeft, true);
+			judgeBindings(*Settings.Input.TestPlay_DonRight, true);
+			judgeBindings(*Settings.Input.TestPlay_KaLeft, false);
+			judgeBindings(*Settings.Input.TestPlay_KaRight, false);
+		}
+		if (!context.GetIsPlayback()) return;
+		for (auto& note : TestPlayNotes)
+			if (note.Judgement == 0 && interval.Contains(note.NoteTime) && IsTestPlayMissDue(now, note.NoteTime, Time::FromMS(badWindowMilliseconds * TestPlayPlaybackSpeed)))
+			{
+				recordJudgement(note, 3, 0, false);
+				if (!context.GetIsPlayback()) return;
+			}
+		if (!loopRange && now > TestPlayEndTime + Time::FromMS((badWindowMilliseconds + 250) * TestPlayPlaybackSpeed))
+		{
+			TestPlayFinished = true;
+			context.SetIsPlayback(false);
+			context.SetCursorTime(TestPlayEndTime);
+		}
+	}
+
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
 	{
 		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 		const b8 IsAnyChildWindowHovered = Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+		if (!IsTestPlaying)
+		{
+			if (*Settings.TestPlay.ShowStartButtonsInPreview)
+			{
+				Gui::BeginDisabled(context.CompareMode);
+				if (Gui::Button(UI_Str("TEST_PLAY_START_BEGINNING"))) StartTestPlay(context, TestPlayStartMode::Beginning);
+				Gui::SameLine();
+				if (Gui::Button(UI_Str("TEST_PLAY_START_CURRENT"))) StartTestPlay(context, TestPlayStartMode::Current);
+				Gui::SameLine();
+				Gui::BeginDisabled(!context.Marker.IsActive);
+				if (Gui::Button(UI_Str("TEST_PLAY_START_MARKER"))) StartTestPlay(context, TestPlayStartMode::Marker);
+				Gui::EndDisabled();
+				Gui::EndDisabled();
+			}
+		}
+		else
+		{
+			Gui::SameLine();
+			if (Gui::Button(context.GetIsPlayback() ? UI_Str("TEST_PLAY_PAUSE") : UI_Str("TEST_PLAY_RESUME")))
+				ToggleTestPlayPause(context);
+			Gui::SameLine();
+			if (Gui::Button(UI_Str("SETTINGS_TEST_PLAY_RETRY")))
+				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
+			Gui::SameLine();
+			if (Gui::Button(UI_Str("SETTINGS_TEST_PLAY_EXIT")))
+				ExitTestPlay(context);
+			if (IsTestPlaying)
+			{
+				if (!context.GetIsPlayback())
+				{
+					i32 playbackSpeedPercent = static_cast<i32>(std::round(TestPlayPlaybackSpeed * 100.0f));
+					if (Gui::SliderInt(UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), &playbackSpeedPercent, 25, 100))
+					{
+						TestPlayPlaybackSpeed = playbackSpeedPercent / 100.0f;
+						context.SetPlaybackSpeed(TestPlayPlaybackSpeed);
+					}
+					if (context.RangeSelection.IsActive && Gui::Button(UI_Str("TEST_PLAY_CLEAR_RANGE")))
+					{
+						context.RangeSelection = {};
+						SeekTestPlay(context, context.GetCursorTime());
+					}
+				}
+				const auto attemptStats = CalculateTestPlayStatistics(TestPlayAttemptJudgements);
+				Gui::TextUnformatted(UI_Str("TEST_PLAY_CURRENT_ATTEMPT"));
+				Gui::SameLine();
+				Gui::TextUnformatted(TestPlayFinished ? UI_Str("TEST_PLAY_END_STATUS")
+					: !context.GetIsPlayback() ? UI_Str("TEST_PLAY_PAUSED_STATUS")
+					: GetTestPlaySelectedRange(context).IsValid()
+						? UI_Str("TEST_PLAY_LOOP_STATUS") : "");
+				Gui::SameLine(); Gui::Text("%s %d  %s %d  %s %d  %s %d  %s %d",
+					UI_Str("TEST_PLAY_GOOD"), attemptStats.Good,
+					UI_Str("TEST_PLAY_OK"), attemptStats.Ok,
+					UI_Str("TEST_PLAY_MISS"), attemptStats.Bad,
+					UI_Str("TEST_PLAY_COMBO"), TestPlayCombo,
+					UI_Str("TEST_PLAY_MAX_COMBO"), TestPlayMaxCombo);
+				if (attemptStats.TimedHits > 0)
+					Gui::Text("%s: %+.1f ms   %s: %.1f ms   %s: %d   %s: %d", UI_Str("TEST_PLAY_AVERAGE_MS"),
+						attemptStats.AverageMs, UI_Str("TEST_PLAY_STDDEV_MS"), attemptStats.StandardDeviationMs,
+						UI_Str("TEST_PLAY_FAST"), attemptStats.Fast, UI_Str("TEST_PLAY_SLOW"), attemptStats.Slow);
+				else
+					Gui::Text("%s: —   %s: —   %s: 0   %s: 0", UI_Str("TEST_PLAY_AVERAGE_MS"), UI_Str("TEST_PLAY_STDDEV_MS"), UI_Str("TEST_PLAY_FAST"), UI_Str("TEST_PLAY_SLOW"));
+				Gui::Text("%s: %d   %s: %d   %s: %d", UI_Str("TEST_PLAY_DRUMROLL_HITS"), TestPlayDrumrollCount,
+					UI_Str("TEST_PLAY_BALLOON_HITS"), TestPlayBalloonHitCount, UI_Str("TEST_PLAY_BALLOON_POP"), TestPlayBalloonPopCount);
+			}
+		}
+		if (IsTestPlaying && !context.GetIsPlayback() && !context.TestPlayJudgements.empty() && context.ChartSelectedCourse == TestPlayCourse && context.ChartSelectedBranch == TestPlayBranch && Gui::CollapsingHeader(UI_Str("TEST_PLAY_RECORDS")))
+		{
+			if (Gui::Button(UI_Str("TEST_PLAY_CLEAR_ALL_RECORDS")))
+			{
+				context.TestPlayJudgements.clear();
+				TestPlayAttemptJudgements.clear();
+			}
+			if (context.RangeSelection.IsActiveAndHasEnd())
+			{
+				Gui::SameLine();
+				if (Gui::Button(UI_Str("TEST_PLAY_CLEAR_RANGE_RECORDS")))
+				{
+					const Time start = context.BeatToTime(context.RangeSelection.GetMin());
+					const Time end = context.BeatToTime(context.RangeSelection.GetMax());
+					for (const auto& note : TestPlayNotes)
+						if (note.NoteTime >= start && note.NoteTime <= end)
+						{
+							context.TestPlayJudgements.erase(note.Source);
+							TestPlayAttemptJudgements.erase(note.Source);
+						}
+				}
+			}
+			const TestPlayInterval<Time> recordRange = GetTestPlaySelectedRange(context);
+			const cstr recordScopes[] = { UI_Str("TEST_PLAY_SCOPE_ALL"), UI_Str("TEST_PLAY_SCOPE_SELECTION") };
+			if (!recordRange.IsValid()) TestPlayRecordScope = 0;
+			if (Gui::BeginCombo("##TestPlayRecordScope", recordScopes[TestPlayRecordScope]))
+			{
+				for (i32 scope = 0; scope < 2; scope++)
+					if (Gui::Selectable(recordScopes[scope], scope == TestPlayRecordScope, scope == 1 && !recordRange.IsValid() ? ImGuiSelectableFlags_Disabled : 0)) TestPlayRecordScope = scope;
+				Gui::EndCombo();
+			}
+			decltype(context.TestPlayJudgements) visibleRecords;
+			for (const auto& note : TestPlayNotes)
+			{
+				if (TestPlayRecordScope == 1 && !recordRange.Contains(note.NoteTime)) continue;
+				if (const auto found = context.TestPlayJudgements.find(note.Source); found != context.TestPlayJudgements.end())
+					visibleRecords.insert(*found);
+			}
+			const auto recordStats = CalculateTestPlayStatistics(visibleRecords);
+			Gui::TextUnformatted(UI_Str("TEST_PLAY_SAVED_RECORDS_STATS"));
+			Gui::SameLine(); Gui::Text("%s %d  %s %d  %s %d",
+				UI_Str("TEST_PLAY_GOOD"), recordStats.Good,
+				UI_Str("TEST_PLAY_OK"), recordStats.Ok,
+				UI_Str("TEST_PLAY_MISS"), recordStats.Bad);
+			if (recordStats.TimedHits > 0)
+				Gui::Text("%s: %+.1f ms   %s: %.1f ms   %s: %d   %s: %d", UI_Str("TEST_PLAY_AVERAGE_MS"), recordStats.AverageMs,
+					UI_Str("TEST_PLAY_STDDEV_MS"), recordStats.StandardDeviationMs, UI_Str("TEST_PLAY_FAST"), recordStats.Fast, UI_Str("TEST_PLAY_SLOW"), recordStats.Slow);
+			else
+				Gui::Text("%s: —   %s: —   %s: 0   %s: 0", UI_Str("TEST_PLAY_AVERAGE_MS"), UI_Str("TEST_PLAY_STDDEV_MS"), UI_Str("TEST_PLAY_FAST"), UI_Str("TEST_PLAY_SLOW"));
+			const cstr recordFilters[] = { UI_Str("TEST_PLAY_FILTER_ALL"), UI_Str("TEST_PLAY_MISS"), UI_Str("TEST_PLAY_FAST"), UI_Str("TEST_PLAY_SLOW") };
+			if (Gui::BeginCombo("##TestPlayRecordFilter", recordFilters[TestPlayRecordFilter]))
+			{
+				for (i32 filter = 0; filter < 4; filter++)
+				{
+					if (Gui::Selectable(recordFilters[filter], filter == TestPlayRecordFilter)) TestPlayRecordFilter = filter;
+					if (filter == TestPlayRecordFilter) Gui::SetItemDefaultFocus();
+				}
+				Gui::EndCombo();
+			}
+			Gui::BeginChild("##TestPlayRecords", vec2(0, GuiScale(180.0f)), true);
+			for (const auto& noteState : TestPlayNotes)
+			{
+				const auto recordIt = visibleRecords.find(noteState.Source);
+				if (recordIt == visibleRecords.end()) continue;
+				const auto& record = recordIt->second;
+				if ((TestPlayRecordFilter == 1 && record.Judgement != 3)
+					|| (TestPlayRecordFilter == 2 && (!record.WasHit || record.TimingError >= 0))
+					|| (TestPlayRecordFilter == 3 && (!record.WasHit || record.TimingError <= 0))) continue;
+				const char* label = record.Judgement == 1 ? UI_Str("TEST_PLAY_GOOD") : record.Judgement == 2 ? UI_Str("TEST_PLAY_OK") : UI_Str("TEST_PLAY_MISS");
+				char recordText[128];
+				if (record.WasHit)
+					sprintf_s(recordText, "%.3f  %s  %s  %+d ms##%p", noteState.Source->BeatTime.BeatsFraction(), EnumNames<NoteType>[EnumToIndex(noteState.Source->Type)].data(), label, record.TimingError, static_cast<const void*>(noteState.Source));
+				else
+					sprintf_s(recordText, "%.3f  %s  %s (%s)##%p", noteState.Source->BeatTime.BeatsFraction(), EnumNames<NoteType>[EnumToIndex(noteState.Source->Type)].data(), label, UI_Str("TEST_PLAY_MISSED"), static_cast<const void*>(noteState.Source));
+				if (Gui::Selectable(recordText))
+				{
+					context.TestPlaySeekTime = noteState.NoteTime;
+					TestPlayJumpTime = noteState.NoteTime;
+				}
+			}
+			Gui::EndChild();
+		}
 
 		std::vector<std::pair<ChartCourse*, BranchType>> comparedLanes;
 		for (const auto& course : context.Chart.Courses)
@@ -774,8 +1216,9 @@ namespace PeepoDrumKit
 
 			const b8 isPlayback = context.GetIsPlayback();
 			const BeatAndTime exactCursorBeatAndTime = context.GetCursorBeatAndTime(course, true);
-			const Time cursorTimeOrAnimated = isPlayback ? exactCursorBeatAndTime.Time : animatedCursorTime;
-			const Beat cursorBeatOrAnimatedTrunc = isPlayback ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true);
+			const b8 useExactCursor = isPlayback || (IsTestPlaying && !context.TestPlaySmoothCursor);
+			const Time cursorTimeOrAnimated = useExactCursor ? exactCursorBeatAndTime.Time : animatedCursorTime;
+			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true);
 			const f64 cursorHBScrollBeatOrAnimated = course->TempoMap.BeatAndTimeToHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated);
 			const Beat chartBeatDuration = context.GetUsedBeatDurationFast(*course);
 
@@ -833,7 +1276,7 @@ namespace PeepoDrumKit
 				Camera.WorldToScreenSpace(stdLaneRectBR.GetBL() + vec2(Camera.LaneWidth(), 0) + vec2(GameLanePaddingR, 0.0f)),
 			};
 			Gui::SetCursorScreenPos(laneRectScreen.TL);
-			if (Gui::InvisibleButton("##GamePreviewLane", laneRectScreen.GetSize(), ImGuiButtonFlags_AllowOverlap))
+			if (Gui::InvisibleButton("##GamePreviewLane", laneRectScreen.GetSize(), ImGuiButtonFlags_AllowOverlap) && !IsTestPlaying)
 				context.SetSelectedChart(course, branch);
 			Gui::SetItemAllowOverlap();
 
@@ -870,7 +1313,7 @@ namespace PeepoDrumKit
 			drawList->AddCircleFilled(
 				hitCirclePos,
 				Camera.WorldToScreenScale(GameHitCircle.InnerFillRadius), isGogo ? GameLaneHitCircleInnerFillColorGogo : GameLaneHitCircleInnerFillColor);
-			drawList->AddCircle(
+				drawList->AddCircle(
 				hitCirclePos,
 				Camera.WorldToScreenScale(GameHitCircle.InnerOutlineRadius), isGogo ? GameLaneHitCircleInnerOutlineColorGogo : GameLaneHitCircleInnerOutlineColor, 0, Camera.WorldToScreenScale(GameHitCircle.InnerOutlineThickness));
 			drawList->AddCircle(
@@ -886,6 +1329,26 @@ namespace PeepoDrumKit
 				posTxtJPos = Max(Camera.ScreenSpaceViewportRect.TL, Min(posTxtJPos, Camera.ScreenSpaceViewportRect.BR - textSize));
 				drawList->ChannelsSetCurrent(4);
 				drawList->AddText(posTxtJPos, 0xFFFFFFFF, str.c_str(), str.c_str() + str.length());
+			}
+			if (IsTestPlaying && TestPlayLastJudgement != 0 && context.GetCursorTime() - TestPlayLastJudgementTime < Time::FromMS(*Settings.TestPlay.JudgementDisplayMilliseconds * TestPlayPlaybackSpeed))
+			{
+				const i32 displayMode = Clamp(*Settings.TestPlay.JudgementDisplayMode, 0, 3);
+				const auto display = FormatTestPlayJudgement(TestPlayLastJudgement, TestPlayLastTimingError, TestPlayLastWasHit,
+					displayMode, Clamp(*Settings.TestPlay.TimingNeutralWindowMilliseconds, 0, 1000));
+				const f32 judgementFontSize = Gui::GetFontSize() * 3.0f;
+				const vec2 judgementSize = display.Label ? vec2(Gui::CalcTextSize(display.Label)) * 3.0f : vec2(0.0f);
+				const f32 judgementBottom = hitCirclePos.y - Camera.WorldToScreenScale(GameHitCircle.OuterOutlineRadius) - GuiScale(8.0f);
+				drawList->ChannelsSetCurrent(4);
+				if (!display.Timing.empty())
+				{
+					const vec2 timingSize = vec2(Gui::CalcTextSize(display.Timing.c_str())) * 2.0f;
+					const f32 timingBottom = judgementBottom - (display.Label ? judgementSize.y + GuiScale(2.0f) : 0.0f);
+					drawList->AddText(Gui::GetFont(), Gui::GetFontSize() * 2.0f,
+						vec2(hitCirclePos.x - timingSize.x * 0.5f, timingBottom - timingSize.y), display.TimingColor, display.Timing.c_str());
+				}
+				if (display.Label)
+					drawList->AddText(Gui::GetFont(), judgementFontSize,
+						vec2(hitCirclePos.x - judgementSize.x * 0.5f, judgementBottom - judgementSize.y), 0xFFFFFFFF, display.Label);
 			}
 
 			const auto scrollSpeedToView = GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(*Settings.General.ScrollSpeedViewType));
@@ -907,9 +1370,12 @@ namespace PeepoDrumKit
 					const u32 barLineColor = isBranchStart ? GameLaneBranchStartBarLineColor : GameLaneBarLineColor;
 					drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), barLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
 
-					char barLineStr[32];
-					DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(tl + vec2(5.0f, 1.0f), vec2(0.5f)),
-						std::string_view(barLineStr, sprintf_s(barLineStr, "%d", it.BarIndex)));
+					if (*Settings.General.GamePreviewShowMeasureNumbers)
+					{
+						char barLineStr[32];
+						DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(tl + vec2(5.0f, 1.0f), vec2(0.5f)),
+							std::string_view(barLineStr, sprintf_s(barLineStr, "%d", it.BarIndex)));
+					}
 				}
 			});
 
@@ -934,12 +1400,63 @@ namespace PeepoDrumKit
 #endif
 
 			drawList->ChannelsSetCurrent(3);
+			std::vector<Rect> testPlayLabelBounds;
 			ForEachNoteOnNoteLane(*course, branch, scrollSpeedToView, [&](const ForEachNoteLaneData& it)
 			{
+				if (IsTestPlaying)
+				{
+					const TestPlayInterval<Time> selectedRange = GetTestPlaySelectedRange(context);
+					const TestPlayInterval<Time> interval = !isPlayback && selectedRange.IsValid() ? selectedRange : GetTestPlayInterval(context);
+					if (!interval.Contains(it.Time)) return;
+				}
 				vec2 laneHeadOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				if (IsTestPlaying && !isPlayback && IsComboNote(it.OriginalNote->Type))
+				{
+					const auto record = context.TestPlayJudgements.find(it.OriginalNote);
+					const vec2 notePosition = Camera.LaneToScreenSpace(laneHeadOrig);
+					if (record != context.TestPlayJudgements.end() && ImGui::IsMouseHoveringRect(
+						notePosition - vec2(GuiScale(14.0f)), notePosition + vec2(GuiScale(14.0f))))
+					{
+						const auto& judgement = record->second;
+						const cstr label = judgement.Judgement == 1 ? UI_Str("TEST_PLAY_GOOD") : judgement.Judgement == 2 ? UI_Str("TEST_PLAY_OK") : UI_Str("TEST_PLAY_MISS");
+						if (judgement.WasHit) ImGui::SetTooltip("%s  %+d ms", label, judgement.TimingError);
+						else ImGui::SetTooltip("%s (%s)", label, UI_Str("TEST_PLAY_MISSED"));
+					}
+				}
 				vec2 laneTailOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				if (IsTestPlaying && !isPlayback && IsComboNote(it.OriginalNote->Type))
+				{
+					const auto record = context.TestPlayJudgements.find(it.OriginalNote);
+						if (record != context.TestPlayJudgements.end() && ShouldShowPausedTestPlayJudgement(
+							record->second.Judgement, record->second.TimingError, record->second.WasHit,
+							*Settings.TestPlay.PausedJudgementFilter, *Settings.TestPlay.PausedJudgementThresholdMilliseconds))
+						{
+							const auto& judgement = record->second;
+						if (Camera.IsPointVisibleOnLane(laneHeadOrig.x))
+						{
+							const i32 displayMode = Clamp(*Settings.TestPlay.PausedJudgementDisplayMode, 0, 3);
+							const auto display = FormatTestPlayJudgement(judgement.Judgement, judgement.TimingError, judgement.WasHit,
+								displayMode, *Settings.TestPlay.TimingNeutralWindowMilliseconds, false);
+							const vec2 notePosition = Camera.LaneToScreenSpace(laneHeadOrig);
+							const vec2 labelSize = display.Label ? vec2(Gui::CalcTextSize(display.Label)) : vec2(0.0f);
+							const vec2 timingSize = Gui::CalcTextSize(display.Timing.c_str());
+							const f32 gap = display.Label && !display.Timing.empty() ? GuiScale(2.0f) : 0.0f;
+							const vec2 blockSize(Max(labelSize.x, timingSize.x), labelSize.y + timingSize.y + gap);
+							b8 labelPlaced = false;
+							const vec2 blockTop = PlaceTestPlayJudgementLabel(testPlayLabelBounds, notePosition,
+								notePosition.y - Camera.WorldToScreenScale(44.0f), blockSize, GuiScale(2.0f), &labelPlaced);
+							drawList->ChannelsSetCurrent(4);
+							if (labelPlaced && !display.Timing.empty()) drawList->AddText(vec2(notePosition.x - timingSize.x * 0.5f, blockTop.y), display.TimingColor, display.Timing.c_str());
+							if (labelPlaced && display.Label) drawList->AddText(vec2(notePosition.x - labelSize.x * 0.5f, blockTop.y + timingSize.y + gap), 0xFFFFFFFF, display.Label);
+							drawList->ChannelsSetCurrent(3);
+						}
+					}
+				}
 
-				const Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
+				Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
+				if (IsTestPlaying)
+					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end())
+						timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
 				const Time timeSinceTailHit = TimeSinceNoteHit(it.Tail.Time, cursorTimeOrAnimated);
 
 				// sudden move
@@ -1014,6 +1531,9 @@ namespace PeepoDrumKit
 					}
 					if (timeSinceHeadHit > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type))
 						isVisible = isVisibleHead = isVisibleTail = false;
+					if (IsTestPlaying)
+						if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end() && state->Judgement == 3)
+							isVisible = isVisibleHead = isVisibleTail = false;
 				}
 				else {
 					if (TJA::GetSuddenActiveState(it.Sudden).HideRollActive)
@@ -1027,7 +1547,8 @@ namespace PeepoDrumKit
 					}
 
 					if (IsBalloonNote(it.OriginalNote->Type)) {
-						if (timeSinceTailHit >= Time::Zero()) {
+						const auto balloonState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; });
+						if (timeSinceTailHit >= Time::Zero() || (IsTestPlaying && balloonState != TestPlayLongNotes.end() && balloonState->HitCount >= it.OriginalNote->BalloonPopCount)) {
 							laneHead = laneTail;
 							isVisible = isVisibleHead = isVisibleTail = isVisibleBody = false;
 						}
@@ -1057,7 +1578,11 @@ namespace PeepoDrumKit
 			const Time drumrollHitInterval = Time::FromSec(1.0 / rollsPerSecond);
 			for (auto it = ReverseNoteDrawBuffer.rbegin(); it != ReverseNoteDrawBuffer.rend(); it++)
 			{
-				const Time timeSinceHit = TimeSinceNoteHit(it->Time, cursorTimeOrAnimated);
+				Time timeSinceHit = TimeSinceNoteHit(it->Time, cursorTimeOrAnimated);
+				if (IsTestPlaying)
+					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; }); state != TestPlayNotes.end())
+						timeSinceHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
+				const auto longState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; });
 				vec2 laneHeadDisplay = it->LaneHead;
 				vec2 laneTailDisplay = it->LaneTail;
 
@@ -1065,6 +1590,8 @@ namespace PeepoDrumKit
 				{
 					if (IsBalloonNote(it->OriginalNote->Type))
 					{
+						if (IsTestPlaying && longState != TestPlayLongNotes.end() && longState->HitCount >= it->OriginalNote->BalloonPopCount)
+							continue;
 						b8 afterHit = (timeSinceHit >= Time::Zero());
 						vec2 headPos = afterHit ? hitCirclePosLane : it->LaneHead; // head might be detached
 						if (IsFuseRoll(it->OriginalNote->Type) && it->HasBody)
@@ -1077,7 +1604,7 @@ namespace PeepoDrumKit
 						if (afterHit) {
 							drawList->ChannelsSetCurrent(4);
 							DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromCenter(Camera.LaneToWorldSpace(headPos.x, headPos.y)),
-								std::to_string(it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
+								std::to_string(IsTestPlaying && longState != TestPlayLongNotes.end() ? std::max(0, it->OriginalNote->BalloonPopCount - longState->HitCount) : it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
 							balloonPopCountDrawn = true;
 							drawList->ChannelsSetCurrent(3);
 						}
@@ -1090,7 +1617,9 @@ namespace PeepoDrumKit
 						i32 drumrollHitsSoFar = 0;
 						if (timeSinceHit >= Time::Zero())
 						{
-							for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
+							if (IsTestPlaying)
+								drumrollHitsSoFar = longState != TestPlayLongNotes.end() ? longState->HitCount : 0;
+							else for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
 							{
 								const Time subHitTime = it->Time + (drumrollHitInterval * iHit);
 								if (subHitTime <= cursorTimeOrAnimated)
@@ -1106,7 +1635,7 @@ namespace PeepoDrumKit
 							DrawGamePreviewNote(context.Gfx, Camera, drawList, Camera.LaneToWorldSpace(it->LaneHead.x, it->LaneHead.y), it->Tempo, it->ScrollSpeedView, it->OriginalNote->Type, cursorTimeOrAnimated);
 						DrawGamePreviewNoteSEText(context.Gfx, Camera, drawList, Camera.LaneToWorldSpace(it->LaneHead.x, it->LaneHead.y), Camera.LaneToWorldSpace(it->LaneTail.x, it->LaneTail.y), it->Tempo, it->ScrollSpeedView, it->OriginalNote->TempSEType, it->HasHead, it->HasEnd, it->HasBody);
 
-						if (timeSinceHit >= Time::Zero())
+						if (timeSinceHit >= Time::Zero() && !IsTestPlaying)
 						{
 							for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
 							{
@@ -1246,7 +1775,8 @@ namespace PeepoDrumKit
 			{
 				const SortedNotesList& notes = course->GetNotes(branch);
 				const Note* lastHitNote = notes.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
-				if (lastHitNote != nullptr && lastHitNote->TempComboCount > 0 && !(nLanes > 2 && balloonPopCountDrawn))
+				const i32 displayedCombo = IsTestPlaying ? TestPlayCombo : (lastHitNote != nullptr ? lastHitNote->TempComboCount : 0);
+				if (displayedCombo > 0 && !(nLanes > 2 && balloonPopCountDrawn))
 				{
 					constexpr std::string_view sprFontComboCharSet = "0123456789";
 					constexpr size_t sprFontComboCharCount = sprFontComboCharSet.size();
@@ -1256,7 +1786,7 @@ namespace PeepoDrumKit
 					const f32 sheetW = sprInfo.SourceSize.x;
 
 					char comboStr[16];
-					const i32 comboLen = sprintf_s(comboStr, "%d", lastHitNote->TempComboCount);
+					const i32 comboLen = sprintf_s(comboStr, "%d", displayedCombo);
 
 					const auto& display = GetGameComboDisplay(nLanes);
 					const f32 digitScale = Camera.WorldToScreenScaleFactor * display.DigitScale / sprBaseScale;
@@ -1266,7 +1796,7 @@ namespace PeepoDrumKit
 					const vec2 digitStep = digitSize + padding;
 					const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
 						: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
-					: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY };
+					: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
 					const vec2 comboWorldPos = Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
 					const vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
 

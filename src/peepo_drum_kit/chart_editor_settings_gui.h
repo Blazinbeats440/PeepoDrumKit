@@ -33,5 +33,12 @@ namespace PeepoDrumKit
 		ImGuiTextFilter settingsFilterInput = {};
 		ChartSettingsWindowTempActiveWidgetGroup lastActiveGroup = {};
 		ChartSettingsWindowTempInputState inputState = {};
+		b8 testPlayCalibrationActive = false;
+		b8 testPlayCalibrationHasCandidate = false;
+		f64 testPlayCalibrationFirstTick = 0.0;
+		i32 testPlayCalibrationLastCue = -1;
+		i32 testPlayCalibrationLastTap = -1;
+		i32 testPlayCalibrationCandidate = 0;
+		std::vector<i32> testPlayCalibrationErrors;
 	};
 }

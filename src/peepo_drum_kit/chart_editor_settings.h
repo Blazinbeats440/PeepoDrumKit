@@ -138,6 +138,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
+			WithDefault<b8> GamePreviewShowMeasureNumbers = true;
 			WithDefault<b8> TimelinePlaybackCursorFollow = true;
 			WithDefault<b8> TimelineLoopPlayback = false;
 			WithDefault<b8> TimelineAutoStepAfterNoteInput = false;
@@ -184,6 +185,25 @@ namespace PeepoDrumKit
 			WithDefault<f32> MetronomeVolume = 1.0f;
 			WithDefault<i32> BufferFrameSize = 0;
 		} Audio;
+
+		struct TestPlayData
+		{
+			WithDefault<i32> LeadInMilliseconds = 1000;
+			WithDefault<i32> InputLatencyCompensationMilliseconds = 0;
+			WithDefault<i32> GoodWindowMilliseconds = 25;
+			WithDefault<i32> OkWindowMilliseconds = 75;
+			WithDefault<i32> BadWindowMilliseconds = 108;
+			WithDefault<i32> JudgementDisplayMode = 2;
+			WithDefault<i32> PausedJudgementDisplayMode = 3;
+			WithDefault<i32> PausedJudgementFilter = 0;
+			WithDefault<i32> PausedJudgementThresholdMilliseconds = 50;
+			WithDefault<i32> TimingNeutralWindowMilliseconds = 16;
+			WithDefault<i32> JudgementDisplayMilliseconds = 650;
+			WithDefault<b8> LoopRange = false;
+			WithDefault<i32> LoopDelayMilliseconds = 1000;
+			WithDefault<i32> PlaybackSpeedPercent = 100;
+			WithDefault<b8> ShowStartButtonsInPreview = false;
+		} TestPlay;
 
 		struct AppearanceData
 		{
@@ -340,6 +360,19 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_ToggleAutoStepAfterNoteInput = { KeyBinding(ImGuiKey_F7) };
 			WithDefault<MultiInputBinding> Timeline_ToggleLoopPlayback = { KeyBinding(ImGuiKey_F9) };
 			WithDefault<MultiInputBinding> Timeline_ToggleMetronome = { KeyBinding(ImGuiKey_M) };
+
+			WithDefault<MultiInputBinding> TestPlay_Don = { KeyBinding(ImGuiKey_F), KeyBinding(ImGuiKey_J) };
+			WithDefault<MultiInputBinding> TestPlay_Ka = { KeyBinding(ImGuiKey_D), KeyBinding(ImGuiKey_K) };
+			WithDefault<MultiInputBinding> TestPlay_DonLeft = { KeyBinding(ImGuiKey_F) };
+			WithDefault<MultiInputBinding> TestPlay_DonRight = { KeyBinding(ImGuiKey_J) };
+			WithDefault<MultiInputBinding> TestPlay_KaLeft = { KeyBinding(ImGuiKey_D) };
+			WithDefault<MultiInputBinding> TestPlay_KaRight = { KeyBinding(ImGuiKey_K) };
+			WithDefault<MultiInputBinding> TestPlay_StartBeginning = { KeyBinding(ImGuiKey_P, ImGuiMod_CtrlShift) };
+			WithDefault<MultiInputBinding> TestPlay_StartCurrent = { KeyBinding(ImGuiKey_P, ImGuiMod_Ctrl) };
+			WithDefault<MultiInputBinding> TestPlay_StartMarker = { KeyBinding(ImGuiKey_P, ImGuiMod_Alt) };
+			WithDefault<MultiInputBinding> TestPlay_TogglePause = { KeyBinding(ImGuiKey_Space) };
+			WithDefault<MultiInputBinding> TestPlay_Retry = { KeyBinding(ImGuiKey_F5) };
+			WithDefault<MultiInputBinding> TestPlay_Exit = { KeyBinding(ImGuiKey_Escape) };
 
 			WithDefault<MultiInputBinding> TempoCalculator_Tap = { KeyBinding(ImGuiKey_Space) };
 			WithDefault<MultiInputBinding> TempoCalculator_Reset = { KeyBinding(ImGuiKey_Escape) };
