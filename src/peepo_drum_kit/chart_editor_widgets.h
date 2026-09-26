@@ -204,6 +204,15 @@ namespace PeepoDrumKit
 		void DrawGui(ChartContext& context, ChartTimeline& timeline);
 	};
 
+	struct ChartCommentsWindow
+	{
+		std::string SongBuffer, CourseBuffer, EventBuffer;
+		b8 SongInputActive = false, CourseInputActive = false, EventInputActive = false;
+		ChartCourse* LastCourse = nullptr;
+		Beat LastBeat = Beat::Zero();
+		void DrawGui(ChartContext& context, ChartTimeline& timeline);
+	};
+
 	struct GameCamera
 	{
 		static constexpr f32 JPosMoveCoordHeight = 720.0f;
