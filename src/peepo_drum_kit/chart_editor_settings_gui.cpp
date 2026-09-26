@@ -140,7 +140,7 @@ namespace PeepoDrumKit
 		enum class WidgetType : u32 {
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
-			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat,
+			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
 			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter,
 		};
 
@@ -355,6 +355,8 @@ namespace PeepoDrumKit
 					else
 					{
 						changesWereMade |= Gui::InputInt("##", &inOutI32->Value, 1, 10);
+						if (in.Widget == WidgetType::I32_VSyncOffFPSLimit)
+							inOutI32->Value = Max(0, inOutI32->Value);
 					}
 				}
 				else if (inOutF32 != nullptr)
@@ -858,6 +860,12 @@ namespace PeepoDrumKit
 
 					SettingsGui::SettingsEntry settingsEntriesMain[] =
 					{
+						SettingsGui::SettingsEntry(
+							settings.General.VSyncOffFPSLimit,
+							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT"),
+							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC"),
+							SettingsGui::WidgetType::I32_VSyncOffFPSLimit),
+
 						SettingsGui::SettingsEntry(
 							settings.General.DefaultCreatorName,
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR"),

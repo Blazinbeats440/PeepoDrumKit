@@ -152,6 +152,9 @@ namespace PeepoDrumKit
 		SelectedGuiLanguageTJA = ASCII::IETFLangTagToTJALangTag(SelectedGuiLanguage);
 
 		ApplicationHost::GlobalState.SwapInterval = PersistentApp.LastSession.OSWindow_SwapInterval;
+		ApplicationHost::GlobalState.VSyncOffFPSLimit = Max(0, *Settings.General.VSyncOffFPSLimit);
+		startupParam.WaitableSwapChain = false;
+		startupParam.AllowSwapChainTearing = true;
 		startupParam.WindowTitle = PeepoDrumKitApplicationTitle;
 		// TODO: ...
 		// startupParam.WindowPosition = ...;
@@ -173,6 +176,7 @@ namespace PeepoDrumKit
 		};
 		callbacks.OnUpdate = []
 		{
+			ApplicationHost::GlobalState.VSyncOffFPSLimit = Max(0, *Settings.General.VSyncOffFPSLimit);
 			app->OnUpdate();
 		};
 		callbacks.OnShutdown = []

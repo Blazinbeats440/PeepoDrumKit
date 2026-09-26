@@ -126,6 +126,7 @@ namespace PeepoDrumKit
 
 		struct GeneralData
 		{
+			WithDefault<i32> VSyncOffFPSLimit = 0;
 			WithDefault<std::string> DefaultCreatorName = {};
 			WithDefault<i32> TJAFileSaveFormat = 0;
 			WithDefault<b8> WarnTaikojiroIncompatibleCharts = false;
