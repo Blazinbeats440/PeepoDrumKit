@@ -74,6 +74,7 @@ namespace ApplicationHost
 		// NOTE: READ + WRITE
 		// --------------------------------
 		i32 SwapInterval = 1;
+		i32 VSyncOffFPSLimit = 0;
 		std::string SetWindowTitleNextFrame;
 		std::optional<ivec2> SetWindowPositionNextFrame;
 		std::optional<ivec2> SetWindowSizeNextFrame;

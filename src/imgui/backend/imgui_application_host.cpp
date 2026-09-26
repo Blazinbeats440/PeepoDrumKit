@@ -12,7 +12,9 @@
 #include "../src_res/resource.h"
 
 #include <d3d11.h>
-#include <dxgi1_3.h>
+#include <dxgi1_5.h>
+#include <chrono>
+#include <thread>
 
 #define HAS_EMBEDDED_ICONS 1
 #define REGENERATE_EMBEDDED_ICONS_SOURCE_CODE 0
@@ -501,12 +503,23 @@ namespace ApplicationHost
 
 	static void ImGuiAndUserUpdateThenRenderAndPresentFrame()
 	{
+		static std::chrono::steady_clock::time_point nextFrameTime = {};
+		if (GlobalState.SwapInterval == 0 && GlobalState.VSyncOffFPSLimit > 0)
+		{
+			const auto now = std::chrono::steady_clock::now();
+			if (nextFrameTime > now)
+				std::this_thread::sleep_until(nextFrameTime);
+			nextFrameTime = std::chrono::steady_clock::now() + std::chrono::nanoseconds(1000000000LL / GlobalState.VSyncOffFPSLimit);
+		}
+		else
+			nextFrameTime = {};
+
 		static u64 frameCounter = 0;
 		++frameCounter;
 		if ((frameCounter % 120) == 0)
 			Log::Write("Frame %llu", static_cast<unsigned long long>(frameCounter));
 		// update font and size
-		if (!GlobalIsWindowMinimized && GlobalSwapChainWaitableObject != NULL)
+		if (!GlobalIsWindowMinimized && GlobalState.SwapInterval != 0 && GlobalSwapChainWaitableObject != NULL)
 			::WaitForSingleObjectEx(GlobalSwapChainWaitableObject, 1000, true);
 		
 		if (FontMainFileNameCurrent != FontMainFileNameTarget) {
@@ -582,7 +595,9 @@ namespace ApplicationHost
 		// TODO: Maybe handle this better somehow, not sure...
 		if (!GlobalIsWindowMinimized)
 		{
-			const HRESULT presentResult = GlobalSwapChain->Present(Clamp(GlobalState.SwapInterval, 0, 4), 0);
+			const UINT syncInterval = Clamp(GlobalState.SwapInterval, 0, 4);
+			const UINT presentFlags = (syncInterval == 0 && (GlobalSwapChainCreationDesc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING)) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+			const HRESULT presentResult = GlobalSwapChain->Present(syncInterval, presentFlags);
 			if (presentResult == DXGI_ERROR_DEVICE_REMOVED || presentResult == DXGI_ERROR_DEVICE_RESET)
 			{
 				const HRESULT removalReason = GlobalD3D11Device->GetDeviceRemovedReason();
@@ -802,7 +817,16 @@ namespace ApplicationHost
 		if (startupParam.WaitableSwapChain)
 			sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 		if (startupParam.AllowSwapChainTearing)
-			sd.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+		{
+			IDXGIFactory5* factory5 = nullptr;
+			if (SUCCEEDED(::CreateDXGIFactory1(IID_PPV_ARGS(&factory5))))
+			{
+				BOOL allowTearing = FALSE;
+				if (SUCCEEDED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing))) && allowTearing)
+					sd.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+				factory5->Release();
+			}
+		}
 
 		static constexpr UINT deviceFlags = D3D11_CREATE_DEVICE_SINGLETHREADED | (PEEPO_DEBUG ? D3D11_CREATE_DEVICE_DEBUG : 0);
 		static constexpr D3D_FEATURE_LEVEL inFeatureLevels[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };

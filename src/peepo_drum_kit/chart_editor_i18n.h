@@ -247,6 +247,8 @@ X("SETTINGS_GENERAL_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES", "Export Builtin Locale Files") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR", "General: Default Creator Name") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC", "The name that is automatically filled in when creating a new chart.") \
+X("SETTINGS_VSYNC_OFF_FPS_LIMIT", "General: FPS Limit When VSync Is Off") \
+X("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC", "Limits rendering to this many frames per second when VSync is off. Set to 0 for unlimited FPS.") \
 X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS", "General: Balloon Expected Hits per Second") \
 X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS_DESC", "The default expected number of balloon hits per second used by the Inspector.") \
 X("SETTINGS_TJA_SAVE_FORMAT", "TJA: File Save Format") \

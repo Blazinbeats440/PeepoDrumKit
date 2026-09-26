@@ -431,6 +431,7 @@ namespace PeepoDrumKit
 		}
 
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
+		out.General.VSyncOffFPSLimit.Value = Max(0, out.General.VSyncOffFPSLimit.Value);
 		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
 		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
 		out.TestPlay.GoodWindowMilliseconds.Value = Clamp(out.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
@@ -509,6 +510,7 @@ namespace PeepoDrumKit
 		} while (false)
 		{
 			SECTION("general");
+			X(General.VSyncOffFPSLimit, "vsync_off_fps_limit");
 			X(General.DefaultCreatorName, "default_creator_name");
 			X(General.TJAFileSaveFormat, "tja_file_save_format");
 			X(General.WarnTaikojiroIncompatibleCharts, "warn_taikojiro_incompatible_charts");
