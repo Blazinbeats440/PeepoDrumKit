@@ -383,6 +383,39 @@ namespace PeepoDrumKit
 		using RemoveLyricChange = RemoveSingleChartEvent<LyricChange>;
 		using UpdateLyricChange = UpdateSingleChartEvent<LyricChange>;
 		using ReplaceAllLyricChanges = ReplaceAllChartEvents<LyricChange>;
+		using AddCommentChange = AddSingleChartEvent<CommentChange>;
+		using RemoveCommentChange = RemoveSingleChartEvent<CommentChange>;
+		using UpdateCommentChange = UpdateSingleChartEvent<CommentChange>;
+
+		struct ReplaceCommentLines : Undo::Command
+		{
+			ReplaceCommentLines(std::vector<std::string>* target, std::vector<std::string> value)
+				: Target(target), NewValue(std::move(value)), OldValue(*target) {}
+			void Undo() override { *Target = OldValue; }
+			void Redo() override { *Target = NewValue; }
+			Undo::MergeResult TryMerge(Command& otherCommand) override
+			{
+				auto& other = static_cast<ReplaceCommentLines&>(otherCommand);
+				if (other.Target != Target) return Undo::MergeResult::Failed;
+				NewValue = other.NewValue;
+				return Undo::MergeResult::ValueUpdated;
+			}
+			Undo::CommandInfo GetInfo() const override { return { "Edit Comments" }; }
+			std::vector<std::string>* Target;
+			std::vector<std::string> NewValue, OldValue;
+		};
+
+		struct ChangeBranchCommands : Undo::Command
+		{
+			ChangeBranchCommands(ChartCourse* course, ChartCourse oldValue, ChartCourse newValue)
+				: Course(course), OldValue(std::move(oldValue)), NewValue(std::move(newValue)) { }
+			void Undo() override { *Course = OldValue; }
+			void Redo() override { *Course = NewValue; }
+			Undo::MergeResult TryMerge(Undo::Command&) override { return Undo::MergeResult::Failed; }
+			Undo::CommandInfo GetInfo() const override { return { "Change Branch Commands" }; }
+			ChartCourse* Course;
+			ChartCourse OldValue, NewValue;
+		};
 	}
 
 	// NOTE: Note commands

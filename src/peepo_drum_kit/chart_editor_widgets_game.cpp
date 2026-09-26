@@ -1074,6 +1074,17 @@ namespace PeepoDrumKit
 					comparedLanes.emplace_back(course.get(), branch);
 		}
 		const i32 nLanes = static_cast<i32>(comparedLanes.size());
+		const b8 hasCommentLane = *Settings.General.GamePreviewShowComments && std::any_of(comparedLanes.begin(), comparedLanes.end(), [](const auto& lane) { return !lane.first->Comments.empty(); });
+		f32 commentLaneHeight = 0.0f;
+		if (hasCommentLane)
+		{
+			const f32 commentFontSize = static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128));
+			const f32 wrapWidth = GameLaneStandardWidth - 40.0f - commentFontSize * 0.45f;
+			commentLaneHeight = 112.0f;
+			for (const auto& lane : comparedLanes)
+				for (const CommentChange& comment : lane.first->Comments)
+					commentLaneHeight = std::max(commentLaneHeight, Gui::GetFont()->CalcTextSizeA(commentFontSize, F32Max, wrapWidth, comment.Text.c_str()).y + 24.0f);
+		}
 		const ImGuiID guiID = Gui::GetItemID();
 
 		static constexpr vec2 buttonMargin = vec2(8.0f);
@@ -1092,7 +1103,7 @@ namespace PeepoDrumKit
 		}
 
 		Rect laneRectBase;
-		const vec2 standardSize = vec2(GameLaneStandardWidth + GameLanePaddingL + GameLanePaddingR, nLanes * GameLaneSlice.TotalHeight() + GameLanePaddingTop + GameLanePaddingBot);
+		const vec2 standardSize = vec2(GameLaneStandardWidth + GameLanePaddingL + GameLanePaddingR, nLanes * (GameLaneSlice.TotalHeight() + commentLaneHeight) + GameLanePaddingTop + GameLanePaddingBot);
 		const f32 standardAspectRatio = GetAspectRatio(standardSize);
 		const f32 viewportAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
 		if (viewportAspectRatio <= standardAspectRatio) // NOTE: Standard case of (<= 16:9) with a fixed sized lane being centered
@@ -1207,7 +1218,7 @@ namespace PeepoDrumKit
 			const b8 isFocusedLane = (context.CompareMode && course == context.ChartSelectedCourse && branch == context.ChartSelectedBranch);
 			++iLane;
 
-			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * GameLaneSlice.TotalHeight() };
+			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + commentLaneHeight) };
 
 			const TempoMapAccelerationStructure& tempoChanges = course->TempoMap.AccelerationStructure;
 			const SortedJPOSScrollChangesList& jposScrollChanges = course->JPOSScrollChanges;
@@ -1354,6 +1365,69 @@ namespace PeepoDrumKit
 			const auto scrollSpeedToView = GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(*Settings.General.ScrollSpeedViewType));
 			const auto pxWorldPer4Beats = GetPx720pScrollDistanceView4Beats(context.Chart.ScrollDistance4BeatsType) * GameCamera::ScaleFrom720p;
 			drawList->ChannelsSetCurrent(2);
+			if (hasCommentLane && !course->Comments.empty())
+			{
+				const vec2 commentClipTL = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(0.0f, 6.0f));
+				const vec2 commentClipBR = Camera.WorldToScreenSpace(Camera.LaneRect.GetBR() + vec2(0.0f, commentLaneHeight - 6.0f));
+				const f32 fontSize = Camera.WorldToScreenScale(static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128)));
+				const i32 holdMeasures = Clamp(*Settings.General.GamePreviewCommentHoldMeasures, 0, 128);
+				const f32 outline = std::max(1.0f, Camera.WorldToScreenScale(1.5f));
+				ImFont* font = Gui::GetFont();
+				const f32 wrapWidth = Camera.WorldToScreenScale(GameLaneStandardWidth - 40.0f) - fontSize * 0.45f;
+				const Time fadeDuration = Time::FromMS(100.0);
+				drawList->PushClipRect(commentClipTL, commentClipBR, true);
+				for (size_t commentIndex = 0; commentIndex < course->Comments.size(); commentIndex++)
+				{
+				const CommentChange& comment = course->Comments.Sorted[commentIndex];
+					const Time commentTime = course->TempoMap.BeatToTime(comment.BeatTime);
+					f32 laneX = Camera.TimeToLaneSpace(cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated,
+						commentTime, comment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
+						pxWorldPer4Beats, tempoChanges);
+					f32 alpha = 1.0f;
+					if (holdMeasures > 0 && cursorTimeOrAnimated >= commentTime)
+					{
+						const TimeSignatureChange* signatureChange = course->TempoMap.Signature.TryFindLastAtBeat(comment.BeatTime);
+						const TimeSignature signature = signatureChange ? signatureChange->Signature : FallbackTimeSignature;
+						const Beat measureDuration = std::max(abs(signature.GetDurationPerBar()), Beat::FromTicks(1));
+						const Time holdEndTime = course->TempoMap.BeatToTime(comment.BeatTime + measureDuration * holdMeasures);
+						alpha = Clamp((holdEndTime + fadeDuration - cursorTimeOrAnimated).ToSec_F32() / fadeDuration.ToSec_F32(), 0.0f, 1.0f);
+						laneX = 0.0f;
+					}
+					if (holdMeasures > 0 && commentIndex + 1 < course->Comments.size() && cursorTimeOrAnimated >= commentTime)
+					{
+						const CommentChange& nextComment = course->Comments.Sorted[commentIndex + 1];
+						const Time nextTime = course->TempoMap.BeatToTime(nextComment.BeatTime);
+						const f32 nextLaneX = Camera.TimeToLaneSpace(cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated,
+							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
+							pxWorldPer4Beats, tempoChanges);
+						const f32 nextScreenX = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + nextLaneX, 0.0f)).x;
+						const Time laterTime = cursorTimeOrAnimated + fadeDuration;
+						const Beat laterBeat = course->TempoMap.TimeToBeat(laterTime);
+						const f64 laterHBBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(laterBeat, laterTime);
+						const f32 laterLaneX = Camera.TimeToLaneSpace(laterTime, laterHBBeat,
+							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
+							pxWorldPer4Beats, tempoChanges);
+						const f32 fadeDistance = std::max(1.0f, Camera.WorldToScreenScale(nextLaneX - laterLaneX));
+						alpha = std::min(alpha, Clamp((nextScreenX - (commentClipBR.x - fadeDistance)) / fadeDistance, 0.0f, 1.0f));
+					}
+					if (alpha <= 0.0f) continue;
+					const vec2 screenPosition = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + laneX, 10.0f));
+					const f32 markerSize = fontSize * 0.45f;
+					const vec2 textPosition = screenPosition + vec2(markerSize + Camera.WorldToScreenScale(5.0f), 0.0f);
+					const vec2 textSize = font->CalcTextSizeA(fontSize, F32Max, wrapWidth, comment.Text.c_str());
+					if (screenPosition.x > commentClipBR.x || textPosition.x + textSize.x < commentClipTL.x) continue;
+					const u32 textColor = Gui::ColorU32WithAlpha(*Settings.Appearance.PreviewCommentTextColor, alpha);
+					const u32 outlineColor = Gui::ColorU32WithAlpha(*Settings.Appearance.PreviewCommentOutlineColor, alpha);
+					drawList->AddTriangleFilled(screenPosition + vec2(markerSize * 0.5f, fontSize * 0.15f),
+						screenPosition + vec2(0.0f, fontSize * 0.65f), screenPosition + vec2(markerSize, fontSize * 0.65f), textColor);
+					for (i32 y = -1; y <= 1; y++)
+						for (i32 x = -1; x <= 1; x++)
+							if (x != 0 || y != 0)
+								drawList->AddText(font, fontSize, textPosition + vec2(x * outline, y * outline), outlineColor, comment.Text.c_str(), nullptr, wrapWidth);
+					drawList->AddText(font, fontSize, textPosition, textColor, comment.Text.c_str(), nullptr, wrapWidth);
+				}
+				drawList->PopClipRect();
+			}
 			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](const ForEachBarLaneData& it)
 			{
 				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);

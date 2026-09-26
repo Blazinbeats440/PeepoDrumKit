@@ -47,6 +47,7 @@ namespace PeepoDrumKit
 		"Branch Level Hold",
 		"Reset Accuracy Values",
 		"Set Lyric Line",
+		"Comment",
 		"BM Scroll",
 		"HB Scroll",
 		"NM Scroll",
@@ -429,6 +430,7 @@ namespace PeepoDrumKit
 							case TJA::ParsedChartCommandType::BranchLevelHold: {} break;
 							case TJA::ParsedChartCommandType::ResetAccuracyValues: {} break;
 							case TJA::ParsedChartCommandType::SetLyricLine: {} break;
+							case TJA::ParsedChartCommandType::Comment: { paramData = param.Comment.Value.data(); paramEnd = paramData + param.Comment.Value.size(); } break;
 							case TJA::ParsedChartCommandType::BMScroll: {} break;
 							case TJA::ParsedChartCommandType::HBScroll: {} break;
 							case TJA::ParsedChartCommandType::NMScroll: {} break;

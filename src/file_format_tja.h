@@ -388,6 +388,7 @@ namespace TJA
 
 		ResetAccuracyValues,
 		SetLyricLine,
+		Comment,
 
 		BMScroll,
 		HBScroll,
@@ -418,6 +419,7 @@ namespace TJA
 			struct { b8 Visible; } ChangeBarLine;
 			struct { BranchCondition Condition; i32 RequirementExpert; i32 RequirementMaster; } BranchStart;
 			struct { std::string Value; } SetLyricLine;
+			struct { std::string Value; b8 AtMeasureStart, PreviousMeasure; } Comment;
 			struct { i32 Type; } SENoteChange;
 			struct { std::string CommaSeparatedList; } SetNextSong;
 			struct { ScrollDirection Direction; } ChangeDirection;
@@ -469,6 +471,7 @@ namespace TJA
 	{
 		ParsedCourseMetadata Metadata;
 		std::vector<ParsedChartCommand> ChartCommands;
+		std::vector<std::string> Comments;
 		b8 HasChart;
 	};
 
@@ -476,6 +479,7 @@ namespace TJA
 	{
 		ParsedMainMetadata Metadata;
 		std::vector<ParsedCourse> Courses;
+		std::vector<std::string> Comments;
 
 		// NOTE: Only for internal use within PeepoDrumKit. TJAs that have been exported with this special comment marker
 		//		 are assumed to only make use of known and supported features that can be safely converted without having to worry about potential data loss
@@ -547,6 +551,12 @@ namespace TJA
 		std::string Lyric;
 	};
 
+	struct ConvertedComment
+	{
+		Beat TimeWithinMeasure;
+		std::string Text;
+	};
+
 	struct ConvertedGoGoChange
 	{
 		Beat TimeWithinMeasure;
@@ -588,6 +598,7 @@ namespace TJA
 		// BUG: Can't actually change inbetween measures..?
 		std::vector<ConvertedBarLineChange> BarLineChanges;
 		std::vector<ConvertedLyricChange> LyricChanges;
+		std::vector<ConvertedComment> Comments;
 		std::vector<ConvertedGoGoChange> GoGoChanges;
 		std::vector<Beat> BranchSectionChanges;
 	};

@@ -545,9 +545,9 @@ namespace TJA
 
 			case TokenType::Comment:
 			{
-				// ...
-				if (!outTJA.HasPeepoDrumKitComment && ASCII::StartsWith(token.ValueString, PeepoDrumKitCommentMarkerPrefix))
+				if (ASCII::StartsWith(token.ValueString, PeepoDrumKitCommentMarkerPrefix))
 				{
+					if (outTJA.HasPeepoDrumKitComment) break;
 					outTJA.HasPeepoDrumKitComment = true;
 					outTJA.PeepoDrumKitCommentDate = Date::Zero();
 
@@ -557,6 +557,20 @@ namespace TJA
 					if (!comment.empty())
 						outTJA.PeepoDrumKitCommentDate = Date::FromString(std::string{ comment }.c_str());
 				}
+				else if (currentlyBetweenChartStartAndEnd)
+				{
+					ParsedChartCommand& command = pushChartCommand(ParsedChartCommandType::Comment);
+					command.Param.Comment.Value = token.ValueString;
+					command.Param.Comment.AtMeasureStart = !tokens.empty() &&
+						(&token > tokens.data()) && (&token - 1)->LineIndex == token.LineIndex;
+					command.Param.Comment.PreviousMeasure = command.Param.Comment.AtMeasureStart &&
+						(&token - 1)->Type == TokenType::ChartData &&
+						!(&token - 1)->ValueString.empty() && (&token - 1)->ValueString.back() == ',';
+				}
+				else if (!outTJA.Courses.empty())
+					outTJA.Courses.back().Comments.emplace_back(token.ValueString);
+				else
+					outTJA.Comments.emplace_back(token.ValueString);
 			} break;
 
 			case TokenType::KeyColonValue:
@@ -1104,6 +1118,16 @@ namespace TJA
 
 		const std::string_view lineEnding = (format == SaveFormat::ANSI_CRLF) ? "\r\n" : "\n";
 		auto appendLine = [&](std::string& out, std::string_view line) { out += line; out += lineEnding; };
+		auto appendComment = [&](std::string_view comment)
+		{
+			size_t start = 0;
+			for (size_t i = 0; i <= comment.size(); i++)
+				if (i == comment.size() || comment[i] == '\n')
+				{
+					appendLine(out, "// " + std::string(comment.substr(start, i - start)));
+					start = i + 1;
+				}
+		};
 		auto appendProperyLine = [&](std::string& out, Key key, std::string_view value) { out += KeyStrings[EnumToIndex(key)]; out += ':'; out += value; out += lineEnding; };
 		auto appendSuffixedPropertyLine = [&](std::string& out, Key key, std::string_view suffix, std::string_view value)
 		{ out += KeyStrings[EnumToIndex(key)]; out += suffix; out += ':'; out += value; out += lineEnding; };
@@ -1187,6 +1211,8 @@ namespace TJA
 			}
 			out += lineEnding;
 		}
+		for (const std::string& comment : inContent.Comments)
+			appendComment(comment);
 
 		DifficultyType currentCourseScope = DifficultyType::Count; // default course scope
 
@@ -1351,6 +1377,7 @@ namespace TJA
 			{
 				switch (command.Type)
 				{
+				case ParsedChartCommandType::Comment: { appendComment(command.Param.Comment.Value); } break;
 				case ParsedChartCommandType::MeasureNotes:
 				{
 					for (const NoteType note : command.Param.MeasureNotes.Notes)
@@ -1462,6 +1489,8 @@ namespace TJA
 				}
 			}
 			appendCommandLine(out, Key::Chart_END, "");
+			for (const std::string& comment : course.Comments)
+				appendComment(comment);
 		};
 
 		for (const auto& [itBeg, itEnd] : courseScopes) {
@@ -1558,6 +1587,14 @@ namespace TJA
 				ParsedChartCommand& tempCommand = tempBuffer.emplace_back(TempCommand { lyricChange.TimeWithinMeasure }).ParsedCommand;
 				tempCommand.Type = ParsedChartCommandType::SetLyricLine;
 				tempCommand.Param.SetLyricLine.Value = lyricChange.Lyric;
+			}
+			for (const ConvertedComment& comment : inMeasure.Comments)
+			{
+				ParsedChartCommand& tempCommand = tempBuffer.emplace_back(TempCommand { comment.TimeWithinMeasure }).ParsedCommand;
+				tempCommand.Type = ParsedChartCommandType::Comment;
+				tempCommand.Param.Comment.Value = comment.Text;
+				tempCommand.Param.Comment.AtMeasureStart = false;
+				tempCommand.Param.Comment.PreviousMeasure = false;
 			}
 
 			for (const ConvertedDelayChange& delayChange : inMeasure.DelayChanges)
@@ -1771,6 +1808,11 @@ namespace TJA
 				{
 					currentMeasure->LyricChanges.push_back(ConvertedLyricChange { currentTimeWithinMeasure, command.Param.SetLyricLine.Value });
 				}
+				else if (command.Type == ParsedChartCommandType::Comment)
+				{
+					ConvertedMeasure* targetMeasure = (command.Param.Comment.PreviousMeasure && currentMeasure > out.Measures.data()) ? currentMeasure - 1 : currentMeasure;
+					targetMeasure->Comments.push_back(ConvertedComment { command.Param.Comment.AtMeasureStart ? Beat::Zero() : currentTimeWithinMeasure, command.Param.Comment.Value });
+				}
 				else if (command.Type == ParsedChartCommandType::NMScroll || command.Type == ParsedChartCommandType::HBScroll || command.Type == ParsedChartCommandType::BMScroll) 
 				{
 					currentMeasure->ScrollTypes.push_back(ConvertedScrollType{ currentTimeWithinMeasure,
@@ -1904,6 +1946,23 @@ namespace TJA
 
 		ConvertedCourse expert = ConvertParsedToConvertedCourseSingle(inContent, inCourse, commandsByBranch[EnumToIndex(ConvertedBranchPath::Expert)]);
 		ConvertedCourse master = ConvertParsedToConvertedCourseSingle(inContent, inCourse, commandsByBranch[EnumToIndex(ConvertedBranchPath::Master)]);
+		for (const ConvertedCourse* source : { &expert, &master })
+			for (const ConvertedMeasure& sourceMeasure : source->Measures)
+				for (const ConvertedComment& comment : sourceMeasure.Comments)
+				{
+					const Beat beat = sourceMeasure.StartTime + comment.TimeWithinMeasure;
+					auto target = std::upper_bound(out.Measures.begin(), out.Measures.end(), beat,
+						[](Beat value, const ConvertedMeasure& measure) { return value < measure.StartTime; });
+					if (target == out.Measures.begin()) continue;
+					--target;
+					const Beat localBeat = beat - target->StartTime;
+					if (std::none_of(target->Comments.begin(), target->Comments.end(), [&](const ConvertedComment& existing)
+						{ return existing.TimeWithinMeasure == localBeat && existing.Text == comment.Text; }))
+						target->Comments.push_back(ConvertedComment { localBeat, comment.Text });
+				}
+		for (ConvertedMeasure& measure : out.Measures)
+			std::stable_sort(measure.Comments.begin(), measure.Comments.end(), [](const ConvertedComment& a, const ConvertedComment& b)
+				{ return a.TimeWithinMeasure < b.TimeWithinMeasure; });
 		out.Measures_Expert = std::move(expert.Measures);
 		out.Measures_Master = std::move(master.Measures);
 

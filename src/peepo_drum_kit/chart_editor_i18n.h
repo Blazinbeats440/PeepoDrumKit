@@ -39,6 +39,12 @@ X("TAB_CHART_PROPERTIES",							"Chart Properties") \
 X("TAB_CHART_BRANCHES",							"Chart Branches") \
 X("TAB_EVENTS",										"Chart Events") \
 X("TAB_LYRICS",										"Chart Lyrics") \
+X("TAB_COMMENTS",									"Comments") \
+X("COMMENTS_SONG",									"Song comments") \
+X("COMMENTS_COURSE",								"Course comments") \
+X("COMMENTS_AT_CURSOR",							"Comment at cursor") \
+X("COMMENTS_PREVIEW_FONT_SIZE",					"Preview text size") \
+X("COMMENTS_SHOW_IN_PREVIEW", "Show comments in preview") \
 X("TAB_TEMPO_CALCULATOR",							"Tempo Calculator") \
 X("TAB_UNDO_HISTORY",								"Undo History") \
 X("TAB_INSPECTOR",									"Chart Inspector") \
@@ -234,6 +240,8 @@ X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR", "Chart Preview: Expert Branch Lane Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR", "Chart Preview: Master Branch Lane Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR", "Chart Preview: Comment Text Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_COMMENT_OUTLINE_COLOR", "Chart Preview: Comment Outline Color") \
 X("SETTINGS_TAB_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES", "Export Builtin Locale Files") \
@@ -271,6 +279,8 @@ X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Line
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Display measure numbers at the bar lines in the game preview window.") \
+X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES", "Game Preview: Comment hold measures") \
+X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC", "Keep comments at the hit position for this many measures. Set to 0 to keep scrolling.") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
@@ -489,6 +499,7 @@ X("EVENT_SCROLL_SPEED_UNIT",						"Scroll Speed Unit") \
 X("EVENT_BAR_LINE_VISIBILITY",						"Bar Line Visibility") \
 X("EVENT_GO_GO_TIME",								"Go-Go Time") \
 X("EVENT_LYRICS",									"Lyrics") \
+X("EVENT_COMMENTS",								"Comments") \
 X("EVENT_SCROLL_TYPE",								"Scroll Type") \
 X("EVENT_JPOS_SCROLL",								"JPOS Scroll") \
 X("EVENT_SCROLL_DISTANCE_4_BEATS_TOOLTIP",			"Scroll distance of 4 beats when scroll speed is 1x") \

@@ -104,6 +104,7 @@ namespace PeepoDrumKit
 			b8 ShowChartStatsBasicInfo = true;
 			b8 ShowWindow_ChartBranches = true;
 			b8 ShowWindow_Lyrics = true;
+			b8 ShowWindow_Comments = false;
 			b8 ShowWindow_TextEditor = false;
 			b8 ShowWindow_Settings = true;
 			b8 ShowWindow_AudioTest = false;
@@ -139,6 +140,12 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<b8> GamePreviewShowMeasureNumbers = true;
+			WithDefault<i32> GamePreviewCommentFontSize = 28;
+			WithDefault<i32> GamePreviewCommentHoldMeasures = 0;
+			WithDefault<b8> GamePreviewShowComments = true;
+			WithDefault<b8> CommentsShowSongTextBox = true;
+			WithDefault<b8> CommentsShowCourseTextBox = true;
+			WithDefault<b8> CommentsShowEventTextBox = true;
 			WithDefault<b8> TimelinePlaybackCursorFollow = true;
 			WithDefault<b8> TimelineLoopPlayback = false;
 			WithDefault<b8> TimelineAutoStepAfterNoteInput = false;
@@ -212,6 +219,8 @@ namespace PeepoDrumKit
 			WithDefault<u32> BranchAreaBackgroundColor = 0x2800FFFF;
 			WithDefault<u32> PreviewBranchExpertLaneBackgroundColor = 0x3CFF9C0B;
 			WithDefault<u32> PreviewBranchMasterLaneBackgroundColor = 0x3CCA0BFF;
+			WithDefault<u32> PreviewCommentTextColor = 0xFFFFFFFF;
+			WithDefault<u32> PreviewCommentOutlineColor = 0xFF000000;
 		} Appearance;
 
 		struct AnimationData
@@ -245,6 +254,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenUpdateNotes = { KeyBinding(ImGuiKey_F2) };
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
+			WithDefault<MultiInputBinding> Editor_TogglePreviewComments = {};
 			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_OpenTemplate = {};

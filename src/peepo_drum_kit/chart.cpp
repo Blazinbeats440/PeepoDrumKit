@@ -191,6 +191,7 @@ namespace PeepoDrumKit
 		out.ChartSubtitle = inTJA.Metadata.SUBTITLE;
 		out.ChartSubtitleLocalized = inTJA.Metadata.SUBTITLE_localized;
 		out.ChartCreator = inTJA.Metadata.MAKER;
+		out.Comments = inTJA.Comments;
 		// out.ChartGenre = inTJA.Metadata.GENRE;
 		// out.ChartLyricsFileName = inTJA.Metadata.LYRICS;
 		out.SongOffset = inTJA.Metadata.OFFSET;
@@ -210,6 +211,7 @@ namespace PeepoDrumKit
 
 			const TJA::ConvertedCourse& inCourse = TJA::ConvertParsedToConvertedCourse(inTJA, inTJA.Courses[i]);
 			ChartCourse& outCourse = *out.Courses.emplace_back(std::make_unique<ChartCourse>());
+			outCourse.CourseComments = inTJA.Courses[i].Comments;
 
 			// HACK: Write proper enum conversion functions
 			outCourse.Type = Clamp(static_cast<DifficultyType>(inCourse.CourseMetadata.COURSE), DifficultyType {}, DifficultyType::Count);
@@ -323,6 +325,13 @@ namespace PeepoDrumKit
 
 				for (const TJA::ConvertedLyricChange& lyricChange : inMeasure.LyricChanges)
 					outCourse.Lyrics.Sorted.push_back(LyricChange { (inMeasure.StartTime + lyricChange.TimeWithinMeasure), lyricChange.Lyric });
+				for (const TJA::ConvertedComment& comment : inMeasure.Comments)
+				{
+					const Beat beat = inMeasure.StartTime + comment.TimeWithinMeasure;
+					CommentChange* existing = outCourse.Comments.TryFindExactAtBeat(beat);
+					if (existing != nullptr) { existing->Text += '\n'; existing->Text += comment.Text; }
+					else outCourse.Comments.Sorted.push_back(CommentChange { beat, comment.Text });
+				}
 			}
 
 			for (const TJA::ConvertedGoGoRange& inGoGoRange : inCourse.GoGoRanges)
@@ -370,6 +379,7 @@ namespace PeepoDrumKit
 		out.Metadata.SUBTITLE = in.ChartSubtitle;
 		out.Metadata.SUBTITLE_localized = in.ChartSubtitleLocalized;
 		out.Metadata.MAKER = in.ChartCreator;
+		out.Comments = in.Comments;
 		// out.Metadata.GENRE = in.ChartGenre;
 		// out.Metadata.LYRICS = in.ChartLyricsFileName;
 		out.Metadata.OFFSET = in.SongOffset;
@@ -403,6 +413,7 @@ namespace PeepoDrumKit
 		{
 			const ChartCourse& inCourse = *inCourseIt;
 			TJA::ParsedCourse& outCourse = out.Courses.emplace_back();
+			outCourse.Comments = inCourse.CourseComments;
 
 			// HACK: Write proper enum conversion functions
 			outCourse.Metadata.COURSE = static_cast<TJA::DifficultyType>(inCourse.Type);
@@ -545,6 +556,12 @@ namespace PeepoDrumKit
 				TJA::ConvertedMeasure* outConvertedMeasure = tryFindMeasureForBeat(outConvertedMeasures, inLyric.BeatTime);
 				if (assert(outConvertedMeasure != nullptr); outConvertedMeasure != nullptr)
 					outConvertedMeasure->LyricChanges.push_back(TJA::ConvertedLyricChange { (inLyric.BeatTime - outConvertedMeasure->StartTime), inLyric.Lyric });
+			}
+			for (const CommentChange& comment : inCourse.Comments)
+			{
+				TJA::ConvertedMeasure* measure = tryFindMeasureForBeat(outConvertedMeasures, comment.BeatTime);
+				if (measure != nullptr)
+					measure->Comments.push_back(TJA::ConvertedComment { comment.BeatTime - measure->StartTime, comment.Text });
 			}
 
 			// For go-go time events, convert each range to a pair of start & end changes
