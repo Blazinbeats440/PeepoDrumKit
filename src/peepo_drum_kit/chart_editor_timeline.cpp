@@ -269,6 +269,7 @@ namespace PeepoDrumKit
 				(rowType == TimelineRowType::BranchLevelHold && course.BranchLevelHolds.empty()) ||
 				(IsBranchNoteRow(rowType) && !hasBranches) ||
 				(rowType == TimelineRowType::Lyrics && course.Lyrics.Sorted.empty()) ||
+				(rowType == TimelineRowType::Comments && course.Comments.Sorted.empty()) ||
 				(rowType == TimelineRowType::ScrollType && course.ScrollTypes.Sorted.empty()) ||
 				(rowType == TimelineRowType::JPOSScroll && course.JPOSScrollChanges.Sorted.empty()) ||
 				(rowType == TimelineRowType::Sudden && course.SuddenChanges.Sorted.empty()))
@@ -733,6 +734,22 @@ namespace PeepoDrumKit
 		return false;
 	}
 
+	static Beat SnapBranchCommandToBar(const ChartCourse& course, Beat beat)
+	{
+		Beat nearest = Beat::Zero();
+		f64 nearestDistance = abs(beat.BeatsFraction());
+		course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+		{
+			if (bar.IsBar)
+			{
+				const f64 distance = abs((bar.Beat - beat).BeatsFraction());
+				if (distance < nearestDistance) { nearest = bar.Beat; nearestDistance = distance; }
+			}
+			return bar.Beat > beat && nearestDistance < (bar.Beat - beat).BeatsFraction() ? ControlFlow::Break : ControlFlow::Fallthrough;
+		});
+		return nearest;
+	}
+
 	static void DrawTimelineBranchCommands(DrawTimelineContentItemRowParam param, const ForEachRowData& rowIt)
 	{
 		ChartCourse& course = *param.Context.ChartSelectedCourse;
@@ -746,7 +763,16 @@ namespace PeepoDrumKit
 			const vec2 localBottom = localTop + vec2(0.0f, rowIt.LocalHeight);
 			const vec2 textPosition = param.Timeline.LocalToScreenSpace(localTop + vec2(3.0f, (rowIt.LocalHeight - textHeight) * 0.5f));
 			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), *Settings.Appearance.BranchStartLineColor);
-			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize(text), TimelineBackgroundColor);
+			b8 isSelected = false;
+			const ChartTimeline& timeline = param.Timeline;
+			if (timeline.SelectedBranchCommandCourse == &course)
+			{
+				const size_t index = timeline.SelectedBranchCommandIndex;
+				if (timeline.SelectedBranchCommandKind == ChartTimeline::BranchDragKind::Section && index < course.BranchSections.size()) isSelected = course.BranchSections[index] == beat;
+				else if (index < course.Branches.size() && (timeline.SelectedBranchCommandKind == ChartTimeline::BranchDragKind::Start || timeline.SelectedBranchCommandKind == ChartTimeline::BranchDragKind::Forced)) isSelected = course.Branches[index].GetStart() == beat;
+				else if (index < course.Branches.size() && timeline.SelectedBranchCommandKind == ChartTimeline::BranchDragKind::End) isSelected = course.Branches[index].GetEnd() == beat;
+			}
+			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize(text), isSelected ? Gui::GetColorU32(ImGuiCol_HeaderActive) : TimelineBackgroundColor);
 			Gui::AddTextWithDropShadow(param.DrawListContent, textPosition, TimelineItemTextColor, text, TimelineItemTextColorShadow);
 		};
 		std::vector<std::pair<Beat, std::string>> commands;
@@ -790,7 +816,8 @@ namespace PeepoDrumKit
 			const vec2 localBottom = localTop + vec2(0.0f, rowIt.LocalHeight);
 			const vec2 textPosition = param.Timeline.LocalToScreenSpace(localTop + vec2(3.0f, (rowIt.LocalHeight - textHeight) * 0.5f));
 			param.DrawListContent->AddLine(param.Timeline.LocalToScreenSpace(localTop), param.Timeline.LocalToScreenSpace(localBottom), TimelineDefaultLineColor);
-			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize("#LEVELHOLD"), TimelineBackgroundColor);
+			const b8 isSelected = param.Timeline.SelectedBranchCommandCourse == &course && param.Timeline.SelectedBranchCommandKind == ChartTimeline::BranchDragKind::LevelHold && param.Timeline.SelectedBranchCommandIndex == static_cast<size_t>(&levelHold - course.BranchLevelHolds.data());
+			param.DrawListContent->AddRectFilled(textPosition, textPosition + Gui::CalcTextSize("#LEVELHOLD"), isSelected ? Gui::GetColorU32(ImGuiCol_HeaderActive) : TimelineBackgroundColor);
 			Gui::AddTextWithDropShadow(param.DrawListContent, textPosition, TimelineItemTextColor, "#LEVELHOLD", TimelineItemTextColorShadow);
 		}
 	}
@@ -964,15 +991,17 @@ namespace PeepoDrumKit
 			Gui::PushFont(FontMain, GuiScaleI32_AtTarget(FontBaseSizes::Small));
 			for (size_t i = 0; i < list.size(); i++)
 			{
-				const LyricChange* prevLyric = IndexOrNull(static_cast<i32>(i) - 1, list);
-				const LyricChange& thisLyric = list[i];
-				const LyricChange* nextLyric = IndexOrNull(i + 1, list);
-				if (thisLyric.Lyric.empty() && prevLyric != nullptr && !prevLyric->Lyric.empty())
+				const T* prevLyric = IndexOrNull(static_cast<i32>(i) - 1, list);
+				const T& thisLyric = list[i];
+				const T* nextLyric = IndexOrNull(i + 1, list);
+				const std::string& line = [&]() -> const std::string& { if constexpr (std::is_same_v<T, LyricChange>) return thisLyric.Lyric; else return thisLyric.Text; }();
+				const std::string* prevLine = prevLyric == nullptr ? nullptr : [&]() -> const std::string* { if constexpr (std::is_same_v<T, LyricChange>) return &prevLyric->Lyric; else return &prevLyric->Text; }();
+				if (line.empty() && prevLine != nullptr && !prevLine->empty())
 					continue;
 
 				const Beat nowBeat = (thisLyric.BeatTime <= chartBeatDuration) ? chartBeatDuration : Beat::FromTicks(I32Max);
 				const Time startTime = context.BeatToTime(thisLyric.BeatTime);
-				const Time endTime = context.BeatToTime(thisLyric.Lyric.empty() ? thisLyric.BeatTime : (nextLyric != nullptr) ? nextLyric->BeatTime : nowBeat);
+				const Time endTime = context.BeatToTime(line.empty() ? thisLyric.BeatTime : (nextLyric != nullptr) ? nextLyric->BeatTime : nowBeat);
 				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
 					continue;
 
@@ -1000,7 +1029,7 @@ namespace PeepoDrumKit
 					const ImVec4 clipRect = { lyricsBarRect.TL.x + borderLeft, lyricsBarRect.TL.y, lyricsBarRect.BR.x - borderRight, lyricsBarRect.BR.y };
 
 					if (Absolute(clipRect.z - clipRect.x) > (borderLeft + borderRight))
-						Gui::AddTextWithDropShadow(drawListContent, nullptr, 0.0f, textPosition, TimelineLyricsTextColor, thisLyric.Lyric, 0.0f, &clipRect, TimelineLyricsTextColorShadow);
+						Gui::AddTextWithDropShadow(drawListContent, nullptr, 0.0f, textPosition, TimelineLyricsTextColor, line, 0.0f, &clipRect, TimelineLyricsTextColorShadow);
 				}
 				Gui::DisableFontPixelSnap(false);
 			}
@@ -1036,6 +1065,7 @@ namespace PeepoDrumKit
 					if constexpr (std::is_same_v<T, TimeSignatureChange>) { text = std::string_view(b, sprintf_s(b, "%d/%d", it.Signature.Numerator, it.Signature.Denominator)); lineColor = TimelineSignatureChangeLineColor; textColor = IsTimeSignatureSupported(it.Signature) ? TimelineItemTextColor : TimelineItemTextColorWarning; }
 					if constexpr (std::is_same_v<T, ScrollChange>) { text = std::string_view(b, sprintf_s(b, "%sx", it.ScrollSpeed.toStringCompat("x\n").c_str())); lineColor = it.ScrollSpeed.IsReal() ? TimelineScrollChangeLineColor : TimelineScrollChangeComplexLineColor; }
 					if constexpr (std::is_same_v<T, BarLineChange>) { text = it.IsVisible ? "On" : "Off"; lineColor = TimelineBarLineChangeLineColor; }
+					if constexpr (std::is_same_v<T, CommentChange>) { text = std::string_view(it.Text).substr(0, it.Text.find('\n')); if (text.empty()) text = UI_StrRuntime("EVENT_COMMENTS"); }
 					if constexpr (std::is_same_v<T, ScrollType>) { text = UI_StrRuntime(ToI18nString(it.Method)); lineColor = TimelineScrollTypeLineColor; }
 					if constexpr (std::is_same_v<T, JPOSScrollChange>) { text = std::string_view(b, sprintf_s(b, "%s", it.Move.toStringCompat("\n").c_str())); }
 					if constexpr (std::is_same_v<T, SuddenChange>) {
@@ -1492,6 +1522,14 @@ namespace PeepoDrumKit
 					out += in.Lyric;
 					out += " };\n";
 				} break;
+				case GenericList::Comments:
+				{
+					const auto& in = item.Value.NonTrivial.Comment;
+					out += "Comment { ";
+					out += std::string_view(buffer, sprintf_s(buffer, "%d, ", (in.BeatTime - baseBeat).Ticks));
+					out += in.Text;
+					out += " };\n";
+				} break;
 				case GenericList::ScrollType:
 				{
 					const auto& in = item.Value.POD.ScrollType;
@@ -1540,7 +1578,17 @@ namespace PeepoDrumKit
 				const std::string_view itemType = ASCII::Trim(line.substr(0, openIndex));
 				const std::string_view itemParam = ASCII::Trim(line.substr(openIndex + sizeof('{'), (closeIndex - openIndex) - sizeof('}')));
 
-				if (itemType == "Lyric")
+				if (itemType == "Comment")
+				{
+					auto& newItem = out.emplace_back(); newItem.List = GenericList::Comments;
+					const size_t commaIndex = itemParam.find_first_of(',');
+					if (commaIndex != std::string_view::npos)
+					{
+						ASCII::TryParse(ASCII::Trim(itemParam.substr(0, commaIndex)), newItem.Value.NonTrivial.Comment.BeatTime.Ticks);
+						newItem.Value.NonTrivial.Comment.Text = ASCII::Trim(itemParam.substr(commaIndex + 1));
+					}
+				}
+				else if (itemType == "Lyric")
 				{
 					auto& newItem = out.emplace_back(); newItem.List = GenericList::Lyrics;
 					auto& newItemValue = newItem.Value.NonTrivial.Lyric;
@@ -1751,6 +1799,7 @@ namespace PeepoDrumKit
 					case GenericList::BarLineChanges: return check(course.BarLineChanges, item.Value.POD.BarLine);
 					case GenericList::GoGoRanges: return check(course.GoGoRanges, item.Value.POD.GoGo);
 					case GenericList::Lyrics: return check(course.Lyrics, item.Value.NonTrivial.Lyric);
+					case GenericList::Comments: return check(course.Comments, item.Value.NonTrivial.Comment);
 					case GenericList::ScrollType: return check(course.ScrollTypes, item.Value.POD.ScrollType);
 					case GenericList::JPOSScroll: return check(course.JPOSScrollChanges, item.Value.POD.JPOSScroll);
 					case GenericList::Sudden: return check(course.SuddenChanges, item.Value.POD.Sudden);
@@ -2756,6 +2805,117 @@ namespace PeepoDrumKit
 			return;
 		}
 		{
+			// Branch commands have their own drag handling because they are not selected chart items.
+			ChartCourse& branchCourse = *context.ChartSelectedCourse;
+			if (BranchDrag.Kind != BranchDragKind::None)
+			{
+				if (!Gui::IsMouseDown(ImGuiMouseButton_Left))
+				{
+					if (BranchDrag.CurrentBeat != BranchDrag.OriginalBeat)
+					{
+						std::sort(branchCourse.BranchSections.begin(), branchCourse.BranchSections.end());
+						std::sort(branchCourse.Branches.begin(), branchCourse.Branches.end(), [](const BranchRange& a, const BranchRange& b) { return a.BeatTime < b.BeatTime; });
+						std::sort(branchCourse.BranchLevelHolds.begin(), branchCourse.BranchLevelHolds.end(), [](const BranchLevelHold& a, const BranchLevelHold& b) { return a.BeatTime != b.BeatTime ? a.BeatTime < b.BeatTime : a.Branch < b.Branch; });
+						context.Undo.Execute<Commands::ChangeBranchCommands>(&branchCourse, std::move(BranchDragOriginalCourse), branchCourse);
+						SelectedBranchCommandKind = BranchDragKind::None;
+					}
+					BranchDrag = {};
+				}
+				else
+				{
+					const Beat mouseBeat = context.TimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x));
+					const Beat movedBeat = Max(Beat::Zero(), BranchDrag.OriginalBeat + (mouseBeat - BranchDrag.MouseBeatOnDown));
+					const Beat target = BranchDrag.Kind == BranchDragKind::Section ? RoundBeatToCurrentGrid(movedBeat) : SnapBranchCommandToBar(branchCourse, movedBeat);
+					if (target != BranchDrag.CurrentBeat)
+					{
+						Beat start = BranchDrag.OriginalStart, end = BranchDrag.OriginalEnd;
+						if (BranchDrag.Kind == BranchDragKind::Start) start = target;
+						if (BranchDrag.Kind == BranchDragKind::End) end = target;
+						if (BranchDrag.Kind == BranchDragKind::Forced) start = end = target;
+						b8 valid = true;
+						if (BranchDrag.Kind == BranchDragKind::Section)
+							valid = std::none_of(branchCourse.BranchSections.begin(), branchCourse.BranchSections.end(), [&](Beat other) { return other == target && other != BranchDrag.CurrentBeat; });
+						else if (BranchDrag.Kind == BranchDragKind::LevelHold)
+						{
+							const BranchType path = branchCourse.BranchLevelHolds[BranchDrag.Index].Branch;
+							valid = IsBeatInsideBranchRange(branchCourse, target) &&
+								std::none_of(branchCourse.BranchLevelHolds.begin(), branchCourse.BranchLevelHolds.end(), [&](const BranchLevelHold& hold) { return hold.BeatTime == target && hold.Branch == path && hold.BeatTime != BranchDrag.CurrentBeat; });
+						}
+						else
+						{
+							valid = end >= start && (BranchDrag.Kind == BranchDragKind::Forced || end > start);
+							for (size_t index = 0; valid && index < branchCourse.Branches.size(); index++)
+							{
+								if (index == BranchDrag.Index) continue;
+								const BranchRange& other = branchCourse.Branches[index];
+								valid = start != other.GetStart() && !(start < other.GetEnd() && other.GetStart() < end);
+							}
+							for (const BranchLevelHold& hold : branchCourse.BranchLevelHolds)
+								if (valid && hold.BeatTime >= BranchDrag.OriginalStart && hold.BeatTime < BranchDrag.OriginalEnd)
+									valid = hold.BeatTime >= start && hold.BeatTime < end;
+							if (valid && BranchDrag.Kind == BranchDragKind::Forced)
+								for (const BranchRange& other : branchCourse.Branches)
+									if (&other != &branchCourse.Branches[BranchDrag.Index]) valid &= target != other.GetEnd() || !other.EndsBranching;
+						}
+						if (valid)
+						{
+							if (BranchDrag.Kind == BranchDragKind::Section) branchCourse.BranchSections[BranchDrag.Index] = target;
+							else if (BranchDrag.Kind == BranchDragKind::LevelHold) branchCourse.BranchLevelHolds[BranchDrag.Index].BeatTime = target;
+							else { BranchRange& range = branchCourse.Branches[BranchDrag.Index]; range.BeatTime = start; range.BeatDuration = end - start; }
+							BranchDrag.CurrentBeat = target;
+						}
+					}
+				}
+			}
+			else if (Regions.Content.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Left) && !IsCameraMouseGrabActive)
+			{
+				const vec2 localMouse = ScreenToLocalSpace(MousePosThisFrame);
+				ForEachTimelineRow(*this, branchCourse, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+				{
+					if (localMouse.y < row.LocalY || localMouse.y >= row.LocalY + row.LocalHeight) return;
+					std::vector<std::pair<Beat, std::string>> labelsAtBeat;
+					auto hit = [&](Beat beat, cstr label, BranchDragKind kind, size_t index)
+					{
+						if (BranchDrag.Kind != BranchDragKind::None) return;
+						const f32 commandX = Camera.TimeToLocalSpaceX(context.BeatToTime(beat));
+						auto previous = std::find_if(labelsAtBeat.begin(), labelsAtBeat.end(), [&](const auto& item) { return item.first == beat; });
+						const f32 labelX = commandX + (previous == labelsAtBeat.end() ? 0.0f : Gui::CalcTextSize(previous->second.c_str()).x);
+						if (previous == labelsAtBeat.end()) labelsAtBeat.emplace_back(beat, label);
+						else previous->second += std::string("  ") + label;
+						if (localMouse.x < labelX - 6.0f || localMouse.x > labelX + 6.0f + Gui::CalcTextSize(label).x) return;
+						if (SelectedBranchCommandCourse != &branchCourse || SelectedBranchCommandKind != kind || SelectedBranchCommandIndex != index)
+						{
+							SelectedBranchCommandCourse = &branchCourse;
+							SelectedBranchCommandKind = kind;
+							SelectedBranchCommandIndex = index;
+							return;
+						}
+						BranchDragOriginalCourse = branchCourse;
+						BranchDrag.Kind = kind; BranchDrag.Index = index;
+						BranchDrag.OriginalBeat = BranchDrag.CurrentBeat = beat;
+						BranchDrag.MouseBeatOnDown = context.TimeToBeat(Camera.LocalSpaceXToTime(localMouse.x));
+						if (kind == BranchDragKind::Start || kind == BranchDragKind::End || kind == BranchDragKind::Forced)
+						{
+							BranchDrag.OriginalStart = branchCourse.Branches[index].GetStart();
+							BranchDrag.OriginalEnd = branchCourse.Branches[index].GetEnd();
+						}
+					};
+					if (row.RowType == TimelineRowType::BranchCommands)
+					{
+						for (size_t index = 0; index < branchCourse.BranchSections.size(); index++) hit(branchCourse.BranchSections[index], "#SECTION", BranchDragKind::Section, index);
+						for (size_t index = 0; index < branchCourse.Branches.size(); index++)
+						{
+							const BranchRange& range = branchCourse.Branches[index];
+							const b8 forced = range.GetStart() == range.GetEnd() && range.EndsBranching;
+							hit(range.GetStart(), forced ? "#BRANCHSTART  #BRANCHEND" : "#BRANCHSTART", forced ? BranchDragKind::Forced : BranchDragKind::Start, index);
+							if (!forced && range.EndsBranching) hit(range.GetEnd(), "#BRANCHEND", BranchDragKind::End, index);
+						}
+					}
+					else if (row.RowType == TimelineRowType::BranchLevelHold)
+						for (size_t index = 0; index < branchCourse.BranchLevelHolds.size(); index++)
+							if (branchCourse.BranchLevelHolds[index].Branch == context.ChartSelectedBranch) hit(branchCourse.BranchLevelHolds[index].BeatTime, "#LEVELHOLD", BranchDragKind::LevelHold, index);
+				});
+			}
 			// NOTE: Selected items mouse drag
 			{
 				ChartCourse& selectedCourse = *context.ChartSelectedCourse;
@@ -3051,7 +3211,7 @@ namespace PeepoDrumKit
 				}
 			}
 
-			if (Regions.Content.IsHovered && SelectedItemDrag.HoverTarget == EDragTarget::None && Gui::IsMouseClicked(ImGuiMouseButton_Left))
+			if (Regions.Content.IsHovered && BranchDrag.Kind == BranchDragKind::None && SelectedItemDrag.HoverTarget == EDragTarget::None && Gui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
 				const Time oldCursorTime = context.GetCursorTime();
 				const f32 oldCursorLocalSpaceX = Camera.TimeToLocalSpaceX(oldCursorTime);
@@ -4127,6 +4287,7 @@ namespace PeepoDrumKit
 					case TimelineRowType::BarLineVisibility: DrawTimelineContentItemRowT<BarLineChange, TimelineRowType::BarLineVisibility>(rowParam, rowIt, context.ChartSelectedCourse->BarLineChanges); break;
 					case TimelineRowType::GoGoTime: DrawTimelineContentItemRowT<GoGoRange, TimelineRowType::GoGoTime>(rowParam, rowIt, context.ChartSelectedCourse->GoGoRanges); break;
 					case TimelineRowType::Lyrics: DrawTimelineContentItemRowT<LyricChange, TimelineRowType::Lyrics>(rowParam, rowIt, context.ChartSelectedCourse->Lyrics); break;
+					case TimelineRowType::Comments: DrawTimelineContentItemRowT<CommentChange, TimelineRowType::Comments>(rowParam, rowIt, context.ChartSelectedCourse->Comments); break;
 					case TimelineRowType::ScrollType: DrawTimelineContentItemRowT<ScrollType, TimelineRowType::ScrollType>(rowParam, rowIt, context.ChartSelectedCourse->ScrollTypes); break;
 					case TimelineRowType::JPOSScroll: DrawTimelineContentItemRowT<JPOSScrollChange, TimelineRowType::JPOSScroll>(rowParam, rowIt, context.ChartSelectedCourse->JPOSScrollChanges); break;
 					case TimelineRowType::Sudden: DrawTimelineContentItemRowT<SuddenChange, TimelineRowType::Sudden>(rowParam, rowIt, context.ChartSelectedCourse->SuddenChanges); break;

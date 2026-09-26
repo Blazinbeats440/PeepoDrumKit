@@ -110,6 +110,7 @@ namespace PeepoDrumKit
 		ChartBranchWindow branchWindow = {};
 		ChartTempoWindow tempoWindow = {};
 		ChartLyricsWindow lyricsWindow = {};
+		ChartCommentsWindow commentsWindow = {};
 		ChartSettingsWindow settingsWindow = {};
 		AudioTestWindow audioTestWindow = {};
 		TJATestWindow tjaTestWindow = {};

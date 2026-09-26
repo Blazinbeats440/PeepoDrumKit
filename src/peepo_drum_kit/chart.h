@@ -413,6 +413,14 @@ namespace PeepoDrumKit
 		std::string Lyric;
 		b8 IsSelected;
 	};
+	struct CommentChange
+	{
+		Beat BeatTime;
+		std::string Text;
+		b8 IsSelected;
+	};
+	template <> constexpr std::string_view DisplayNameOfChartEvent<CommentChange> = "Comment";
+	template <> inline CommentChange FallbackEvent<CommentChange> = {};
 	template <> constexpr std::string_view DisplayNameOfChartEvent<LyricChange> = "Lyric Change";
 
 	template <>
@@ -453,6 +461,7 @@ namespace PeepoDrumKit
 	using SortedBarLineChangesList = BeatSortedList<BarLineChange>;
 	using SortedGoGoRangesList = BeatSortedList<GoGoRange>;
 	using SortedLyricsList = BeatSortedList<LyricChange>;
+	using SortedCommentsList = BeatSortedList<CommentChange>;
 	using SortedSuddenChangesList = BeatSortedList<SuddenChange>;
 	using SortedJPOSScrollChangesList = BeatSortedList<JPOSScrollChange>;
 	using SortedScrollTypesList = BeatSortedList<ScrollType>;
@@ -494,6 +503,8 @@ namespace PeepoDrumKit
 		SortedBarLineChangesList BarLineChanges;
 		SortedGoGoRangesList GoGoRanges;
 		SortedLyricsList Lyrics;
+		SortedCommentsList Comments;
+		std::vector<std::string> CourseComments;
 
 		SortedScrollTypesList ScrollTypes;
 		SortedSuddenChangesList SuddenChanges;
@@ -552,6 +563,7 @@ namespace PeepoDrumKit
 		std::string ChartSubtitle;
 		std::map<std::string, std::string> ChartSubtitleLocalized;
 		std::string ChartCreator;
+		std::vector<std::string> Comments;
 		// std::string ChartGenre;
 		// std::string ChartLyricsFileName;
 
@@ -646,6 +658,7 @@ namespace PeepoDrumKit
 		BarLineChanges,
 		GoGoRanges,
 		Lyrics,
+		Comments,
 		ScrollType,
 		JPOSScroll,
 		Sudden,
@@ -705,7 +718,7 @@ namespace PeepoDrumKit
 
 // EnumNames<> is global
 template <>
-constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "ScrollType", "JPOSScroll", "Sudden",};
+constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "Comments", "ScrollType", "JPOSScroll", "Sudden",};
 template <>
 constexpr std::string_view EnumNames<PeepoDrumKit::GenericMember>[EnumCount<PeepoDrumKit::GenericMember>] = {"IsSelected", "BarLineVisible", "BalloonPopCount", "ScrollSpeed", "BeatStart", "BeatDuration", "TimeOffset", "NoteType", "Tempo", "TimeSignature", "Lyric", "ScrollType", "JPOSScrollMove", "JPOSScrollDuration", "SuddenAppearanceOffset", "SuddenMovementOffset", "SuddenHideRoll"};
 
@@ -884,6 +897,14 @@ namespace PeepoDrumKit
 		if constexpr (Member == GenericMember::B8_IsSelected) return (std::forward<LyricChangeT>(event).IsSelected);
 		else if constexpr (Member == GenericMember::Beat_Start) return (std::forward<LyricChangeT>(event).BeatTime);
 		else if constexpr (Member == GenericMember::CStr_Lyric) return (std::forward<LyricChangeT>(event).Lyric);
+	}
+
+	template <GenericMember Member, typename CommentChangeT, expect_type_t<CommentChangeT, CommentChange> = true>
+	constexpr decltype(auto) get(CommentChangeT&& event)
+	{
+		if constexpr (Member == GenericMember::B8_IsSelected) return (std::forward<CommentChangeT>(event).IsSelected);
+		else if constexpr (Member == GenericMember::Beat_Start) return (std::forward<CommentChangeT>(event).BeatTime);
+		else if constexpr (Member == GenericMember::CStr_Lyric) return (std::forward<CommentChangeT>(event).Text);
 	}
 
 	template <GenericMember Member, typename ScrollTypeT, expect_type_t<ScrollTypeT, ScrollType> = true>
@@ -1132,6 +1153,7 @@ namespace PeepoDrumKit
 		struct NonTrivialData
 		{
 			LyricChange Lyric;
+			CommentChange Comment;
 		} NonTrivial {};
 
 		GenericListStruct(const GenericListStruct& other) {
@@ -1186,6 +1208,7 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::BarLineChanges) return (std::forward<ChartCourseT>(course).BarLineChanges);
 		else if constexpr (List == GenericList::GoGoRanges) return (std::forward<ChartCourseT>(course).GoGoRanges);
 		else if constexpr (List == GenericList::Lyrics) return (std::forward<ChartCourseT>(course).Lyrics);
+		else if constexpr (List == GenericList::Comments) return (std::forward<ChartCourseT>(course).Comments);
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<ChartCourseT>(course).ScrollTypes);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<ChartCourseT>(course).JPOSScrollChanges);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<ChartCourseT>(course).SuddenChanges);
@@ -1209,6 +1232,7 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::BarLineChanges) return (std::forward<GenericListStructT>(inValue).POD.BarLine);
 		else if constexpr (List == GenericList::GoGoRanges) return (std::forward<GenericListStructT>(inValue).POD.GoGo);
 		else if constexpr (List == GenericList::Lyrics) return (std::forward<GenericListStructT>(inValue).NonTrivial.Lyric);
+		else if constexpr (List == GenericList::Comments) return (std::forward<GenericListStructT>(inValue).NonTrivial.Comment);
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<GenericListStructT>(inValue).POD.ScrollType);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<GenericListStructT>(inValue).POD.JPOSScroll);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<GenericListStructT>(inValue).POD.Sudden);
@@ -1278,6 +1302,7 @@ namespace PeepoDrumKit
 		X(GenericList::BarLineChanges)
 		X(GenericList::GoGoRanges)
 		X(GenericList::Lyrics)
+		X(GenericList::Comments)
 		X(GenericList::ScrollType)
 		X(GenericList::JPOSScroll)
 		X(GenericList::Sudden)

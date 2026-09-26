@@ -421,6 +421,7 @@ namespace PeepoDrumKit
 						std::pair { GenericList::BarLineChanges, "EVENT_BAR_LINE_VISIBILITY" },
 						std::pair { GenericList::GoGoRanges, "EVENT_GO_GO_TIME" },
 						std::pair { GenericList::Lyrics, "EVENT_LYRICS" },
+						std::pair { GenericList::Comments, "EVENT_COMMENTS" },
 						std::pair { GenericList::ScrollType, "EVENT_SCROLL_TYPE" },
 						std::pair { GenericList::JPOSScroll, "EVENT_JPOS_SCROLL" },
 						std::pair { GenericList::Sudden, "EVENT_SUDDEN" },
@@ -715,6 +716,7 @@ namespace PeepoDrumKit
 				Gui::MenuItem(UI_Str("TAB_CHART_BRANCHES"), nullptr, &PersistentApp.LastSession.ShowWindow_ChartBranches);
 				if (Gui::MenuItem(UI_Str("TAB_LYRICS"), ToShortcutString(*Settings.Input.Editor_OpenLyrics).Data, &PersistentApp.LastSession.ShowWindow_Lyrics))
 					focusLyricsWindowNextFrame = true;
+				Gui::MenuItem(UI_Str("TAB_COMMENTS"), nullptr, &PersistentApp.LastSession.ShowWindow_Comments);
 				if (Gui::MenuItem(UI_Str("TAB_TEXT_EDITOR"), ToShortcutString(*Settings.Input.Editor_OpenTextEditor).Data, &PersistentApp.LastSession.ShowWindow_TextEditor))
 					focusTextEditorWindowNextFrame = true;
 				if (Gui::MenuItem(UI_Str("TAB_CHART_STATS"), ToShortcutString(*Settings.Input.Editor_OpenChartStats).Data)) { PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true; }
@@ -1215,7 +1217,12 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenHelp, true)) PersistentApp.LastSession.ShowWindow_Help = focusHelpWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenUpdateNotes, true)) PersistentApp.LastSession.ShowWindow_UpdateNotes = focusUpdateNotesWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenChartStats, true)) PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true;
-				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenLyrics, true)) PersistentApp.LastSession.ShowWindow_Lyrics = focusLyricsWindowNextFrame = true;
+			if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenLyrics, true)) PersistentApp.LastSession.ShowWindow_Lyrics = focusLyricsWindowNextFrame = true;
+			if (Gui::IsAnyPressed(*Settings.Input.Editor_TogglePreviewComments, true))
+			{
+				Settings_Mutable.General.GamePreviewShowComments.Value = !Settings_Mutable.General.GamePreviewShowComments.Value;
+				Settings_Mutable.General.GamePreviewShowComments.SetHasValueIfNotDefault();
+			}
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTextEditor, true)) PersistentApp.LastSession.ShowWindow_TextEditor = focusTextEditorWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenSettings, true)) PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTemplate, false)) PersistentApp.LastSession.ShowWindow_Template = true;
@@ -1334,6 +1341,16 @@ namespace PeepoDrumKit
 				else lyricsWindow.DrawGui(context, timeline);
 			}
 			if (focusLyricsWindowNextFrame) { focusLyricsWindowNextFrame = false; Gui::SetWindowFocus(); }
+			Gui::End();
+		}
+
+		if (PersistentApp.LastSession.ShowWindow_Comments)
+		{
+			if (Gui::Begin(UI_WindowName("TAB_COMMENTS"), &PersistentApp.LastSession.ShowWindow_Comments, ImGuiWindowFlags_None))
+			{
+				if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+				else commentsWindow.DrawGui(context, timeline);
+			}
 			Gui::End();
 		}
 

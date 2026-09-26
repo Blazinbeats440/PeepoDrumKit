@@ -86,6 +86,7 @@ namespace PeepoDrumKit
 		BarLineVisibility,
 		GoGoTime,
 		Lyrics,
+		Comments,
 		ScrollType,
 		JPOSScroll,
 		Sudden,
@@ -109,6 +110,7 @@ namespace PeepoDrumKit
 		"EVENT_BAR_LINE_VISIBILITY",
 		"EVENT_GO_GO_TIME",
 		"EVENT_LYRICS",
+		"EVENT_COMMENTS",
 		"EVENT_SCROLL_TYPE",
 		"EVENT_JPOS_SCROLL",
 		"EVENT_SUDDEN",
@@ -128,6 +130,7 @@ namespace PeepoDrumKit
 		case TimelineRowType::BarLineVisibility: return GenericList::BarLineChanges;
 		case TimelineRowType::GoGoTime: return GenericList::GoGoRanges;
 		case TimelineRowType::Lyrics: return GenericList::Lyrics;
+		case TimelineRowType::Comments: return GenericList::Comments;
 		case TimelineRowType::ScrollType: return GenericList::ScrollType;
 		case TimelineRowType::JPOSScroll: return GenericList::JPOSScroll;
 		case TimelineRowType::Sudden: return GenericList::Sudden;
@@ -150,6 +153,7 @@ namespace PeepoDrumKit
 		case GenericList::BarLineChanges: return TimelineRowType::BarLineVisibility;
 		case GenericList::GoGoRanges: return TimelineRowType::GoGoTime;
 		case GenericList::Lyrics: return TimelineRowType::Lyrics;
+		case GenericList::Comments: return TimelineRowType::Comments;
 		case GenericList::ScrollType: return TimelineRowType::ScrollType;
 		case GenericList::JPOSScroll: return TimelineRowType::JPOSScroll;
 		case GenericList::Sudden: return TimelineRowType::Sudden;
@@ -279,6 +283,22 @@ namespace PeepoDrumKit
 			Beat BarBeat;
 			Beat TempoEventBeat;
 		} BarLineDrag = {};
+
+		enum class BranchDragKind : u8 { None, Section, Start, End, Forced, LevelHold };
+		struct BranchDragData
+		{
+			BranchDragKind Kind = BranchDragKind::None;
+			size_t Index = 0;
+			Beat OriginalBeat = Beat::Zero();
+			Beat MouseBeatOnDown = Beat::Zero();
+			Beat OriginalStart = Beat::Zero();
+			Beat OriginalEnd = Beat::Zero();
+			Beat CurrentBeat = Beat::Zero();
+		} BranchDrag = {};
+		BranchDragKind SelectedBranchCommandKind = BranchDragKind::None;
+		size_t SelectedBranchCommandIndex = 0;
+		ChartCourse* SelectedBranchCommandCourse = nullptr;
+		ChartCourse BranchDragOriginalCourse = {};
 
 		struct LongNotePlacementData
 		{

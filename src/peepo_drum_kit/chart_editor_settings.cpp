@@ -305,6 +305,7 @@ namespace PeepoDrumKit
 				else if (it.Key == "show_chart_stats_basic_info") { if (!BoolFromString(in, out.LastSession.ShowChartStatsBasicInfo)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_chart_branches") { if (!BoolFromString(in, out.LastSession.ShowWindow_ChartBranches)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_lyrics") { if (!BoolFromString(in, out.LastSession.ShowWindow_Lyrics)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_window_comments") { if (!BoolFromString(in, out.LastSession.ShowWindow_Comments)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_text_editor") { if (!BoolFromString(in, out.LastSession.ShowWindow_TextEditor)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_settings") { if (!BoolFromString(in, out.LastSession.ShowWindow_Settings)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_audio_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_AudioTest)) return parser.Error_InvalidBool(); }
@@ -352,6 +353,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("show_chart_stats_basic_info", BoolToString(in.LastSession.ShowChartStatsBasicInfo));
 		writer.LineKeyValue_Str("show_window_chart_branches", BoolToString(in.LastSession.ShowWindow_ChartBranches));
 		writer.LineKeyValue_Str("show_window_lyrics", BoolToString(in.LastSession.ShowWindow_Lyrics));
+		writer.LineKeyValue_Str("show_window_comments", BoolToString(in.LastSession.ShowWindow_Comments));
 		writer.LineKeyValue_Str("show_window_text_editor", BoolToString(in.LastSession.ShowWindow_TextEditor));
 		writer.LineKeyValue_Str("show_window_settings", BoolToString(in.LastSession.ShowWindow_Settings));
 		writer.LineKeyValue_Str("show_window_audio_test", BoolToString(in.LastSession.ShowWindow_AudioTest));
@@ -521,6 +523,12 @@ namespace PeepoDrumKit
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
+			X(General.GamePreviewCommentFontSize, "game_preview_comment_font_size");
+			X(General.GamePreviewCommentHoldMeasures, "game_preview_comment_hold_measures");
+			X(General.GamePreviewShowComments, "game_preview_show_comments");
+			X(General.CommentsShowSongTextBox, "comments_show_song_text_box");
+			X(General.CommentsShowCourseTextBox, "comments_show_course_text_box");
+			X(General.CommentsShowEventTextBox, "comments_show_event_text_box");
 			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
 			X(General.TimelineAutoStepAfterNoteInput, "timeline_auto_step_after_note_input");
@@ -567,6 +575,8 @@ namespace PeepoDrumKit
 			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");
 			X(Appearance.PreviewBranchExpertLaneBackgroundColor, "preview_branch_expert_lane_background_color");
 			X(Appearance.PreviewBranchMasterLaneBackgroundColor, "preview_branch_master_lane_background_color");
+			X(Appearance.PreviewCommentTextColor, "preview_comment_text_color");
+			X(Appearance.PreviewCommentOutlineColor, "preview_comment_outline_color");
 
 			SECTION("animation");
 			X(Animation.EnableGuiScaleAnimation, "enable_gui_scale_animation");
@@ -595,6 +605,7 @@ namespace PeepoDrumKit
 			X(Input.Editor_OpenUpdateNotes, "editor_open_update_notes");
 			X(Input.Editor_OpenChartStats, "editor_open_chart_stats");
 			X(Input.Editor_OpenLyrics, "editor_open_lyrics");
+			X(Input.Editor_TogglePreviewComments, "editor_toggle_preview_comments");
 			X(Input.Editor_OpenTextEditor, "editor_open_text_editor");
 			X(Input.Editor_OpenSettings, "editor_open_settings");
 			X(Input.Editor_OpenTemplate, "editor_open_template");

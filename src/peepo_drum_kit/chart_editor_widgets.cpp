@@ -2489,7 +2489,7 @@ namespace PeepoDrumKit
 			{
 				if (Gui::Property::BeginTable(ImGuiTableFlags_BordersInner))
 				{
-					const cstr listTypeNames[] = { UI_Str("SELECTED_EVENTS_TEMPOS"), UI_Str("SELECTED_EVENTS_TIME_SIGNATURES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_BAR_LINE_VISIBILITIES"), UI_Str("SELECTED_EVENTS_GO_GO_RANGES"), UI_Str("EVENT_LYRICS"), UI_Str("SELECTED_EVENTS_SCROLL_TYPES"), UI_Str("SELECTED_EVENTS_JPOS_SCROLLS"), UI_Str("SELECTED_EVENTS_SUDDEN"), };
+					const cstr listTypeNames[] = { UI_Str("SELECTED_EVENTS_TEMPOS"), UI_Str("SELECTED_EVENTS_TIME_SIGNATURES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("EVENT_NOTES"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_SCROLL_SPEEDS"), UI_Str("SELECTED_EVENTS_BAR_LINE_VISIBILITIES"), UI_Str("SELECTED_EVENTS_GO_GO_RANGES"), UI_Str("EVENT_LYRICS"), UI_Str("EVENT_COMMENTS"), UI_Str("SELECTED_EVENTS_SCROLL_TYPES"), UI_Str("SELECTED_EVENTS_JPOS_SCROLLS"), UI_Str("SELECTED_EVENTS_SUDDEN"), };
 					static_assert(ArrayCount(listTypeNames) == EnumCount<GenericList>);
 
 					Gui::Property::Property([&]
@@ -3438,6 +3438,8 @@ namespace PeepoDrumKit
 
 		assert(context.ChartSelectedCourse != nullptr);
 		ChartCourse& course = *context.ChartSelectedCourse;
+		ChartCourse courseBeforeBranchEdit = course;
+		const i32 changesBeforeBranchEdit = context.Undo.NumberOfChangesMade;
 		const cstr branchConditionNames[] = { UI_Str("BRANCH_CONDITION_ROLL"), UI_Str("BRANCH_CONDITION_ACCURACY"), UI_Str("BRANCH_CONDITION_SCORE") };
 		auto snapRangeToBars = [&](Beat start, Beat end)
 		{
@@ -3624,6 +3626,8 @@ namespace PeepoDrumKit
 			course.Branches.erase(course.Branches.begin() + branchToRemove);
 			context.Undo.NotifyChangesWereMade();
 		}
+		if (context.Undo.NumberOfChangesMade != changesBeforeBranchEdit)
+			context.Undo.Execute<Commands::ChangeBranchCommands>(&course, std::move(courseBeforeBranchEdit), course);
 	}
 
 	template <typename TValue, typename... TLables>
@@ -4392,5 +4396,87 @@ namespace PeepoDrumKit
 
 			Gui::PopID();
 		}
+	}
+
+	void ChartCommentsWindow::DrawGui(ChartContext& context, ChartTimeline& timeline)
+	{
+		if (Gui::Checkbox(UI_Str("COMMENTS_SHOW_IN_PREVIEW"), &Settings_Mutable.General.GamePreviewShowComments.Value))
+			Settings_Mutable.General.GamePreviewShowComments.SetHasValueIfNotDefault();
+		i32 previewFontSize = Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128);
+		if (Gui::SliderInt(UI_Str("COMMENTS_PREVIEW_FONT_SIZE"), &previewFontSize, 12, 128))
+		{
+			Settings_Mutable.General.GamePreviewCommentFontSize.Value = previewFontSize;
+			Settings_Mutable.General.GamePreviewCommentFontSize.SetHasValueIfNotDefault();
+		}
+		auto toText = [](const std::vector<std::string>& comments, std::string& text)
+		{
+			text.clear();
+			for (size_t i = 0; i < comments.size(); i++)
+			{
+				if (i != 0) text += '\n';
+				text += comments[i];
+			}
+		};
+		auto fromText = [](std::string_view text)
+		{
+			std::vector<std::string> comments;
+			if (text.empty()) return comments;
+			size_t start = 0;
+			for (size_t i = 0; i <= text.size(); i++)
+				if (i == text.size() || text[i] == '\n')
+				{
+					comments.emplace_back(text.substr(start, i - start));
+					start = i + 1;
+				}
+			return comments;
+		};
+		auto drawLines = [&](const char* label, std::vector<std::string>& comments, std::string& buffer, b8& active, WithDefault<b8>& showTextBox)
+		{
+			if (Gui::Checkbox(label, &showTextBox.Value)) showTextBox.SetHasValueIfNotDefault();
+			if (!showTextBox.Value) { active = false; return; }
+			Gui::PushID(&comments);
+			if (!active) toText(comments, buffer);
+			Gui::SetNextItemWidth(-1.0f);
+			if (Gui::InputTextMultilineWithHint("##Comments", "", &buffer, vec2(-1.0f, Gui::GetFrameHeightWithSpacing() * 3.0f)))
+				context.Undo.Execute<Commands::ReplaceCommentLines>(&comments, fromText(buffer));
+			active = Gui::IsItemActive();
+			if (active) context.Undo.ResetMergeTimeThresholdStopwatch();
+			Gui::PopID();
+		};
+
+		drawLines(UI_Str("COMMENTS_SONG"), context.Chart.Comments, SongBuffer, SongInputActive, Settings_Mutable.General.CommentsShowSongTextBox);
+		if (context.ChartSelectedCourse == nullptr) return;
+		ChartCourse& course = *context.ChartSelectedCourse;
+		if (LastCourse != &course) { CourseInputActive = EventInputActive = false; LastCourse = &course; }
+		drawLines(UI_Str("COMMENTS_COURSE"), course.CourseComments, CourseBuffer, CourseInputActive, Settings_Mutable.General.CommentsShowCourseTextBox);
+
+		const Beat cursorBeat = FloorBeatToGrid(context.GetCursorBeat(), GetGridBeatSnap(timeline.CurrentGridBarDivision));
+		if (LastBeat != cursorBeat) { EventInputActive = false; LastBeat = cursorBeat; }
+		const CommentChange* event = course.Comments.TryFindLastAtBeat(cursorBeat);
+		if (event != nullptr && event->BeatTime != cursorBeat) event = nullptr;
+		if (Gui::Checkbox(UI_Str("COMMENTS_AT_CURSOR"), &Settings_Mutable.General.CommentsShowEventTextBox.Value))
+			Settings_Mutable.General.CommentsShowEventTextBox.SetHasValueIfNotDefault();
+		if (!Settings.General.CommentsShowEventTextBox.Value) { EventInputActive = false; return; }
+		if (!EventInputActive) EventBuffer = event != nullptr ? event->Text : "";
+		Gui::BeginDisabled(cursorBeat.Ticks < 0);
+		Gui::SetNextItemWidth(-1.0f);
+		if (Gui::InputTextMultilineWithHint("##CommentAtCursor", "", &EventBuffer, vec2(-1.0f, Gui::GetFrameHeightWithSpacing() * 4.0f)))
+		{
+			if (EventBuffer.empty())
+			{
+				if (event != nullptr) context.Undo.Execute<Commands::RemoveCommentChange>(&course, &course.Comments, cursorBeat);
+			}
+			else if (event == nullptr)
+				context.Undo.Execute<Commands::AddCommentChange>(&course, &course.Comments, CommentChange { cursorBeat, EventBuffer });
+			else
+				context.Undo.Execute<Commands::UpdateCommentChange>(&course, &course.Comments, CommentChange { cursorBeat, EventBuffer });
+		}
+		EventInputActive = Gui::IsItemActive();
+		if (EventInputActive) context.Undo.ResetMergeTimeThresholdStopwatch();
+		Gui::BeginDisabled(course.Comments.TryFindExactAtBeat(cursorBeat) == nullptr);
+		if (Gui::Button(UI_Str("ACT_EVENT_REMOVE")))
+			context.Undo.Execute<Commands::RemoveCommentChange>(&course, &course.Comments, cursorBeat);
+		Gui::EndDisabled();
+		Gui::EndDisabled();
 	}
 }

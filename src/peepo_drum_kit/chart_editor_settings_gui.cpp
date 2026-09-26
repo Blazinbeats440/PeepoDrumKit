@@ -927,6 +927,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.GamePreviewCommentHoldMeasures,
+							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES"),
+							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.TimelinePlaybackCursorFollow,
 							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW"),
 							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC")),
@@ -1216,6 +1221,8 @@ namespace PeepoDrumKit
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR"), settings.Appearance.PreviewBranchExpertLaneBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR"), settings.Appearance.PreviewBranchMasterLaneBackgroundColor);
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR"), settings.Appearance.PreviewCommentTextColor);
+					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_COMMENT_OUTLINE_COLOR"), settings.Appearance.PreviewCommentOutlineColor);
 				}
 				Gui::PopStyleVar();
 				Gui::EndTabItem();
@@ -1259,6 +1266,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_PlaceNoteDrumroll, "Timeline: Place Note Drumroll", },
 						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
 						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
+						{ &settings.Input.Editor_TogglePreviewComments, "Editor: Toggle Preview Comments", },
 						{ &settings.Input.Timeline_SelectBranchExpert, "Timeline: Select Expert Branch", },
 						{ &settings.Input.Timeline_SelectBranchMaster, "Timeline: Select Master Branch", },
 						{ &settings.Input.Timeline_Cut, "Timeline: Cut", },
