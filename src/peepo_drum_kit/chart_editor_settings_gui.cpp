@@ -861,12 +861,6 @@ namespace PeepoDrumKit
 					SettingsGui::SettingsEntry settingsEntriesMain[] =
 					{
 						SettingsGui::SettingsEntry(
-							settings.General.VSyncOffFPSLimit,
-							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT"),
-							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC"),
-							SettingsGui::WidgetType::I32_VSyncOffFPSLimit),
-
-						SettingsGui::SettingsEntry(
 							settings.General.DefaultCreatorName,
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR"),
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC")),
@@ -1028,6 +1022,12 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_ANIMATION_RANGE_SPEED"),
 							UI_Str("SETTINGS_ANIMATION_RANGE_SPEED_DESC"),
 							SettingsGui::WidgetType::F32_ExponentialSpeed),
+
+						SettingsGui::SettingsEntry(
+							settings.General.VSyncOffFPSLimit,
+							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT"),
+							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC"),
+							SettingsGui::WidgetType::I32_VSyncOffFPSLimit),
 					};
 
 					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), &settingsFilterMain, lastActiveGroup);
