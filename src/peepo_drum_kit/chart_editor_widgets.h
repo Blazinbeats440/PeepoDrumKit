@@ -5,6 +5,7 @@
 #include "chart_editor_timeline.h"
 #include "chart_editor_context.h"
 #include "chart_editor_test_play_rules.h"
+#include "chart_editor_video_export.h"
 #include "chart_editor_theme.h"
 #include "imgui/imgui_include.h"
 #include "imgui/backend/imgui_custom_draw.h"
@@ -341,7 +342,25 @@ namespace PeepoDrumKit
 
 	struct ChartGamePreview
 	{
+		enum class VideoBackgroundFit { Stretch, Contain, Cover, Width, Height };
+		enum class VideoLayout { Original, Taiko };
 		GameCamera Camera = {};
+		std::optional<Time> VideoExportTime;
+		Time VideoFadeContentStart = Time::Zero(), VideoFadeContentEnd = Time::Zero();
+		f32 VideoFadeInSeconds = 0.0f, VideoFadeOutSeconds = 0.0f, VideoFadeFrameSeconds = 0.0f;
+		u32 VideoExportResolutionWidth = 0;
+		u32 VideoBackgroundColor = 0xFF1F1F1F;
+		const CustomDraw::GPUTexture* VideoBackgroundTexture = nullptr;
+		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::Cover;
+		VideoLayout VideoExportLayout = VideoLayout::Original;
+		BranchType VideoExportBranch = BranchType::Normal;
+		VideoExportComboTimeline VideoExportCombos;
+		b8 VideoShowTitle = true, VideoShowSubtitle = false, VideoShowDifficulty = true, VideoShowMaxCombo = true, VideoShowCurrentCombo = true;
+		f32 VideoTitleScale = 1.0f, VideoTitlePaddingScale = 1.0f;
+		i32 VideoTitleAlignment = 0, VideoTitleVerticalPosition = 0;
+		u32 VideoTitleColor = 0xFFFFFFFF, VideoTitleBandColor = 0xB0000000;
+		Rect VideoExportViewport = {};
+		ImDrawList* VideoExportDrawList = nullptr;
 		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; };
 		std::vector<TestPlayNoteState> TestPlayNotes;
 		std::unordered_map<const Note*, ChartContext::TestPlayJudgementData> TestPlayAttemptJudgements;

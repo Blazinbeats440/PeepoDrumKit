@@ -15,6 +15,7 @@ EmbeddedIconsList GetEmbeddedIconsList();
 
 // NOTE: Exposed here specifically to be used with PushFont() / PopFont()
 struct ImFont;
+struct ImDrawList;
 inline ImFont* FontMain = nullptr;
 enum FontBaseSizes : i32 { Small = 16, Medium = 18, Large = 22 };
 inline std::string FontMainFileNameDefault = "NotoSansCJKjp-Regular.otf";
@@ -92,6 +93,7 @@ namespace ApplicationHost
 	using StartupFunc = void(*)();
 	using BeforeUpdateFunc = void(*)();
 	using UpdateFunc = void(*)();
+	using AfterRenderFunc = void(*)();
 	using ShutdownFunc = void(*)();
 	using WindowCloseRequestFunc = CloseResponse(*)();
 
@@ -100,9 +102,13 @@ namespace ApplicationHost
 		StartupFunc OnStartup;
 		BeforeUpdateFunc OnBeforeUpdate;
 		UpdateFunc OnUpdate;
+		AfterRenderFunc OnAfterRender;
 		ShutdownFunc OnShutdown;
 		WindowCloseRequestFunc OnWindowCloseRequest;
 	};
+
+	b8 CaptureDrawListToBGRA(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, std::vector<u8>& outPixels);
+	b8 CaptureWindowToBGRA(u32& width, u32& height, std::vector<u8>& outPixels);
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks);
 }

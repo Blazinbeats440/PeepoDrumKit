@@ -4,6 +4,7 @@
 #include "chart.h"
 #include "chart_editor_context.h"
 #include "chart_editor_widgets.h"
+#include "chart_editor_video_writer.h"
 #include "chart_editor_settings_gui.h"
 #include "chart_editor_timeline.h"
 #include "imgui/imgui_include.h"
@@ -14,6 +15,7 @@
 
 namespace PeepoDrumKit
 {
+	b8 SaveScreenshotPNG(u32 width, u32 height, const std::vector<u8>& pixels, std::string& outputPath);
 	struct AsyncImportChartResult
 	{
 		std::string ChartFilePath;
@@ -51,6 +53,11 @@ namespace PeepoDrumKit
 	public:
 		void DrawFullscreenMenuBar();
 		void DrawGui();
+		void DrawVideoExportWindow();
+		void ConfigureVideoPreview(ChartGamePreview& preview);
+		void DrawScreenshotPreview();
+		void SavePendingScreenshots();
+		void OnAfterRender();
 		void RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID);
 		ApplicationHost::CloseResponse OnWindowCloseRequest();
 
@@ -83,6 +90,50 @@ namespace PeepoDrumKit
 		ChartContext context = {};
 		ChartTimeline timeline = {};
 		ChartGamePreview gamePreview = {};
+		b8 screenshotWindowRequested = false, screenshotPreviewRequested = false;
+		i32 screenshotWindowDelay = 0;
+		ChartGamePreview screenshotPreview = {};
+		ImDrawList* screenshotDrawList = nullptr;
+		std::string screenshotStatus;
+		f64 screenshotStatusUntil = 0.0;
+		struct VideoExportData
+		{
+			enum class RangeMode { Full, SelectedRange, Preview, Marker };
+			b8 ShowWindow = false, Preparing = false, Exporting = false, Finalizing = false, Finished = false, FramePrepared = false;
+			RangeMode Range = RangeMode::Full;
+			f32 ExcerptSeconds = 15.0f;
+			b8 AudioFade = true;
+			ChartGamePreview::VideoLayout Layout = ChartGamePreview::VideoLayout::Original;
+			b8 ShowTitle = true, ShowSubtitle = false, ShowDifficulty = true, ShowMaxCombo = true, ShowCurrentCombo = true;
+			f32 TitleScale = 1.0f, TitlePaddingScale = 1.0f;
+			i32 TitleAlignment = 0, TitleVerticalPosition = 0;
+			u32 TitleColor = 0xFFFFFFFF, TitleBandColor = 0xB0000000;
+			i32 Resolution = 3, FramesPerSecond = 60;
+			i32 BackgroundSource = 0;
+			u32 BackgroundColor = 0xFF1F1F1F;
+			b8 BackgroundInitialized = false;
+			ChartGamePreview::VideoBackgroundFit BackgroundImageFit = ChartGamePreview::VideoBackgroundFit::Cover;
+			std::string BackgroundImagePath;
+			CustomDraw::GPUTexture DefaultBackgroundTexture = {}, CustomBackgroundTexture = {};
+			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
+			f32 LeadInSeconds = 1.0f, TailSeconds = 2.0f;
+			BranchType Branch = BranchType::Normal;
+			ChartCourse* Course = nullptr;
+			Audio::SourceHandle SongSource = Audio::SourceHandle::Invalid;
+			Time StartTime = Time::Zero(), EndTime = Time::Zero();
+			Time ContentStartTime = Time::Zero(), ContentEndTime = Time::Zero();
+			i64 FrameIndex = 0, FrameCount = 0;
+			CPUStopwatch ExportStopwatch = {};
+			f64 LastFrameElapsedSeconds = 0.0, SecondsPerFrame = 0.0;
+			i32 ChartChanges = 0;
+			ChartGamePreview Preview = {};
+			VideoExportSoundTimeline Sounds = {};
+			VideoExportWriter Writer = {};
+			std::vector<u8> Pixels;
+			std::vector<i16> AudioSamples;
+			std::string Status;
+			std::string ErrorDetails, OutputBasePath, OutputPath, TemporaryPath;
+		} videoExport = {};
 
 		std::future<AsyncImportChartResult> importChartFuture {};
 		std::future<AsyncLoadSongResult> loadSongFuture {};

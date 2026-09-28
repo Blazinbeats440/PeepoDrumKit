@@ -84,6 +84,24 @@ namespace PeepoDrumKit
 	{
 		inline void ResetDefault() { *this = PersistentAppData {}; }
 
+		struct VideoExportSettingsData
+		{
+			i32 Layout = 0;
+			i32 Resolution = 3, FramesPerSecond = 60;
+			i32 BackgroundSource = -1, BackgroundImageFit = 2;
+			u32 BackgroundColor = 0;
+			std::string BackgroundImagePath;
+			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
+			f32 LeadInSeconds = 1.0f, TailSeconds = 2.0f;
+			f32 ExcerptSeconds = 15.0f;
+			b8 AudioFade = true;
+			i32 Branch = -1;
+			b8 ShowTitle = true, ShowSubtitle = false, ShowDifficulty = true, ShowMaxCombo = true, ShowCurrentCombo = true;
+			f32 TitleScale = 1.0f, TitlePaddingScale = 1.0f;
+			i32 TitleAlignment = 0, TitleVerticalPosition = 0;
+			u32 TitleColor = 0xFFFFFFFF, TitleBandColor = 0xB0000000;
+		} VideoExport = {};
+
 		struct LastSessionData
 		{
 			f32 GuiScale = 1.0f;
@@ -141,6 +159,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<b8> GamePreviewShowMeasureNumbers = true;
+			WithDefault<b8> GamePreviewShowJPOSPosition = false;
 			WithDefault<i32> GamePreviewCommentFontSize = 28;
 			WithDefault<i32> GamePreviewCommentHoldMeasures = 0;
 			WithDefault<b8> GamePreviewShowComments = true;
@@ -256,6 +275,8 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
 			WithDefault<MultiInputBinding> Editor_TogglePreviewComments = {};
+			WithDefault<MultiInputBinding> Editor_ScreenshotWindow = {};
+			WithDefault<MultiInputBinding> Editor_ScreenshotPreview = {};
 			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_OpenTemplate = {};

@@ -107,6 +107,91 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-screenshot-png")
+			{
+				const std::vector<u8> pixels = { 0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255 };
+				std::string firstPath, secondPath;
+				if (!SaveScreenshotPNG(2, 2, pixels, firstPath) || !SaveScreenshotPNG(2, 2, pixels, secondPath) || firstPath == secondPath)
+				{
+					Log::Write("Screenshot PNG self-test failed");
+					return 1;
+				}
+				Log::Write("Screenshot PNG self-test passed: %s, %s", firstPath.c_str(), secondPath.c_str());
+				return 0;
+			}
+			if (argv[i] == "--test-video-writer")
+			{
+				Audio::PCMSampleBuffer hitSound {};
+				hitSound.ChannelCount = 1;
+				hitSound.SampleRate = Audio::Engine.OutputSampleRate;
+				hitSound.FrameCount = 2;
+				hitSound.InterleavedSamples = std::make_unique<i16[]>(2);
+				hitSound.InterleavedSamples[0] = 1000;
+				hitSound.InterleavedSamples[1] = 500;
+				VideoExportAudioSources testSources;
+				testSources.SoundEffects[EnumToIndex(SoundEffectType::TaikoDon)] = &hitSound;
+				VideoExportSoundTimeline testSounds;
+				testSounds.Events.push_back({ Time::FromSec(2.0 / Audio::Engine.OutputSampleRate), SoundEffectType::TaikoDon });
+				std::vector<i16> mixedSamples;
+				RenderVideoExportAudio(testSources, testSounds, Time::Zero(), 0, 5, mixedSamples);
+				if (mixedSamples.size() != 10 || mixedSamples[2 * 2] != 1000 || mixedSamples[2 * 2 + 1] != 1000 ||
+					mixedSamples[3 * 2] != 500 || mixedSamples[0] != 0 || mixedSamples[4 * 2] != 0)
+				{
+					Log::Write("Video writer self-test audio mixing failed");
+					return 1;
+				}
+				VideoExportAudioSources fadeSources;
+				fadeSources.Song = &hitSound;
+				fadeSources.ContentStart = Time::FromSec(1.0);
+				fadeSources.ContentEnd = Time::FromSec(2.0);
+				fadeSources.FadeInSeconds = fadeSources.FadeOutSeconds = 1.0f;
+				const f64 fadeTimes[] = { 0.0, 0.45, 0.9, 1.5, 2.2, 2.6, 3.0 };
+				const i32 expectedLevels[] = { 0, 750, 1000, 1000, 1000, 750, 0 };
+				for (size_t sample = 0; sample < ArrayCount(fadeTimes); ++sample)
+				{
+					fadeSources.SongOffset = Time::FromSec(fadeTimes[sample]);
+					RenderVideoExportAudio(fadeSources, {}, fadeSources.SongOffset, 0, 1, mixedSamples);
+					if (std::abs(static_cast<i32>(mixedSamples[0]) - expectedLevels[sample]) > 1 || mixedSamples[0] != mixedSamples[1])
+					{
+						Log::Write("Video writer self-test audio fade failed at %g seconds", fadeTimes[sample]);
+						return 1;
+					}
+				}
+				fadeSources.FadeInSeconds = fadeSources.FadeOutSeconds = 0.0f;
+				RenderVideoExportAudio(fadeSources, {}, fadeSources.SongOffset, 0, 1, mixedSamples);
+				if (mixedSamples[0] != 1000 || mixedSamples[1] != 1000) return 1;
+				VideoExportWriter writer;
+				if (!writer.Start("build/video-writer-self-test.mp4", 640, 360, 30, 2000000))
+				{
+					Log::Write("Video writer self-test setup failed: %s", writer.GetError().data());
+					return 1;
+				}
+				std::vector<u8> pixels(640 * 360 * 4, 0);
+				std::vector<i16> samples(1470 * 2, 0);
+				for (i32 frame = 0; frame < 30; ++frame)
+				{
+					for (size_t pixel = 0; pixel < pixels.size(); pixel += 4)
+					{
+						pixels[pixel + 0] = static_cast<u8>(frame * 8);
+						pixels[pixel + 1] = 64;
+						pixels[pixel + 2] = 128;
+						pixels[pixel + 3] = 255;
+					}
+					if (!writer.WriteVideoFrame(pixels.data(), 640 * 4, frame) ||
+						!writer.WriteAudioSamples(samples.data(), 1470, frame * 1470))
+					{
+						Log::Write("Video writer self-test frame failed: %s", writer.GetError().data());
+						return 1;
+					}
+				}
+				if (!writer.Finish())
+				{
+					Log::Write("Video writer self-test finalize failed: %s", writer.GetError().data());
+					return 1;
+				}
+				Log::Write("Video writer self-test passed");
+				return 0;
+			}
 			if (argv[i] == "--test-tja-branches")
 			{
 				std::string error;
@@ -179,6 +264,7 @@ namespace PeepoDrumKit
 			ApplicationHost::GlobalState.VSyncOffFPSLimit = Max(0, *Settings.General.VSyncOffFPSLimit);
 			app->OnUpdate();
 		};
+		callbacks.OnAfterRender = [] { app->ChartEditor.OnAfterRender(); };
 		callbacks.OnShutdown = []
 		{
 			Log::Write("User shutdown begin");

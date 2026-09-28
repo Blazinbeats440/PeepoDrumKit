@@ -4,6 +4,7 @@
 #include "chart_editor_widgets.h"
 #include "audio/audio_file_formats.h"
 #include "chart_editor_i18n.h"
+#include <cmath>
 #include <thorvg/thorvg.h>
 
 namespace PeepoDrumKit
@@ -58,6 +59,34 @@ namespace PeepoDrumKit
 
 	ChartEditor::ChartEditor()
 	{
+		const auto& videoSettings = PersistentApp.VideoExport;
+		videoExport.Layout = static_cast<ChartGamePreview::VideoLayout>(Clamp(videoSettings.Layout, 0, 1));
+		videoExport.Resolution = Clamp(videoSettings.Resolution, 0, ArrayCountI32(VideoResolutionPresets) - 1);
+		videoExport.FramesPerSecond = videoSettings.FramesPerSecond == 15 || videoSettings.FramesPerSecond == 30 ||
+			videoSettings.FramesPerSecond == 60 || videoSettings.FramesPerSecond == 120 ? videoSettings.FramesPerSecond : 60;
+		videoExport.BackgroundSource = Clamp(videoSettings.BackgroundSource, -1, 3);
+		videoExport.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(Clamp(videoSettings.BackgroundImageFit, 0, 4));
+		videoExport.BackgroundColor = videoSettings.BackgroundColor;
+		videoExport.BackgroundImagePath = videoSettings.BackgroundImagePath;
+		videoExport.SongVolume = Clamp(videoSettings.SongVolume, 0.0f, 2.0f);
+		videoExport.DrumVolume = Clamp(videoSettings.DrumVolume, 0.0f, 2.0f);
+		videoExport.LeadInSeconds = Clamp(videoSettings.LeadInSeconds, 0.0f, 5.0f);
+		videoExport.TailSeconds = Clamp(videoSettings.TailSeconds, 0.0f, 5.0f);
+		videoExport.AudioFade = videoSettings.AudioFade;
+		videoExport.ExcerptSeconds = std::isfinite(videoSettings.ExcerptSeconds) ? Clamp(videoSettings.ExcerptSeconds, 0.1f, 3600.0f) : 15.0f;
+		videoExport.Branch = static_cast<BranchType>(Clamp(videoSettings.Branch, 0, EnumCountI32<BranchType> - 1));
+		videoExport.ShowTitle = videoSettings.ShowTitle;
+		videoExport.ShowSubtitle = videoSettings.ShowSubtitle;
+		videoExport.ShowDifficulty = videoSettings.ShowDifficulty;
+		videoExport.ShowMaxCombo = videoSettings.ShowMaxCombo;
+		videoExport.ShowCurrentCombo = videoSettings.ShowCurrentCombo;
+		videoExport.TitleScale = Clamp(videoSettings.TitleScale, 0.7f, 1.5f);
+		videoExport.TitlePaddingScale = Clamp(videoSettings.TitlePaddingScale, 0.5f, 2.0f);
+		videoExport.TitleAlignment = Clamp(videoSettings.TitleAlignment, 0, 1);
+		videoExport.TitleVerticalPosition = Clamp(videoSettings.TitleVerticalPosition, 0, 1);
+		videoExport.TitleColor = videoSettings.TitleColor;
+		videoExport.TitleBandColor = videoSettings.TitleBandColor;
+
 		timeline.BalloonExpectedHitsPerSecond = Settings.General.BalloonExpectedHitsPerSecond.Value;
 		context.Gfx.StartAsyncLoading();
 		context.SongVoice = Audio::Engine.AddVoice(Audio::SourceHandle::Invalid, "ChartEditor SongVoice", false, 1.0f, 0, true);
@@ -90,6 +119,33 @@ namespace PeepoDrumKit
 
 	ChartEditor::~ChartEditor()
 	{
+		if (screenshotDrawList) IM_DELETE(screenshotDrawList);
+		auto& videoSettings = PersistentApp.VideoExport;
+		videoSettings.Layout = static_cast<i32>(videoExport.Layout);
+		videoSettings.Resolution = videoExport.Resolution;
+		videoSettings.FramesPerSecond = videoExport.FramesPerSecond;
+		videoSettings.BackgroundSource = videoExport.BackgroundSource;
+		videoSettings.BackgroundImageFit = static_cast<i32>(videoExport.BackgroundImageFit);
+		videoSettings.BackgroundColor = videoExport.BackgroundColor;
+		videoSettings.BackgroundImagePath = videoExport.BackgroundImagePath;
+		videoSettings.SongVolume = videoExport.SongVolume;
+		videoSettings.DrumVolume = videoExport.DrumVolume;
+		videoSettings.LeadInSeconds = videoExport.LeadInSeconds;
+		videoSettings.TailSeconds = videoExport.TailSeconds;
+		videoSettings.AudioFade = videoExport.AudioFade;
+		videoSettings.ExcerptSeconds = videoExport.ExcerptSeconds;
+		videoSettings.Branch = EnumToIndex(videoExport.Branch);
+		videoSettings.ShowTitle = videoExport.ShowTitle;
+		videoSettings.ShowSubtitle = videoExport.ShowSubtitle;
+		videoSettings.ShowDifficulty = videoExport.ShowDifficulty;
+		videoSettings.ShowMaxCombo = videoExport.ShowMaxCombo;
+		videoSettings.ShowCurrentCombo = videoExport.ShowCurrentCombo;
+		videoSettings.TitleScale = videoExport.TitleScale;
+		videoSettings.TitlePaddingScale = videoExport.TitlePaddingScale;
+		videoSettings.TitleAlignment = videoExport.TitleAlignment;
+		videoSettings.TitleVerticalPosition = videoExport.TitleVerticalPosition;
+		videoSettings.TitleColor = videoExport.TitleColor;
+		videoSettings.TitleBandColor = videoExport.TitleBandColor;
 		context.SfxVoicePool.UnloadAllSourcesAndVoices();
 	}
 
@@ -344,6 +400,20 @@ namespace PeepoDrumKit
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("ACT_EDIT_SAVE"), ToShortcutString(*Settings.Input.Editor_ChartSave).Data)) { TrySaveChartOrOpenSaveAsDialog(context); }
 				if (Gui::MenuItem(UI_Str("ACT_FILE_SAVE_AS"), ToShortcutString(*Settings.Input.Editor_ChartSaveAs).Data)) { OpenChartSaveAsDialog(context); }
+				if (Gui::MenuItem(UI_Str("SCREENSHOT_WINDOW"), ToShortcutString(*Settings.Input.Editor_ScreenshotWindow).Data)) screenshotWindowRequested = true;
+				if (Gui::MenuItem(UI_Str("SCREENSHOT_PREVIEW"), ToShortcutString(*Settings.Input.Editor_ScreenshotPreview).Data, false,
+					context.ChartSelectedCourse != nullptr && !videoExport.Exporting && !videoExport.Preparing)) screenshotPreviewRequested = true;
+				if (Gui::MenuItem(UI_Str("VIDEO_EXPORT_MENU"), nullptr, false, context.ChartSelectedCourse != nullptr))
+				{
+					videoExport.ShowWindow = true;
+					if (PersistentApp.VideoExport.Branch < 0)
+					{
+						videoExport.Branch = context.ChartSelectedBranch;
+						PersistentApp.VideoExport.Branch = EnumToIndex(videoExport.Branch);
+					}
+					videoExport.Range = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero()
+						? VideoExportData::RangeMode::SelectedRange : VideoExportData::RangeMode::Full;
+				}
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("ACT_FILE_EXIT"), ToShortcutString(InputBinding(ImGuiKey_F4, ImGuiMod_Alt)).Data))
 					tryToCloseApplicationOnNextFrame = true;
@@ -1133,6 +1203,8 @@ namespace PeepoDrumKit
 	void ChartEditor::DrawGui()
 	{
 		InternalUpdateAsyncLoading();
+		const u32 videoExportWidth = videoExport.ShowWindow ? VideoResolutionPresets[videoExport.Resolution].Width : 0;
+		gamePreview.VideoExportResolutionWidth = videoExport.Preview.VideoExportResolutionWidth = videoExportWidth;
 
 		if (tryToCloseApplicationOnNextFrame)
 		{
@@ -1223,6 +1295,9 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.GamePreviewShowComments.Value = !Settings_Mutable.General.GamePreviewShowComments.Value;
 				Settings_Mutable.General.GamePreviewShowComments.SetHasValueIfNotDefault();
 			}
+			if (Gui::IsAnyPressed(*Settings.Input.Editor_ScreenshotWindow, false)) screenshotWindowRequested = true;
+			if (Gui::IsAnyPressed(*Settings.Input.Editor_ScreenshotPreview, false) && context.ChartSelectedCourse != nullptr &&
+				!videoExport.Exporting && !videoExport.Preparing) screenshotPreviewRequested = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTextEditor, true)) PersistentApp.LastSession.ShowWindow_TextEditor = focusTextEditorWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenSettings, true)) PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTemplate, false)) PersistentApp.LastSession.ShowWindow_Template = true;
@@ -1668,6 +1743,8 @@ namespace PeepoDrumKit
 			Gui::PopStyleVar(2);
 		}
 
+		DrawVideoExportWindow();
+		DrawScreenshotPreview();
 		context.Undo.FlushAndExecuteEndOfFrameCommands();
 	}
 

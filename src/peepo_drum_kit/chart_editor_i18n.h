@@ -127,6 +127,7 @@ X("STATS_FONT_SIZE_ZOOM_OUT",					"Decrease Text Size") \
 X("STATS_FONT_SIZE_RESET",						"Reset Text Size") \
 X("STATS_FONT_SIZE_CURRENT",					"Text Size: %g%%") \
 X("STATS_MAX_COMBO",								"Max Combo: %d") \
+X("VIDEO_EXPORT_MAX_COMBO",						" Combo") \
 X("STATS_DURATION",								"Duration: %.3f sec") \
 X("STATS_DENSITY",								"Density: %.3f hit/s") \
 X("STATS_DON",									"Don: %d (%d/%d)") \
@@ -281,6 +282,8 @@ X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Line
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Display measure numbers at the bar lines in the game preview window.") \
+X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
+X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC", "Display the current JPOS coordinates beside the hit circle in the game preview and exported video.") \
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES", "Game Preview: Comment hold measures") \
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC", "Keep comments at the hit position for this many measures. Set to 0 to keep scrolling.") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
@@ -377,6 +380,82 @@ X("ACT_FILE_OPEN",									"Open...") \
 X("ACT_FILE_CLEAR_ITEMS",							"Clear Items") \
 X("ACT_FILE_OPEN_CHART_DIRECTORY",					"Open Chart Directory...") \
 X("ACT_FILE_SAVE_AS",								"Save As...") \
+X("VIDEO_EXPORT_MENU", "Export Chart Video...") \
+X("SCREENSHOT_WINDOW", "Save window screenshot") \
+X("SCREENSHOT_PREVIEW", "Generate preview at cursor") \
+X("SCREENSHOT_SAVED", "Screenshot saved:") \
+X("SCREENSHOT_FAILED", "Could not save screenshot.") \
+X("VIDEO_EXPORT_AUDIO_FADE", "Fade audio with video") \
+X("VIDEO_EXPORT_WINDOW", "Export Chart Video") \
+X("VIDEO_EXPORT_RANGE_MODE", "Export range") \
+X("VIDEO_EXPORT_RANGE_FULL", "Entire chart") \
+X("VIDEO_EXPORT_RANGE_SELECTED", "Selected range only") \
+X("VIDEO_EXPORT_RANGE_PREVIEW", "From preview position") \
+X("VIDEO_EXPORT_RANGE_MARKER", "From marker position") \
+X("VIDEO_EXPORT_EXCERPT_SECONDS", "Duration") \
+X("VIDEO_EXPORT_BRANCH", "Branch route") \
+X("VIDEO_EXPORT_LAYOUT", "Layout") \
+X("VIDEO_EXPORT_LAYOUT_ORIGINAL", "Original") \
+X("VIDEO_EXPORT_LAYOUT_TAIKO", "Taiko") \
+X("VIDEO_EXPORT_RESOLUTION", "Resolution") \
+X("VIDEO_EXPORT_FPS", "Frame rate") \
+X("VIDEO_EXPORT_BACKGROUND", "Background") \
+X("VIDEO_EXPORT_BACKGROUND_COLOR", "Background color") \
+X("VIDEO_EXPORT_BACKGROUND_ASSET", "assets/background.png") \
+X("VIDEO_EXPORT_BACKGROUND_CUSTOM", "Selected image") \
+X("VIDEO_EXPORT_BACKGROUND_JACKET", "Chart jacket") \
+X("VIDEO_EXPORT_BACKGROUND_CHOOSE", "Choose image...") \
+X("VIDEO_EXPORT_BACKGROUND_FIT", "Image fit") \
+X("VIDEO_EXPORT_BACKGROUND_STRETCH", "Stretch") \
+X("VIDEO_EXPORT_BACKGROUND_CONTAIN", "Fit entire image") \
+X("VIDEO_EXPORT_BACKGROUND_COVER", "Fill and crop") \
+X("VIDEO_EXPORT_BACKGROUND_WIDTH", "Fit width") \
+X("VIDEO_EXPORT_BACKGROUND_HEIGHT", "Fit height") \
+X("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED", "Could not load the background image.") \
+X("VIDEO_EXPORT_SONG_VOLUME", "Song volume") \
+X("VIDEO_EXPORT_DRUM_VOLUME", "Drum volume") \
+X("VIDEO_EXPORT_LEAD_IN", "Fade-in duration") \
+X("VIDEO_EXPORT_TAIL", "Fade-out duration") \
+X("VIDEO_EXPORT_SHOW_TITLE", "Show title") \
+X("VIDEO_EXPORT_SHOW_SUBTITLE", "Include subtitle") \
+X("VIDEO_EXPORT_TITLE_SIZE", "Text size") \
+X("VIDEO_EXPORT_TITLE_PADDING", "Title padding") \
+X("VIDEO_EXPORT_TITLE_ALIGNMENT", "Title alignment") \
+X("VIDEO_EXPORT_TITLE_LEFT", "Left") \
+X("VIDEO_EXPORT_TITLE_CENTER", "Center") \
+X("VIDEO_EXPORT_TITLE_VERTICAL_POSITION", "Title area position") \
+X("VIDEO_EXPORT_TITLE_TOP", "Top") \
+X("VIDEO_EXPORT_TITLE_BOTTOM", "Bottom") \
+X("VIDEO_EXPORT_TITLE_COLOR", "Title color") \
+X("VIDEO_EXPORT_TITLE_BAND_COLOR", "Title band color and opacity") \
+X("VIDEO_EXPORT_SHOW_DIFFICULTY", "Show difficulty") \
+X("VIDEO_EXPORT_SHOW_MAX_COMBO", "Show max combo") \
+X("VIDEO_EXPORT_SHOW_CURRENT_COMBO", "Show current combo") \
+X("VIDEO_EXPORT_START", "Export MP4") \
+X("VIDEO_EXPORT_CANCEL", "Stop export") \
+X("VIDEO_EXPORT_FINISHED", "Video export finished.") \
+X("VIDEO_EXPORT_STOPPED", "Video export stopped.") \
+X("VIDEO_EXPORT_PREPARING", "Preparing video export...") \
+X("VIDEO_EXPORT_WRITING", "Writing frames") \
+X("VIDEO_EXPORT_FINALIZING", "Finalizing MP4...") \
+X("VIDEO_EXPORT_FRAMES", "Frames") \
+X("VIDEO_EXPORT_ELAPSED", "Elapsed") \
+X("VIDEO_EXPORT_REMAINING", "Remaining (approx.)") \
+X("VIDEO_EXPORT_CALCULATING", "Calculating...") \
+X("VIDEO_EXPORT_OUTPUT", "Output") \
+X("VIDEO_EXPORT_OPEN_VIDEO", "Open video") \
+X("VIDEO_EXPORT_OPEN_FOLDER", "Open folder") \
+X("VIDEO_EXPORT_ERROR_DETAILS", "Error details") \
+X("VIDEO_EXPORT_START_FAILED", "Could not start video export.") \
+X("VIDEO_EXPORT_WRITE_FAILED", "Could not write the video.") \
+X("VIDEO_EXPORT_FINALIZE_FAILED", "Could not finalize the MP4 file.") \
+X("VIDEO_EXPORT_MOVE_FAILED", "Could not save the completed MP4 in the Video folder.") \
+X("VIDEO_EXPORT_DIRECTORY_FAILED", "Could not create or access the Video folder:") \
+X("VIDEO_EXPORT_NAME_FAILED", "Could not find an available video file name.") \
+X("VIDEO_EXPORT_TEMP_LEFT", "The temporary MP4 remains at:") \
+X("VIDEO_EXPORT_NO_SONG", "Load a song before exporting a video.") \
+X("VIDEO_EXPORT_CAPTURE_FAILED", "Could not render the video frame.") \
+X("VIDEO_EXPORT_SOURCE_CHANGED", "The chart or song changed during export.") \
 /* selection menu */ \
 X("ACT_MARKER_TOGGLE", "Place/Remove Marker") \
 X("ACT_MARKER_JUMP", "Jump to Marker") \

@@ -6,6 +6,61 @@
 
 namespace PeepoDrumKit
 {
+	static f32 VideoTextWidth(ImFont* font, f32 fontSize, std::string_view text)
+	{
+		if (text.empty()) return 0.0f;
+		return font->CalcTextSizeA(fontSize, F32Max, 0.0f, text.data(), text.data() + text.size()).x;
+	}
+
+	static size_t NextVideoTextCharacter(std::string_view text, size_t index)
+	{
+		size_t next = index + 1;
+		while (next < text.size() && (static_cast<u8>(text[next]) & 0xC0) == 0x80) ++next;
+		return next;
+	}
+
+	static size_t VideoTextPrefixThatFits(ImFont* font, f32 fontSize, std::string_view text, f32 width)
+	{
+		size_t end = 0;
+		for (size_t next = 0; end < text.size(); end = next)
+		{
+			next = NextVideoTextCharacter(text, end);
+			if (VideoTextWidth(font, fontSize, text.substr(0, next)) > width) break;
+		}
+		return end;
+	}
+
+	static std::string EllipsizeVideoText(ImFont* font, f32 fontSize, std::string_view text, f32 width)
+	{
+		if (VideoTextWidth(font, fontSize, text) <= width) return std::string(text);
+		constexpr std::string_view ellipsis = "...";
+		const f32 availableWidth = width - VideoTextWidth(font, fontSize, ellipsis);
+		if (availableWidth <= 0.0f) return std::string(ellipsis);
+		return std::string(text.substr(0, VideoTextPrefixThatFits(font, fontSize, text, availableWidth))) + std::string(ellipsis);
+	}
+
+	static f32 VideoFadeOpacity(Time time, Time contentStart, Time contentEnd, f32 fadeInSeconds, f32 fadeOutSeconds, f32 frameSeconds)
+	{
+		const f64 current = time.ToSec();
+		if (fadeInSeconds > 0.0f && current < contentStart.ToSec())
+		{
+			const f64 start = contentStart.ToSec() - fadeInSeconds;
+			const f64 progress = std::clamp((current - start) / (fadeInSeconds * 0.9), 0.0, 1.0);
+			return static_cast<f32>((1.0 - progress) * (1.0 - progress));
+		}
+		if (fadeOutSeconds > 0.0f)
+		{
+			const f64 start = contentEnd.ToSec() + fadeOutSeconds * 0.2;
+			if (current >= start)
+			{
+				const f64 end = contentEnd.ToSec() + fadeOutSeconds - frameSeconds;
+				const f64 progress = end > start ? std::clamp((current - start) / (end - start), 0.0, 1.0) : 1.0;
+				return static_cast<f32>(progress * progress);
+			}
+		}
+		return 0.0f;
+	}
+
 	static constexpr f32 FrameToTime(f32 frame, f32 fps = 60.0f) { return (frame / fps); }
 	static constexpr BezierKeyFrame2D GameNoteHitPath[] =
 	{
@@ -604,7 +659,7 @@ namespace PeepoDrumKit
 	void ChartCourse::RecalculateComboCounts(BranchType branch)
 	{
 		const SortedNotesList& notes = GetNotes(branch);
-		i16 comboCount = 0;
+		i32 comboCount = 0;
 		for (const Note& note : notes)
 		{
 			if (IsComboNote(note.Type))
@@ -916,8 +971,13 @@ namespace PeepoDrumKit
 
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
 	{
+		const b8 isVideoExport = VideoExportTime.has_value();
+		const b8 isTaikoVideo = isVideoExport && VideoExportLayout == VideoLayout::Taiko;
+		if (isVideoExport) animatedCursorTime = *VideoExportTime;
 		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
-		const b8 IsAnyChildWindowHovered = Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+		const b8 IsAnyChildWindowHovered = !isVideoExport && Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+		if (!isVideoExport)
+		{
 		if (!IsTestPlaying)
 		{
 			if (*Settings.TestPlay.ShowStartButtonsInPreview)
@@ -1066,7 +1126,11 @@ namespace PeepoDrumKit
 			Gui::EndChild();
 		}
 
+		}
 		std::vector<std::pair<ChartCourse*, BranchType>> comparedLanes;
+		if (isVideoExport)
+			comparedLanes.emplace_back(context.ChartSelectedCourse, VideoExportBranch);
+		else
 		for (const auto& course : context.Chart.Courses)
 		{
 			if (auto compared = context.ChartsCompared.find(course.get()); compared != context.ChartsCompared.end())
@@ -1074,7 +1138,7 @@ namespace PeepoDrumKit
 					comparedLanes.emplace_back(course.get(), branch);
 		}
 		const i32 nLanes = static_cast<i32>(comparedLanes.size());
-		const b8 hasCommentLane = *Settings.General.GamePreviewShowComments && std::any_of(comparedLanes.begin(), comparedLanes.end(), [](const auto& lane) { return !lane.first->Comments.empty(); });
+		const b8 hasCommentLane = !isVideoExport && *Settings.General.GamePreviewShowComments && std::any_of(comparedLanes.begin(), comparedLanes.end(), [](const auto& lane) { return !lane.first->Comments.empty(); });
 		f32 commentLaneHeight = 0.0f;
 		if (hasCommentLane)
 		{
@@ -1093,6 +1157,9 @@ namespace PeepoDrumKit
 		Camera.ScreenSpaceViewportRect = Gui::GetItemRect();
 		Camera.ScreenSpaceViewportRect.TL = Camera.ScreenSpaceViewportRect.TL + buttonMargin;
 		Camera.ScreenSpaceViewportRect.BR = ClampBot(Camera.ScreenSpaceViewportRect.BR - buttonMargin, Camera.ScreenSpaceViewportRect.TL + (minContentRectSize - vec2(buttonMargin.x, 0.0f)));
+		if (isVideoExport)
+			Camera.ScreenSpaceViewportRect = FitInside(Camera.ScreenSpaceViewportRect, 16.0f / 9.0f, EFitInside::Contain);
+		else
 		{
 			f32 newAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
 			if (const f32 min = GetAspectRatio(*Settings.General.GameViewportAspectRatioMin); min != 0.0f) newAspectRatio = ClampBot(newAspectRatio, min);
@@ -1106,7 +1173,14 @@ namespace PeepoDrumKit
 		const vec2 standardSize = vec2(GameLaneStandardWidth + GameLanePaddingL + GameLanePaddingR, nLanes * (GameLaneSlice.TotalHeight() + commentLaneHeight) + GameLanePaddingTop + GameLanePaddingBot);
 		const f32 standardAspectRatio = GetAspectRatio(standardSize);
 		const f32 viewportAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
-		if (viewportAspectRatio <= standardAspectRatio) // NOTE: Standard case of (<= 16:9) with a fixed sized lane being centered
+		if (isTaikoVideo)
+		{
+			// 1280x720 reference, shifted 25 pixels up at 1920x1080.
+			Camera.WorldSpaceSize = vec2(1920.0f, 1080.0f);
+			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / Camera.WorldSpaceSize.x;
+			laneRectBase = Rect::FromTLSize(vec2(498.0f, 251.0f), vec2(GameLaneStandardWidth, GameLaneSlice.TotalHeight()));
+		}
+		else if (viewportAspectRatio <= standardAspectRatio) // NOTE: Standard case of (<= 16:9) with a fixed sized lane being centered
 		{
 			Camera.WorldSpaceSize = vec2(standardSize.x, standardSize.x / viewportAspectRatio);
 			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / standardSize.x;
@@ -1131,21 +1205,76 @@ namespace PeepoDrumKit
 		}
 #endif
 
+		f32 rasterScale = VideoExportResolutionWidth > 0
+			? std::max(Camera.WorldToScreenScaleFactor, static_cast<f32>(VideoExportResolutionWidth) / standardSize.x)
+			: Camera.WorldToScreenScaleFactor;
+		if (isVideoExport)
+			rasterScale = std::max(rasterScale, context.Gfx.GetInfo(SprID::Game_Note_Don).RasterScale);
 		if (!context.Gfx.IsAsyncLoading())
-			context.Gfx.Rasterize(SprGroup::Game, Camera.WorldToScreenScaleFactor);
-
+			context.Gfx.Rasterize(SprGroup::Game, rasterScale);
 		ImDrawList* drawList = Gui::GetWindowDrawList();
+		const f32 videoCaptureScale = isVideoExport && VideoExportResolutionWidth > 0
+			? static_cast<f32>(VideoExportResolutionWidth) / Camera.ScreenSpaceViewportRect.GetWidth() : 1.0f;
+		const f32 previousFontDensity = FontMain->CurrentRasterizerDensity;
+		const f32 previousFringeScale = drawList->_FringeScale;
+		if (isVideoExport)
+		{
+			FontMain->CurrentRasterizerDensity = std::max(1.0f, videoCaptureScale);
+			drawList->_FringeScale = previousFringeScale / videoCaptureScale;
+		}
+		defer {
+			FontMain->CurrentRasterizerDensity = previousFontDensity;
+			drawList->_FringeScale = previousFringeScale;
+		};
+
+		VideoExportDrawList = isVideoExport ? drawList : nullptr;
+		if (isVideoExport) VideoExportViewport = Camera.ScreenSpaceViewportRect;
 		drawList->ChannelsSplit(5); // 0: lane, 1: judgement mark, 2: bar lines, 3: notes & frame, 4: overlay texts
 		drawList->ChannelsSetCurrent(0);
 
-		// jacket background
 		const Rect windowClipRect = { drawList->GetClipRectMin(), drawList->GetClipRectMax() };
-		vec2 jacketSize = context.JacketTexture.GetSizeF32();
-		auto [jacketBoundRect, jacketDrawRect] = FitInside(jacketSize, Rect::FromTLSize({}, jacketSize), Camera.ScreenSpaceViewportRect, EFitInside::Cover);
-		Rect jacketUV = { jacketDrawRect.TL / jacketSize, jacketDrawRect.BR / jacketSize };
-		drawList->AddImage(context.JacketTexture.GetTexID(), jacketBoundRect.TL, jacketBoundRect.BR, jacketUV.TL, jacketUV.BR, Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, context.SongJacketFadeAnimationCurrent));
-
 		drawList->PushClipRect(Camera.ScreenSpaceViewportRect.TL, Camera.ScreenSpaceViewportRect.BR, true);
+		// jacket or video background
+		if (isVideoExport)
+		{
+			const Rect viewport = Camera.ScreenSpaceViewportRect;
+			drawList->AddRectFilled(viewport.TL, viewport.BR, VideoBackgroundColor);
+			if (VideoBackgroundTexture != nullptr && VideoBackgroundTexture->IsValid())
+			{
+				const vec2 imageSize = VideoBackgroundTexture->GetSizeF32();
+				const vec2 viewportSize = viewport.GetSize();
+				if (imageSize.x > 0.0f && imageSize.y > 0.0f)
+				{
+					vec2 drawnSize = viewportSize;
+					if (VideoBackgroundImageFit != VideoBackgroundFit::Stretch)
+					{
+						const f32 widthScale = viewportSize.x / imageSize.x;
+						const f32 heightScale = viewportSize.y / imageSize.y;
+						const f32 scale = VideoBackgroundImageFit == VideoBackgroundFit::Width ? widthScale
+							: VideoBackgroundImageFit == VideoBackgroundFit::Height ? heightScale
+							: VideoBackgroundImageFit == VideoBackgroundFit::Contain ? std::min(widthScale, heightScale)
+							: std::max(widthScale, heightScale);
+						drawnSize = imageSize * scale;
+					}
+					const vec2 drawnTopLeft = viewport.TL + (viewportSize - drawnSize) * 0.5f;
+					drawList->AddImage(VideoBackgroundTexture->GetTexID(), drawnTopLeft, drawnTopLeft + drawnSize);
+				}
+			}
+		}
+		else if (context.JacketTexture.IsValid())
+		{
+			const vec2 jacketSize = context.JacketTexture.GetSizeF32();
+			auto [jacketBoundRect, jacketDrawRect] = FitInside(jacketSize, Rect::FromTLSize({}, jacketSize), Camera.ScreenSpaceViewportRect, EFitInside::Cover);
+			const Rect jacketUV = { jacketDrawRect.TL / jacketSize, jacketDrawRect.BR / jacketSize };
+			drawList->AddImage(context.JacketTexture.GetTexID(), jacketBoundRect.TL, jacketBoundRect.BR, jacketUV.TL, jacketUV.BR, Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, context.SongJacketFadeAnimationCurrent));
+		}
+		if (isTaikoVideo)
+		{
+			drawList->ChannelsSetCurrent(4);
+			drawList->AddRectFilled(Camera.WorldToScreenSpace(vec2(0.0f, 251.0f)),
+				Camera.WorldToScreenSpace(vec2(498.0f, 515.0f)), 0xE0282525);
+			drawList->ChannelsSetCurrent(0);
+		}
 
 
 		const auto MousePosThisFrame = Gui::GetMousePos();
@@ -1225,8 +1354,10 @@ namespace PeepoDrumKit
 			const std::vector<TempoChange>& tempos = course->TempoMap.Tempo.Sorted;
 			const SortedGoGoRangesList& gogoRanges = course->GoGoRanges;
 
-			const b8 isPlayback = context.GetIsPlayback();
-			const BeatAndTime exactCursorBeatAndTime = context.GetCursorBeatAndTime(course, true);
+			const b8 isPlayback = isVideoExport || context.GetIsPlayback();
+			const BeatAndTime exactCursorBeatAndTime = isVideoExport
+				? BeatAndTime { course->TempoMap.TimeToBeat(*VideoExportTime, true), *VideoExportTime }
+				: context.GetCursorBeatAndTime(course, true);
 			const b8 useExactCursor = isPlayback || (IsTestPlaying && !context.TestPlaySmoothCursor);
 			const Time cursorTimeOrAnimated = useExactCursor ? exactCursorBeatAndTime.Time : animatedCursorTime;
 			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true);
@@ -1321,17 +1452,24 @@ namespace PeepoDrumKit
 				}
 			}
 			drawList->ChannelsSetCurrent(1);
+			const auto circleSegments = [&](f32 radius)
+			{
+				return isVideoExport ? drawList->_CalcCircleAutoSegmentCount(Camera.WorldToScreenScale(radius) * videoCaptureScale) : 0;
+			};
 			drawList->AddCircleFilled(
 				hitCirclePos,
-				Camera.WorldToScreenScale(GameHitCircle.InnerFillRadius), isGogo ? GameLaneHitCircleInnerFillColorGogo : GameLaneHitCircleInnerFillColor);
-				drawList->AddCircle(
-				hitCirclePos,
-				Camera.WorldToScreenScale(GameHitCircle.InnerOutlineRadius), isGogo ? GameLaneHitCircleInnerOutlineColorGogo : GameLaneHitCircleInnerOutlineColor, 0, Camera.WorldToScreenScale(GameHitCircle.InnerOutlineThickness));
+				Camera.WorldToScreenScale(GameHitCircle.InnerFillRadius), isGogo ? GameLaneHitCircleInnerFillColorGogo : GameLaneHitCircleInnerFillColor,
+				circleSegments(GameHitCircle.InnerFillRadius));
 			drawList->AddCircle(
 				hitCirclePos,
-				Camera.WorldToScreenScale(GameHitCircle.OuterOutlineRadius), isGogo ? GameLaneHitCircleOuterOutlineColorGogo : GameLaneHitCircleOuterOutlineColor, 0, Camera.WorldToScreenScale(GameHitCircle.OuterOutlineThickness));
+				Camera.WorldToScreenScale(GameHitCircle.InnerOutlineRadius), isGogo ? GameLaneHitCircleInnerOutlineColorGogo : GameLaneHitCircleInnerOutlineColor,
+				circleSegments(GameHitCircle.InnerOutlineRadius), Camera.WorldToScreenScale(GameHitCircle.InnerOutlineThickness));
+			drawList->AddCircle(
+				hitCirclePos,
+				Camera.WorldToScreenScale(GameHitCircle.OuterOutlineRadius), isGogo ? GameLaneHitCircleOuterOutlineColorGogo : GameLaneHitCircleOuterOutlineColor,
+				circleSegments(GameHitCircle.OuterOutlineRadius), Camera.WorldToScreenScale(GameHitCircle.OuterOutlineThickness));
 
-			if (hitCirclePosJPos != vec2{ 0, 0 }) {
+			if (*Settings.General.GamePreviewShowJPOSPosition && hitCirclePosJPos != vec2{ 0, 0 }) {
 				std::string str = Complex(hitCirclePosJPos.x, hitCirclePosJPos.y).toStringCompat("\n");
 				const vec2 textSize = Gui::CalcTextSize(str);
 				vec2 posTxtJPos = hitCirclePos + vec2{ -1, -1 } * (Camera.WorldToScreenScale(GameHitCircle.OuterOutlineRadius) + textSize.y / 2);
@@ -1754,7 +1892,7 @@ namespace PeepoDrumKit
 				}
 
 				// Select box
-				if ((!context.CompareMode || isFocusedLane) && (it->OriginalNote->IsSelected || doBoxSelectThisFrame)) {
+				if (!isVideoExport && (!context.CompareMode || isFocusedLane) && (it->OriginalNote->IsSelected || doBoxSelectThisFrame)) {
 					const auto hitBoxSize = vec2(Camera.WorldToScreenScale((IsBigNote(it->OriginalNote->Type) ? GameSelectedNoteHitBoxSizeBig : GameSelectedNoteHitBoxSizeSmall)));
 					const auto hitBoxHead = Rect::FromCenterSize(Camera.LaneToScreenSpace(laneHeadDisplay), hitBoxSize);
 					const auto hitBoxTail = Rect::FromCenterSize(Camera.LaneToScreenSpace(laneTailDisplay), hitBoxSize);
@@ -1845,60 +1983,162 @@ namespace PeepoDrumKit
 			}
 			ReverseNoteDrawBuffer.clear();
 
-			// NOTE: Draw combo count at the hit circle position using Combo.png
+			// NOTE: Draw combo near the hit circle or over the Taiko combo panel
 			{
 				const SortedNotesList& notes = course->GetNotes(branch);
 				const Note* lastHitNote = notes.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
-				const i32 displayedCombo = IsTestPlaying ? TestPlayCombo : (lastHitNote != nullptr ? lastHitNote->TempComboCount : 0);
+				const i32 displayedCombo = isVideoExport ? (VideoShowCurrentCombo ? VideoExportCombos.GetCurrentCombo(*VideoExportTime) : 0)
+					: IsTestPlaying ? TestPlayCombo : (lastHitNote != nullptr ? lastHitNote->TempComboCount : 0);
 				if (displayedCombo > 0 && !(nLanes > 2 && balloonPopCountDrawn))
 				{
-					constexpr std::string_view sprFontComboCharSet = "0123456789";
-					constexpr size_t sprFontComboCharCount = sprFontComboCharSet.size();
-					constexpr f32 sprBaseScale = SprDescTable[EnumToIndex(SprID::Game_Font_Combo)].BaseScale;
-					const SprInfo sprInfo = context.Gfx.GetInfo(SprID::Game_Font_Combo);
-					const vec2 digitSrcSize = vec2(sprInfo.SourceSize.x / f32{ sprFontComboCharCount }, sprInfo.SourceSize.y);
-					const f32 sheetW = sprInfo.SourceSize.x;
+						constexpr std::string_view sprFontComboCharSet = "0123456789";
+						constexpr size_t sprFontComboCharCount = sprFontComboCharSet.size();
+						constexpr f32 sprBaseScale = SprDescTable[EnumToIndex(SprID::Game_Font_Combo)].BaseScale;
+						const SprInfo sprInfo = context.Gfx.GetInfo(SprID::Game_Font_Combo);
+						const vec2 digitSrcSize = vec2(sprInfo.SourceSize.x / f32{ sprFontComboCharCount }, sprInfo.SourceSize.y);
+						const f32 sheetW = sprInfo.SourceSize.x;
 
-					char comboStr[16];
-					const i32 comboLen = sprintf_s(comboStr, "%d", displayedCombo);
+						char comboStr[16];
+						const i32 comboLen = sprintf_s(comboStr, "%d", displayedCombo);
 
-					const auto& display = GetGameComboDisplay(nLanes);
-					const f32 digitScale = Camera.WorldToScreenScaleFactor * display.DigitScale / sprBaseScale;
-					const vec2 digitSize = digitSrcSize * digitScale;
+						const auto& display = GetGameComboDisplay(nLanes);
+						const f32 digitScale = Camera.WorldToScreenScaleFactor * display.DigitScale / sprBaseScale;
+						const vec2 digitSize = digitSrcSize * digitScale;
 
-					const vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
-					const vec2 digitStep = digitSize + padding;
-					const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
-						: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
-					: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
-					const vec2 comboWorldPos = Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
-					const vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
+						const vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
+						const vec2 digitStep = digitSize + padding;
+						const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
+							: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
+							: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
+						const vec2 comboWorldPos = isTaikoVideo ? vec2(399.0f, 358.0f)
+							: Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
+						const vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
 
-					vec2 comboScreenPos = Camera.WorldToScreenSpace(comboWorldPos);
-					vec2 marginTL = totalSize * vec2{ (nLanes > 2) ? 0.5f : 0.5f, 0.5f };
-					vec2 marginBR = totalSize - marginTL;
-					comboScreenPos = Max(Camera.ScreenSpaceViewportRect.TL + marginTL, Min(comboScreenPos, Camera.ScreenSpaceViewportRect.BR - marginBR));
-					const vec2 startPos = comboScreenPos - marginTL;
+						vec2 comboScreenPos = Camera.WorldToScreenSpace(comboWorldPos);
+						vec2 marginTL = totalSize * vec2{ (nLanes > 2) ? 0.5f : 0.5f, 0.5f };
+						vec2 marginBR = totalSize - marginTL;
+						comboScreenPos = Max(Camera.ScreenSpaceViewportRect.TL + marginTL, Min(comboScreenPos, Camera.ScreenSpaceViewportRect.BR - marginBR));
+						const vec2 startPos = comboScreenPos - marginTL;
 
-					for (i32 i = 0; i < comboLen; i++)
-					{
-						const i32 digit = comboStr[i] - '0';
-						const f32 u0 = (digit * digitSrcSize.x) / sheetW;
-						const f32 u1 = ((digit + 1) * digitSrcSize.x) / sheetW;
-						const vec2 p0 = startPos + vec2(digitStep.x * i, 0.0f);
-						const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
+						for (i32 i = 0; i < comboLen; i++)
+						{
+							const i32 digit = comboStr[i] - '0';
+							const f32 u0 = (digit * digitSrcSize.x) / sheetW;
+							const f32 u1 = ((digit + 1) * digitSrcSize.x) / sheetW;
+							const vec2 p0 = startPos + vec2(digitStep.x * i, 0.0f);
+							const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
 
-						const float foreOpacity = 63.0f / 255;
-						drawList->ChannelsSetCurrent(2);
-						context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
-						drawList->ChannelsSetCurrent(4);
-						context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
-					}
+							const float foreOpacity = 63.0f / 255;
+							drawList->ChannelsSetCurrent(isTaikoVideo ? 4 : 2);
+							context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
+							drawList->ChannelsSetCurrent(4);
+							context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
+						}
 				}
 			}
 		}
 
 		drawList->PopClipRect();
+
+		if (isVideoExport && (VideoShowTitle || VideoShowDifficulty || VideoShowMaxCombo))
+		{
+			const ChartCourse& course = *context.ChartSelectedCourse;
+			const f32 infoFontSize = Camera.WorldToScreenScale(34.0f) * VideoTitleScale;
+			const f32 titleFontSize = Camera.WorldToScreenScale(34.0f) * VideoTitleScale;
+			const f32 horizontalMargin = Camera.WorldToScreenScale(26.0f) * VideoTitlePaddingScale;
+			const f32 verticalMargin = Camera.WorldToScreenScale(16.0f) * VideoTitlePaddingScale;
+			const vec2 topLeft = Camera.ScreenSpaceViewportRect.TL;
+			const vec2 bottomRight = Camera.ScreenSpaceViewportRect.BR;
+			const f32 fullTextWidth = std::max(1.0f, bottomRight.x - topLeft.x - horizontalMargin * 2.0f);
+			std::string maxCombo = std::to_string(VideoExportCombos.GetMaxCombo());
+			for (i32 digit = static_cast<i32>(maxCombo.size()) - 3; digit > 0; digit -= 3)
+				maxCombo.insert(static_cast<size_t>(digit), ",");
+			std::string rightInfo;
+			if (VideoShowDifficulty)
+			{
+				const i32 difficultyIndex = EnumToIndex(course.Type);
+				rightInfo = difficultyIndex < EnumCount<DifficultyType>
+					? UI_StrRuntime(DifficultyTypeNames[difficultyIndex]) : "?";
+				rightInfo += " \xE2\x98\x85";
+				char levelText[32];
+				sprintf_s(levelText, "%.0f", std::floor(course.Level));
+				rightInfo += levelText;
+				if (course.LevelDecimalPlaces > 0 && 10.0 * (course.Level - std::floor(course.Level)) >= DifficultyLevelDecimal::PlusThreshold)
+					rightInfo += "+";
+			}
+			if (VideoShowMaxCombo)
+			{
+				if (!rightInfo.empty()) rightInfo += "  /  ";
+				rightInfo += maxCombo;
+				rightInfo += UI_Str("VIDEO_EXPORT_MAX_COMBO");
+			}
+			const f32 infoWidth = VideoTextWidth(FontMain, infoFontSize, rightInfo);
+			const std::string_view title = context.Chart.ChartTitle;
+			const std::string_view subtitle = VideoShowSubtitle ? std::string_view(context.Chart.ChartSubtitle) : std::string_view{};
+			std::string combinedTitle(title);
+			if (!subtitle.empty())
+			{
+				if (!combinedTitle.empty()) combinedTitle += "/";
+				combinedTitle += subtitle;
+			}
+			const b8 hasTitle = VideoShowTitle && !combinedTitle.empty();
+			const f32 sharedTitleWidth = std::max(1.0f, fullTextWidth - infoWidth - (rightInfo.empty() ? 0.0f : horizontalMargin));
+			const b8 infoOnSecondRow = hasTitle && !rightInfo.empty() &&
+				VideoTextWidth(FontMain, titleFontSize, combinedTitle) > sharedTitleWidth;
+			const f32 titleWidth = infoOnSecondRow || rightInfo.empty() ? fullTextWidth : sharedTitleWidth;
+			std::string titleLines[2];
+			i32 titleLineCount = 0;
+			if (hasTitle)
+			{
+				if (VideoTextWidth(FontMain, titleFontSize, combinedTitle) <= titleWidth)
+				{
+					titleLines[0] = combinedTitle;
+					titleLineCount = 1;
+				}
+				else if (!subtitle.empty() && !title.empty())
+				{
+					titleLines[0] = EllipsizeVideoText(FontMain, titleFontSize, title, titleWidth);
+					titleLines[1] = EllipsizeVideoText(FontMain, titleFontSize, subtitle, titleWidth);
+					titleLineCount = 2;
+				}
+				else
+				{
+					const std::string_view displayTitle = title.empty() ? subtitle : title;
+					const size_t firstLineEnd = VideoTextPrefixThatFits(FontMain, titleFontSize, displayTitle, titleWidth);
+					titleLines[0] = std::string(displayTitle.substr(0, firstLineEnd));
+					titleLines[1] = EllipsizeVideoText(FontMain, titleFontSize, displayTitle.substr(firstLineEnd), titleWidth);
+					titleLineCount = titleLines[0].empty() ? 1 : 2;
+					if (titleLineCount == 1) titleLines[0] = titleLines[1];
+				}
+			}
+			const f32 lineGap = titleFontSize * 0.15f;
+			const f32 titleBlockHeight = titleLineCount > 0 ? titleFontSize * titleLineCount + lineGap * (titleLineCount - 1) : 0.0f;
+			const f32 infoRowHeight = rightInfo.empty() ? 0.0f : infoFontSize;
+			const f32 rowGap = infoOnSecondRow ? verticalMargin * 0.3f : 0.0f;
+			const f32 contentHeight = infoOnSecondRow ? titleBlockHeight + rowGap + infoRowHeight : std::max(titleBlockHeight, infoRowHeight);
+			const f32 headerHeight = contentHeight + verticalMargin * 2.0f;
+			const vec2 headerTopLeft = vec2(topLeft.x, VideoTitleVerticalPosition == 1 ? bottomRight.y - headerHeight : topLeft.y);
+			const f32 headerBottom = headerTopLeft.y + headerHeight;
+			drawList->ChannelsSetCurrent(4);
+			drawList->AddRectFilled(headerTopLeft, vec2(bottomRight.x, headerBottom), VideoTitleBandColor);
+			drawList->PushClipRect(headerTopLeft,
+				vec2(headerTopLeft.x + horizontalMargin + titleWidth, headerBottom), true);
+			const f32 titleTop = headerTopLeft.y + verticalMargin + (infoOnSecondRow ? 0.0f : (contentHeight - titleBlockHeight) * 0.5f);
+			for (i32 line = 0; line < titleLineCount; ++line)
+			{
+				const f32 lineWidth = VideoTextWidth(FontMain, titleFontSize, titleLines[line]);
+				const f32 titleLeft = headerTopLeft.x + horizontalMargin + (VideoTitleAlignment == 1 ? (titleWidth - lineWidth) * 0.5f : 0.0f);
+				drawList->AddText(FontMain, titleFontSize, vec2(titleLeft, titleTop + line * (titleFontSize + lineGap)), VideoTitleColor, titleLines[line].c_str());
+			}
+			drawList->PopClipRect();
+			if (!rightInfo.empty())
+			{
+				const f32 infoTop = headerTopLeft.y + verticalMargin + (infoOnSecondRow ? titleBlockHeight + rowGap : (contentHeight - infoFontSize) * 0.5f);
+				const std::string displayedInfo = EllipsizeVideoText(FontMain, infoFontSize, rightInfo, fullTextWidth);
+				const f32 infoLeft = bottomRight.x - horizontalMargin - VideoTextWidth(FontMain, infoFontSize, displayedInfo);
+				drawList->AddText(FontMain, infoFontSize, vec2(infoLeft, infoTop), 0xFFFFFFFF, displayedInfo.c_str());
+			}
+		}
 
 		// NOTE: Mouse selection box, draw outside frame space
 		if (BoxSelection.IsActive)
@@ -1939,6 +2179,19 @@ namespace PeepoDrumKit
 						drawList->AddCircleFilled(center, GuiScale(TimelineBoxSelectionXorDotRadius), TimelineBoxSelectionInnerColor);
 					}
 				}
+			}
+		}
+		if (isVideoExport)
+		{
+			const f32 fadeOpacity = VideoFadeOpacity(*VideoExportTime, VideoFadeContentStart, VideoFadeContentEnd,
+				VideoFadeInSeconds, VideoFadeOutSeconds, VideoFadeFrameSeconds);
+			if (fadeOpacity > 0.0f)
+			{
+				drawList->ChannelsSetCurrent(4);
+				drawList->PushClipRect(Camera.ScreenSpaceViewportRect.TL, Camera.ScreenSpaceViewportRect.BR, true);
+				drawList->AddRectFilled(Camera.ScreenSpaceViewportRect.TL, Camera.ScreenSpaceViewportRect.BR,
+					Gui::ColorU32WithNewAlpha(IM_COL32_BLACK, fadeOpacity));
+				drawList->PopClipRect();
 			}
 		}
 	}

@@ -86,6 +86,7 @@ namespace ApplicationHost
 	static DXGI_SWAP_CHAIN_DESC		GlobalSwapChainCreationDesc = {};
 	static ID3D11RenderTargetView*  GlobalMainRenderTargetView = nullptr;
 	static UpdateFunc				GlobalOnUserUpdate = nullptr;
+	static AfterRenderFunc			GlobalOnUserAfterRender = nullptr;
 	static WindowCloseRequestFunc	GlobalOnUserWindowCloseRequest = nullptr;
 	static WINDOWPLACEMENT			GlobalPreFullscreenWindowPlacement = {};
 	static b8						GlobalIsWindowMinimized = false;
@@ -585,6 +586,7 @@ namespace ApplicationHost
 		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
 		GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+		if (GlobalOnUserAfterRender) GlobalOnUserAfterRender();
 
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 		{
@@ -610,6 +612,96 @@ namespace ApplicationHost
 		}
 		else
 			::Sleep(33);
+	}
+
+	b8 CaptureWindowToBGRA(u32& width, u32& height, std::vector<u8>& outPixels)
+	{
+		if (!GlobalSwapChain || !GlobalD3D11Device || !GlobalD3D11DeviceContext) return false;
+		ID3D11Texture2D* backBuffer = nullptr;
+		ID3D11Texture2D* staging = nullptr;
+		defer { if (staging) staging->Release(); if (backBuffer) backBuffer->Release(); };
+		if (FAILED(GlobalSwapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer)))) return false;
+		D3D11_TEXTURE2D_DESC desc = {};
+		backBuffer->GetDesc(&desc);
+		if (desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM && desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) return false;
+		width = desc.Width;
+		height = desc.Height;
+		desc.Usage = D3D11_USAGE_STAGING;
+		desc.BindFlags = 0;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		desc.MiscFlags = 0;
+		if (FAILED(GlobalD3D11Device->CreateTexture2D(&desc, nullptr, &staging))) return false;
+		GlobalD3D11DeviceContext->CopyResource(staging, backBuffer);
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(GlobalD3D11DeviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+		defer { GlobalD3D11DeviceContext->Unmap(staging, 0); };
+		outPixels.resize(static_cast<size_t>(width) * height * 4);
+		for (u32 row = 0; row < height; ++row)
+		{
+			u8* destination = outPixels.data() + static_cast<size_t>(row) * width * 4;
+			memcpy(destination, static_cast<const u8*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch, static_cast<size_t>(width) * 4);
+			for (u32 column = 0; column < width; ++column)
+			{
+				if (desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM) std::swap(destination[column * 4], destination[column * 4 + 2]);
+				destination[column * 4 + 3] = 255;
+			}
+		}
+		return true;
+	}
+
+	b8 CaptureDrawListToBGRA(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, std::vector<u8>& outPixels)
+	{
+		if (!drawList || !GlobalD3D11Device || !GlobalD3D11DeviceContext ||
+			sourceRect.GetWidth() <= 0.0f || sourceRect.GetHeight() <= 0.0f || width == 0 || height == 0)
+			return false;
+
+		D3D11_TEXTURE2D_DESC textureDesc = {};
+		textureDesc.Width = width;
+		textureDesc.Height = height;
+		textureDesc.MipLevels = 1;
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.Usage = D3D11_USAGE_DEFAULT;
+		textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+		ID3D11Texture2D* renderTexture = nullptr;
+		ID3D11RenderTargetView* renderTarget = nullptr;
+		ID3D11Texture2D* stagingTexture = nullptr;
+		defer {
+			if (stagingTexture) stagingTexture->Release();
+			if (renderTarget) renderTarget->Release();
+			if (renderTexture) renderTexture->Release();
+		};
+		if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &renderTexture)) ||
+			FAILED(GlobalD3D11Device->CreateRenderTargetView(renderTexture, nullptr, &renderTarget))) return false;
+
+		textureDesc.Usage = D3D11_USAGE_STAGING;
+		textureDesc.BindFlags = 0;
+		textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &stagingTexture))) return false;
+
+		ImDrawData captureData;
+		captureData.Valid = true;
+		captureData.DisplayPos = sourceRect.TL;
+		captureData.DisplaySize = vec2(sourceRect.GetWidth(), sourceRect.GetHeight());
+		captureData.FramebufferScale = vec2(static_cast<f32>(width) / sourceRect.GetWidth(), static_cast<f32>(height) / sourceRect.GetHeight());
+		captureData.Textures = ImGui::GetDrawData()->Textures;
+		captureData.AddDrawList(drawList);
+		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &renderTarget, nullptr);
+		const f32 clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+		GlobalD3D11DeviceContext->ClearRenderTargetView(renderTarget, clearColor);
+		ImGui_ImplDX11_RenderDrawData(&captureData);
+		GlobalD3D11DeviceContext->CopyResource(stagingTexture, renderTexture);
+		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
+
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(GlobalD3D11DeviceContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+		outPixels.resize(static_cast<size_t>(width) * height * 4);
+		for (u32 row = 0; row < height; ++row)
+			memcpy(outPixels.data() + static_cast<size_t>(row) * width * 4,
+				static_cast<const u8*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch, static_cast<size_t>(width) * 4);
+		GlobalD3D11DeviceContext->Unmap(stagingTexture, 0);
+		return true;
 	}
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks)
@@ -777,6 +869,7 @@ namespace ApplicationHost
 			}
 
 			GlobalOnUserUpdate = userCallbacks.OnUpdate;
+			GlobalOnUserAfterRender = userCallbacks.OnAfterRender;
 			GlobalOnUserWindowCloseRequest = userCallbacks.OnWindowCloseRequest;
 			ImGuiAndUserUpdateThenRenderAndPresentFrame();
 		}

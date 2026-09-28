@@ -267,7 +267,7 @@ namespace PeepoDrumKit
 	}
 
 	constexpr size_t SizeOfPersistentAppData = sizeof(PersistentAppData);
-	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152, "TODO: Add missing ini file handling for newly added PersistentAppData fields");
+	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152 + sizeof(PersistentAppData::VideoExportSettingsData), "TODO: Add missing ini file handling for newly added PersistentAppData fields");
 
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, PersistentAppData& out)
 	{
@@ -313,6 +313,35 @@ namespace PeepoDrumKit
 				else if (it.Key == "show_window_tja_export_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_TJAExportTest)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_imgui_demo") { if (!BoolFromString(in, out.LastSession.ShowWindow_ImGuiDemo)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_imgui_style_editor") { if (!BoolFromString(in, out.LastSession.ShowWindow_ImGuiStyleEditor)) return parser.Error_InvalidBool(); }
+			}
+			else if (parser.CurrentSection == "video_export")
+			{
+				auto& settings = out.VideoExport;
+				if (it.Key == "layout") { if (!ASCII::TryParse(in, settings.Layout)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "resolution") { if (!ASCII::TryParse(in, settings.Resolution)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "frames_per_second") { if (!ASCII::TryParse(in, settings.FramesPerSecond)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "background_source") { if (!ASCII::TryParse(in, settings.BackgroundSource)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "background_image_fit") { if (!ASCII::TryParse(in, settings.BackgroundImageFit)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "background_color") { if (!ASCII::TryParse(in, settings.BackgroundColor)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "background_image_path") { settings.BackgroundImagePath = in; }
+				else if (it.Key == "song_volume") { if (!ASCII::TryParse(in, settings.SongVolume)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "drum_volume") { if (!ASCII::TryParse(in, settings.DrumVolume)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "lead_in_seconds") { if (!ASCII::TryParse(in, settings.LeadInSeconds)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "tail_seconds") { if (!ASCII::TryParse(in, settings.TailSeconds)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "excerpt_seconds") { if (!ASCII::TryParse(in, settings.ExcerptSeconds)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "audio_fade") { if (!BoolFromString(in, settings.AudioFade)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "branch") { if (!ASCII::TryParse(in, settings.Branch)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "show_title") { if (!BoolFromString(in, settings.ShowTitle)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_subtitle") { if (!BoolFromString(in, settings.ShowSubtitle)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_difficulty") { if (!BoolFromString(in, settings.ShowDifficulty)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_max_combo") { if (!BoolFromString(in, settings.ShowMaxCombo)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_current_combo") { if (!BoolFromString(in, settings.ShowCurrentCombo)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "title_scale") { if (!ASCII::TryParse(in, settings.TitleScale)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "title_padding_scale") { if (!ASCII::TryParse(in, settings.TitlePaddingScale)) return parser.Error_InvalidFloat(); }
+				else if (it.Key == "title_alignment") { if (!ASCII::TryParse(in, settings.TitleAlignment)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "title_vertical_position") { if (!ASCII::TryParse(in, settings.TitleVerticalPosition)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "title_color") { if (!ASCII::TryParse(in, settings.TitleColor)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "title_band_color") { if (!ASCII::TryParse(in, settings.TitleBandColor)) return parser.Error_InvalidInt(); }
 			}
 			else if (parser.CurrentSection == "recent_files")
 			{
@@ -361,6 +390,35 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("show_window_tja_export_test", BoolToString(in.LastSession.ShowWindow_TJAExportTest));
 		writer.LineKeyValue_Str("show_window_imgui_demo", BoolToString(in.LastSession.ShowWindow_ImGuiDemo));
 		writer.LineKeyValue_Str("show_window_imgui_style_editor", BoolToString(in.LastSession.ShowWindow_ImGuiStyleEditor));
+		writer.Line();
+
+		writer.LineSection("video_export");
+		const auto& video = in.VideoExport;
+		writer.LineKeyValue_I32("layout", video.Layout);
+		writer.LineKeyValue_I32("resolution", video.Resolution);
+		writer.LineKeyValue_I32("frames_per_second", video.FramesPerSecond);
+		writer.LineKeyValue_I32("background_source", video.BackgroundSource);
+		writer.LineKeyValue_I32("background_image_fit", video.BackgroundImageFit);
+		writer.LineKeyValue_Str("background_color", std::to_string(video.BackgroundColor));
+		writer.LineKeyValue_Str("background_image_path", video.BackgroundImagePath);
+		writer.LineKeyValue_F32("song_volume", video.SongVolume);
+		writer.LineKeyValue_F32("drum_volume", video.DrumVolume);
+		writer.LineKeyValue_F32("lead_in_seconds", video.LeadInSeconds);
+		writer.LineKeyValue_F32("tail_seconds", video.TailSeconds);
+		writer.LineKeyValue_F32("excerpt_seconds", video.ExcerptSeconds);
+		writer.LineKeyValue_Str("audio_fade", BoolToString(video.AudioFade));
+		writer.LineKeyValue_I32("branch", video.Branch);
+		writer.LineKeyValue_Str("show_title", BoolToString(video.ShowTitle));
+		writer.LineKeyValue_Str("show_subtitle", BoolToString(video.ShowSubtitle));
+		writer.LineKeyValue_Str("show_difficulty", BoolToString(video.ShowDifficulty));
+		writer.LineKeyValue_Str("show_max_combo", BoolToString(video.ShowMaxCombo));
+		writer.LineKeyValue_Str("show_current_combo", BoolToString(video.ShowCurrentCombo));
+		writer.LineKeyValue_F32("title_scale", video.TitleScale);
+		writer.LineKeyValue_F32("title_padding_scale", video.TitlePaddingScale);
+		writer.LineKeyValue_I32("title_alignment", video.TitleAlignment);
+		writer.LineKeyValue_I32("title_vertical_position", video.TitleVerticalPosition);
+		writer.LineKeyValue_Str("title_color", std::to_string(video.TitleColor));
+		writer.LineKeyValue_Str("title_band_color", std::to_string(video.TitleBandColor));
 		writer.Line();
 
 		writer.LineSection("recent_files");
@@ -525,6 +583,7 @@ namespace PeepoDrumKit
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
+			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
 			X(General.GamePreviewCommentFontSize, "game_preview_comment_font_size");
 			X(General.GamePreviewCommentHoldMeasures, "game_preview_comment_hold_measures");
 			X(General.GamePreviewShowComments, "game_preview_show_comments");
@@ -608,6 +667,8 @@ namespace PeepoDrumKit
 			X(Input.Editor_OpenChartStats, "editor_open_chart_stats");
 			X(Input.Editor_OpenLyrics, "editor_open_lyrics");
 			X(Input.Editor_TogglePreviewComments, "editor_toggle_preview_comments");
+			X(Input.Editor_ScreenshotWindow, "editor_screenshot_window");
+			X(Input.Editor_ScreenshotPreview, "editor_screenshot_preview");
 			X(Input.Editor_OpenTextEditor, "editor_open_text_editor");
 			X(Input.Editor_OpenSettings, "editor_open_settings");
 			X(Input.Editor_OpenTemplate, "editor_open_template");

@@ -929,6 +929,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.GamePreviewShowJPOSPosition,
+							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION"),
+							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.GamePreviewCommentHoldMeasures,
 							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES"),
 							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC")),
@@ -1275,6 +1280,8 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
 						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
 						{ &settings.Input.Editor_TogglePreviewComments, "Editor: Toggle Preview Comments", },
+						{ &settings.Input.Editor_ScreenshotWindow, UI_Str("SCREENSHOT_WINDOW"), },
+						{ &settings.Input.Editor_ScreenshotPreview, UI_Str("SCREENSHOT_PREVIEW"), },
 						{ &settings.Input.Timeline_SelectBranchExpert, "Timeline: Select Expert Branch", },
 						{ &settings.Input.Timeline_SelectBranchMaster, "Timeline: Select Master Branch", },
 						{ &settings.Input.Timeline_Cut, "Timeline: Cut", },

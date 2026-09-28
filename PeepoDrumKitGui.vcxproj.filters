@@ -120,6 +120,15 @@
     <ClCompile Include="src\peepo_drum_kit\chart_editor_sound.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_video_export.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_video_gui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_video_writer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\peepo_drum_kit\chart_editor_graphics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -231,6 +240,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_i18n.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_video_export.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_video_writer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\file_format_fumen.h">
