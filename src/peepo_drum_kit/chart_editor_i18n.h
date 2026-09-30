@@ -291,7 +291,7 @@ X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC", "Keep comments at the hit posit
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
 X("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR", "Timeline: Align Grid to Bar Starts") \
-X("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC", "Start the grid at each bar line. Turn off to use the song start as the grid origin. The default shortcut is Ctrl+G.") \
+X("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC", "Start the grid at each bar line. Turn off to use the song start as the grid origin. The default shortcut is F6.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Auto-Step After Note Input") \

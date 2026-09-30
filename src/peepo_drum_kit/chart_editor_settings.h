@@ -276,7 +276,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
 			WithDefault<MultiInputBinding> Editor_TogglePreviewComments = {};
-			WithDefault<MultiInputBinding> Editor_ScreenshotWindow = {};
+			WithDefault<MultiInputBinding> Editor_ScreenshotWindow = { KeyBinding(ImGuiKey_F12) };
 			WithDefault<MultiInputBinding> Editor_ScreenshotPreview = {};
 			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
@@ -391,7 +391,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_TogglePlayback = { KeyBinding(ImGuiKey_Space) };
 			WithDefault<MultiInputBinding> Timeline_TogglePlaybackCursorFollow = { KeyBinding(ImGuiKey_F8) };
 			WithDefault<MultiInputBinding> Timeline_ToggleAutoStepAfterNoteInput = { KeyBinding(ImGuiKey_F7) };
-			WithDefault<MultiInputBinding> Timeline_ToggleGridStartsAtBar = { KeyBinding(ImGuiKey_G, ImGuiMod_Ctrl) };
+			WithDefault<MultiInputBinding> Timeline_ToggleGridStartsAtBar = { KeyBinding(ImGuiKey_F6) };
 			WithDefault<MultiInputBinding> Timeline_ToggleLoopPlayback = { KeyBinding(ImGuiKey_F9) };
 			WithDefault<MultiInputBinding> Timeline_ToggleMetronome = { KeyBinding(ImGuiKey_M) };
 
