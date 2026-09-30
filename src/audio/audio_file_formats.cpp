@@ -70,25 +70,25 @@ namespace Audio
 
 		case SupportedFileFormat::WAV:
 		{
-			u32 outChannels = {};
-			u32 outSampleRate = {};
-			u64 outFrameCount = {};
-			i16* outSamplesI16 = ::drwav_open_memory_and_read_pcm_frames_s16(inFileContent, inFileSize, &outChannels, &outSampleRate, &outFrameCount, nullptr);
-			defer { ::drwav_free(outSamplesI16, nullptr); };
-			if (outSamplesI16 == nullptr)
+			drwav wav = {};
+			if (!::drwav_init_memory(&wav, inFileContent, inFileSize, nullptr))
 				return DecodeFileResult::Sadge;
+			defer { ::drwav_uninit(&wav); };
 
-			const size_t totalSampleCount = static_cast<size_t>(outFrameCount * outChannels);
-			outBuffer.ChannelCount = static_cast<u32>(outChannels);
-			outBuffer.SampleRate = static_cast<u32>(outSampleRate);
-			outBuffer.FrameCount = static_cast<i64>(outFrameCount);
-			// outBuffer.InterleavedSamples = std::make_unique<i16[]>(totalSampleCount);
+			if (wav.channels == 0 || wav.totalPCMFrameCount > static_cast<u64>(I64Max)
+				|| wav.totalPCMFrameCount > SIZE_MAX / wav.channels)
+				return DecodeFileResult::Sadge;
+			const size_t totalSampleCount = static_cast<size_t>(wav.totalPCMFrameCount * wav.channels);
+			outBuffer.ChannelCount = wav.channels;
+			outBuffer.SampleRate = wav.sampleRate;
+			outBuffer.FrameCount = static_cast<i64>(wav.totalPCMFrameCount);
 			outBuffer.InterleavedSamples = std::unique_ptr<i16[]>(new i16[totalSampleCount]);
 			if (outBuffer.InterleavedSamples == nullptr)
 				return DecodeFileResult::Sadge;
 
-			// TODO: Prevent copy by passing down custom allocator or manually read chunks
-			::memcpy(outBuffer.InterleavedSamples.get(), outSamplesI16, totalSampleCount * sizeof(i16));
+			const u64 framesRead = ::drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, outBuffer.InterleavedSamples.get());
+			if (framesRead != wav.totalPCMFrameCount)
+				return DecodeFileResult::Sadge;
 		} break;
 
 		case SupportedFileFormat::FLAC:

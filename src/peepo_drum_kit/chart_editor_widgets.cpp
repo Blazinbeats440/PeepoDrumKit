@@ -3465,7 +3465,7 @@ namespace PeepoDrumKit
 		auto rangeOverlapsExistingBranch = [&](Beat start, Beat end, size_t exceptIndex = SIZE_MAX)
 		{
 			for (size_t i = 0; i < course.Branches.size(); i++)
-				if (i != exceptIndex && start < course.Branches[i].GetEnd() && course.Branches[i].GetStart() < end)
+			if (i != exceptIndex && start < GetBranchRangeEnd(course.Branches, course.Branches[i]) && course.Branches[i].GetStart() < end)
 					return true;
 			return false;
 		};
@@ -3473,7 +3473,7 @@ namespace PeepoDrumKit
 		const Beat cursorBeat = context.GetCursorBeat();
 		if (Gui::Property::BeginTable(ImGuiTableFlags_BordersInner))
 		{
-			auto commandButton = [&](cstr commandName, b8 existsAtCursor, auto add, auto remove, b8 canAdd = true)
+			auto commandButton = [&](cstr commandName, b8 existsAtCursor, auto add, auto remove, b8 canAdd = true, b8 canRemove = true)
 			{
 				Gui::PushID(commandName);
 				const cstr localizedCommandName = strcmp(commandName, "#SECTION") == 0 ? UI_Str("BRANCH_COMMAND_SECTION")
@@ -3481,7 +3481,7 @@ namespace PeepoDrumKit
 					: strcmp(commandName, "#BRANCHEND") == 0 ? UI_Str("BRANCH_COMMAND_END") : UI_Str("BRANCH_COMMAND_LEVELHOLD");
 				Gui::Property::PropertyTextValueFunc(localizedCommandName, [&]
 				{
-					Gui::BeginDisabled(!existsAtCursor && !canAdd);
+					Gui::BeginDisabled(existsAtCursor ? !canRemove : !canAdd);
 					if (Gui::Button(UI_StrRuntime(existsAtCursor ? "ACT_EVENT_REMOVE" : "ACT_EVENT_ADD"), vec2(-1.0f, 0.0f)))
 					{
 						if (existsAtCursor) remove(); else add();
@@ -3515,10 +3515,14 @@ namespace PeepoDrumKit
 					previousOpenBranch->BeatDuration = cursorBeat - previousOpenBranch->BeatTime;
 				course.Branches.push_back(BranchRange { cursorBeat, Beat::Zero(), TJA::BranchCondition::Precise, 70, 80, false });
 				std::sort(course.Branches.begin(), course.Branches.end(), [](const BranchRange& a, const BranchRange& b) { return a.BeatTime < b.BeatTime; });
-			}, [&] { course.Branches.erase(branchStartAtCursor); });
+			}, [&] { course.Branches.erase(branchStartAtCursor); }, true,
+				branchStartAtCursor == course.Branches.end() || std::none_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& hold)
+				{ return hold.BeatTime >= branchStartAtCursor->GetStart() && hold.BeatTime < GetBranchRangeEnd(course.Branches, *branchStartAtCursor); }));
 
 			auto branchEndAtCursor = std::find_if(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch) { return branch.EndsBranching && branch.GetEnd() == cursorBeat; });
 			auto openBranch = std::find_if(course.Branches.rbegin(), course.Branches.rend(), [&](const BranchRange& branch) { return !branch.EndsBranching && branch.GetStart() <= cursorBeat; });
+			const b8 canAddBranchEnd = openBranch != course.Branches.rend() && std::none_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& hold)
+			{ return hold.BeatTime >= cursorBeat && hold.BeatTime < GetBranchRangeEnd(course.Branches, *openBranch); });
 			commandButton("#BRANCHEND", branchEndAtCursor != course.Branches.end(), [&]
 			{
 				if (openBranch != course.Branches.rend())
@@ -3529,7 +3533,7 @@ namespace PeepoDrumKit
 			}, [&]
 			{
 				branchEndAtCursor->EndsBranching = false;
-			});
+			}, canAddBranchEnd);
 
 			const Beat levelHoldBeat = snapRangeToBars(cursorBeat, cursorBeat).first;
 			auto levelHoldAtCursor = std::find_if(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& levelHold)
@@ -3538,7 +3542,7 @@ namespace PeepoDrumKit
 			});
 			const b8 canAddLevelHold = std::any_of(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& branch)
 			{
-				return levelHoldBeat >= branch.GetStart() && levelHoldBeat < branch.GetEnd();
+				return levelHoldBeat >= branch.GetStart() && levelHoldBeat < GetBranchRangeEnd(course.Branches, branch);
 			});
 			commandButton("#LEVELHOLD", levelHoldAtCursor != course.BranchLevelHolds.end(), [&]
 			{
@@ -3587,10 +3591,14 @@ namespace PeepoDrumKit
 			Gui::Separator();
 			char startLabel[64], endLabel[64];
 			sprintf_s(startLabel, UI_Str("INFO_BRANCH_START_BEAT"), branch.GetStart().BeatsFraction());
-			sprintf_s(endLabel, UI_Str("INFO_BRANCH_END_BEAT"), branch.GetEnd().BeatsFraction());
+			const Beat effectiveEnd = GetBranchRangeEnd(course.Branches, branch);
+			if (branch.EndsBranching)
+				sprintf_s(endLabel, UI_Str("INFO_BRANCH_END_BEAT"), branch.GetEnd().BeatsFraction());
+			else
+				strcpy_s(endLabel, UI_Str("INFO_BRANCH_END_OPEN"));
 			if (Gui::Button(startLabel)) timeline.ScrollToBeat(context, branch.GetStart());
 			Gui::SameLine();
-			if (Gui::Button(endLabel)) timeline.ScrollToBeat(context, branch.GetEnd());
+			if (Gui::Button(endLabel)) timeline.ScrollToBeat(context, Min(effectiveEnd, context.GetUsedBeatDurationFast()));
 			Gui::SetNextItemWidth(-1.0f);
 			if (Gui::ComboEnum("##BranchCondition", &branch.Condition, branchConditionNames))
 				context.Undo.NotifyChangesWereMade();
@@ -3608,7 +3616,12 @@ namespace PeepoDrumKit
 				if (Gui::Button(UI_Str("ACT_BRANCH_USE_SELECTION")))
 				{
 					auto [start, end] = snapRangeToBars(context.RangeSelection.GetMin(), context.RangeSelection.GetMax());
-					if (!rangeOverlapsExistingBranch(start, end, i))
+					const b8 strandsLevelHold = std::any_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& hold)
+					{
+						return hold.BeatTime >= branch.GetStart() && hold.BeatTime < GetBranchRangeEnd(course.Branches, branch)
+							&& (hold.BeatTime < start || hold.BeatTime >= end);
+					});
+					if (!rangeOverlapsExistingBranch(start, end, i) && !strandsLevelHold)
 					{
 						branch.BeatTime = start;
 						branch.BeatDuration = end - start;
@@ -3617,8 +3630,12 @@ namespace PeepoDrumKit
 				}
 			}
 			Gui::SameLine();
+			const b8 hasLevelHold = std::any_of(course.BranchLevelHolds.begin(), course.BranchLevelHolds.end(), [&](const BranchLevelHold& hold)
+			{ return hold.BeatTime >= branch.GetStart() && hold.BeatTime < GetBranchRangeEnd(course.Branches, branch); });
+			Gui::BeginDisabled(hasLevelHold);
 			if (Gui::Button(UI_Str("ACT_EVENT_REMOVE")))
 				branchToRemove = i;
+			Gui::EndDisabled();
 			Gui::PopID();
 		}
 		if (branchToRemove != SIZE_MAX)
@@ -3758,7 +3775,7 @@ namespace PeepoDrumKit
 				if (*Settings.General.DisableTempoWindowWidgetsIfHasSelection && isAnyItemOtherThanNotesSelected)
 					disableWidgetsBeacuseOfSelection = true;
 
-				const Beat cursorBeat = FloorBeatToGrid(context.GetCursorBeat(), GetGridBeatSnap(timeline.CurrentGridBarDivision));
+				const Beat cursorBeat = timeline.FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 				// NOTE: Specifically to prevent ugly "flashing" between add/remove labels during playback
 				const b8 disallowRemoveButton = (cursorBeat.Ticks < 0) || context.GetIsPlayback();
 				const b8 disableEditingAtPlayCursor = disableWidgetsBeacuseOfSelection || (cursorBeat.Ticks < 0);
@@ -4328,7 +4345,7 @@ namespace PeepoDrumKit
 				if (it.List != GenericList::Lyrics) isAnyItemOtherThanLyricsSelected = true;
 			});
 
-			const Beat cursorBeat = FloorBeatToGrid(context.GetCursorBeat(), GetGridBeatSnap(timeline.CurrentGridBarDivision));
+			const Beat cursorBeat = timeline.FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 			const LyricChange* lyricChangeAtCursor = context.ChartSelectedCourse->Lyrics.TryFindLastAtBeat(cursorBeat);
 			Gui::BeginDisabled(cursorBeat.Ticks < 0);
 
@@ -4450,7 +4467,7 @@ namespace PeepoDrumKit
 		if (LastCourse != &course) { CourseInputActive = EventInputActive = false; LastCourse = &course; }
 		drawLines(UI_Str("COMMENTS_COURSE"), course.CourseComments, CourseBuffer, CourseInputActive, Settings_Mutable.General.CommentsShowCourseTextBox);
 
-		const Beat cursorBeat = FloorBeatToGrid(context.GetCursorBeat(), GetGridBeatSnap(timeline.CurrentGridBarDivision));
+		const Beat cursorBeat = timeline.FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 		if (LastBeat != cursorBeat) { EventInputActive = false; LastBeat = cursorBeat; }
 		const CommentChange* event = course.Comments.TryFindLastAtBeat(cursorBeat);
 		if (event != nullptr && event->BeatTime != cursorBeat) event = nullptr;

@@ -7,6 +7,61 @@
 
 namespace PeepoDrumKit
 {
+	struct TimelineGridBar { Beat Start, End; };
+
+	static TimelineGridBar GetTimelineGridBar(const SortedTempoMap& tempoMap, Beat beat)
+	{
+		TimelineGridBar bar { Beat::Zero(), Beat::FromBars(1) };
+		if (beat < Beat::Zero())
+			return bar;
+
+		tempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
+		{
+			if (!it.IsBar)
+				return ControlFlow::Continue;
+			bar = { it.Beat, it.Beat + std::max(abs(it.Signature.GetDurationPerBar()), Beat::FromTicks(1)) };
+			return (beat < bar.End) ? ControlFlow::Break : ControlFlow::Continue;
+		});
+		return bar;
+	}
+
+	Beat ChartTimeline::FloorBeatToCurrentGrid(const ChartContext& context, Beat beat) const
+	{
+		const Beat grid = GetGridBeatSnap(CurrentGridBarDivision);
+		if (!*Settings.General.TimelineGridStartsAtBar || beat < Beat::Zero())
+			return FloorBeatToGrid(beat, grid);
+		const TimelineGridBar bar = GetTimelineGridBar(context.ChartSelectedCourse->TempoMap, beat);
+		return bar.Start + FloorBeatToGrid(beat - bar.Start, grid);
+	}
+
+	Beat ChartTimeline::CeilBeatToCurrentGrid(const ChartContext& context, Beat beat) const
+	{
+		const Beat grid = GetGridBeatSnap(CurrentGridBarDivision);
+		if (!*Settings.General.TimelineGridStartsAtBar || beat < Beat::Zero())
+			return CeilBeatToGrid(beat, grid);
+		const TimelineGridBar bar = GetTimelineGridBar(context.ChartSelectedCourse->TempoMap, beat);
+		return std::min(bar.Start + CeilBeatToGrid(beat - bar.Start, grid), bar.End);
+	}
+
+	Beat ChartTimeline::RoundBeatToCurrentGrid(const ChartContext& context, Beat beat) const
+	{
+		const Beat grid = GetGridBeatSnap(CurrentGridBarDivision);
+		if (!*Settings.General.TimelineGridStartsAtBar || beat < Beat::Zero())
+			return RoundBeatToGrid(beat, grid);
+		const TimelineGridBar bar = GetTimelineGridBar(context.ChartSelectedCourse->TempoMap, beat);
+		const Beat lower = bar.Start + FloorBeatToGrid(beat - bar.Start, grid);
+		const Beat upper = std::min(bar.Start + CeilBeatToGrid(beat - bar.Start, grid), bar.End);
+		return (beat - lower < upper - beat) ? lower : upper;
+	}
+
+	Beat ChartTimeline::StepBeatOnCurrentGrid(const ChartContext& context, Beat beat, i32 direction) const
+	{
+		if (!*Settings.General.TimelineGridStartsAtBar)
+			return beat + GetGridBeatSnap(CurrentGridBarDivision) * direction;
+		return (direction > 0) ? CeilBeatToCurrentGrid(context, beat + Beat::FromTicks(1))
+			: FloorBeatToCurrentGrid(context, beat - Beat::FromTicks(1));
+	}
+
 	static i32 CalculateBalloonPopCount(Time duration, f32 hitsPerSecond)
 	{
 		return Clamp(static_cast<i32>(Round(duration.ToSec() * hitsPerSecond)), MinBalloonCount, MaxBalloonCount);
@@ -719,7 +774,7 @@ namespace PeepoDrumKit
 	static b8 IsBeatInsideBranchRange(const ChartCourse& course, Beat beat)
 	{
 		for (const BranchRange& branch : course.Branches)
-			if (beat >= branch.GetStart() && beat < branch.GetEnd())
+			if (beat >= branch.GetStart() && beat < GetBranchRangeEnd(course.Branches, branch))
 				return true;
 		return false;
 	}
@@ -729,7 +784,7 @@ namespace PeepoDrumKit
 		if (branch == BranchType::Normal)
 			return true;
 		for (const BranchRange& branchRange : course.Branches)
-			if (start >= branchRange.GetStart() && start < branchRange.GetEnd() && end <= branchRange.GetEnd())
+			if (start >= branchRange.GetStart() && start < GetBranchRangeEnd(course.Branches, branchRange) && end <= GetBranchRangeEnd(course.Branches, branchRange))
 				return true;
 		return false;
 	}
@@ -1440,14 +1495,14 @@ namespace PeepoDrumKit
 	{
 		if (!context.RangeSelection.IsActive || context.RangeSelection.HasEnd)
 		{
-			context.RangeSelection.Start = context.RangeSelection.End = RoundBeatToCurrentGrid(context.GetCursorBeat());
+			context.RangeSelection.Start = context.RangeSelection.End = RoundBeatToCurrentGrid(context, context.GetCursorBeat());
 			context.RangeSelection.HasEnd = false;
 			context.RangeSelection.IsActive = true;
 			RangeSelectionExpansionAnimationTarget = 0.0f;
 		}
 		else
 		{
-			context.RangeSelection.End = RoundBeatToCurrentGrid(context.GetCursorBeat());
+			context.RangeSelection.End = RoundBeatToCurrentGrid(context, context.GetCursorBeat());
 			context.RangeSelection.HasEnd = true;
 			RangeSelectionExpansionAnimationTarget = 1.0f;
 			if (context.RangeSelection.End == context.RangeSelection.Start)
@@ -1770,7 +1825,7 @@ namespace PeepoDrumKit
 						item.List = BranchTypeToNotesList(context.ChartSelectedBranch);
 					else if (IsScrollChangesList(item.List))
 						item.List = BranchTypeToScrollChangesList(context.ChartSelectedBranch);
-				const Beat baseBeat = FloorBeatToCurrentGrid(context.GetCursorBeat()) - findBaseBeat(clipboardItems);
+				const Beat baseBeat = FloorBeatToCurrentGrid(context, context.GetCursorBeat()) - findBaseBeat(clipboardItems);
 				for (auto& item : clipboardItems) { SetBeat(GetBeat(item) + baseBeat, item); }
 
 				auto itemAlreadyExistsOrIsBad = [&](const GenericListStructWithType& item)
@@ -2303,7 +2358,7 @@ namespace PeepoDrumKit
 			ForEachSelectedChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
 			{
 				const Beat origBeat = GetBeat(it, course);
-				const Beat roundedOrigBeat = r.quantizeItem ? RoundBeatToCurrentGrid(origBeat) : origBeat; // only for determining the before range
+				const Beat roundedOrigBeat = r.quantizeItem ? RoundBeatToCurrentGrid(context, origBeat) : origBeat; // only for determining the before range
 				if (isFirst) { minBeatAfter = minBeatBefore = roundedOrigBeat; firstBeat = origBeat; isFirst = false; }
 				else if (roundedOrigBeat < minBeatBefore) // Happens because ForEachSelectedChartItem is not in ascending order across rows
 					minBeatBefore = roundedOrigBeat;
@@ -2316,7 +2371,7 @@ namespace PeepoDrumKit
 				auto& itemToAdd = itemsToAdd.back();
 				Beat nowBeat = scale(origBeat, firstBeat, r.ratioBeat);
 				if (r.quantizeItem)
-					nowBeat = RoundBeatToCurrentGrid(nowBeat);
+					nowBeat = RoundBeatToCurrentGrid(context, nowBeat);
 				SetBeat(nowBeat, itemToAdd);
 
 				Beat origBeatDuration = GetBeatDuration(itemToAdd);
@@ -2337,7 +2392,7 @@ namespace PeepoDrumKit
 					if (!r.keepItemDur || !ListIsItemEndBounded(it.List)) {
 						Beat nowBeatDuration = scale(origBeatDuration, Beat::Zero(), r.ratioBeatAbs);
 						if (r.quantizeItem)
-							nowBeatDuration = RoundBeatToCurrentGrid(nowBeat + nowBeatDuration) - nowBeat;
+							nowBeatDuration = RoundBeatToCurrentGrid(context, nowBeat + nowBeatDuration) - nowBeat;
 						SetBeatDuration(Max(Beat::FromTicks(1), nowBeatDuration), itemToAdd);
 						if (r.reverseBeat)
 							SetBeat(nowBeat -= nowBeatDuration, itemToAdd);
@@ -2351,12 +2406,12 @@ namespace PeepoDrumKit
 							const Beat origEndBeat = context.TimeToBeat(context.BeatToTime(origBeat) + origTimeDuration, true); // in original timing
 							nowBeatHead = scale(origEndBeat, firstBeat, param.TimeRatio);
 							if (r.quantizeItem)
-								nowBeatHead = RoundBeatToCurrentGrid(nowBeatHead);
+								nowBeatHead = RoundBeatToCurrentGrid(context, nowBeatHead);
 							SetBeat(nowBeatHead, itemToAdd);
 							nowBeat = std::min(nowBeat, nowBeatHead); // in case of negative time duration
 						}
 						if (r.quantizeItem)
-							timeDuration = context.BeatToTime(RoundBeatToCurrentGrid(nowBeatHead + context.TimeToBeat(timeDuration, true))) - context.BeatToTime(nowBeatHead);
+							timeDuration = context.BeatToTime(RoundBeatToCurrentGrid(context, nowBeatHead + context.TimeToBeat(timeDuration, true))) - context.BeatToTime(nowBeatHead);
 						SetTimeDuration(timeDuration, itemToAdd);
 					}
 				}
@@ -2475,8 +2530,8 @@ namespace PeepoDrumKit
 
 						if (hasPresent) {
 							auto maxSidePrs = RangeSide::Present;
-							const Beat roundedBeatMin = r.quantizeItem ? RoundBeatToCurrentGrid(origBeatMin) : origBeatMin;
-							const Beat roundedBeatMax = r.quantizeItem ? RoundBeatToCurrentGrid(origBeatMax) : origBeatMax;
+							const Beat roundedBeatMin = r.quantizeItem ? RoundBeatToCurrentGrid(context, origBeatMin) : origBeatMin;
+							const Beat roundedBeatMax = r.quantizeItem ? RoundBeatToCurrentGrid(context, origBeatMax) : origBeatMax;
 							Beat beatHeadPrs = scaleBeatIn(std::max(firstBeat, roundedBeatMin));
 							Beat beatEndPrs = scaleBeatIn(std::min(latestBeat, roundedBeatMax));
 							Beat beatMinPrs = std::min(beatHeadPrs, beatEndPrs), beatMaxPrs = std::max(beatHeadPrs, beatEndPrs); // handle reversing
@@ -2550,7 +2605,7 @@ namespace PeepoDrumKit
 					if (!changed && getRangeSide(origBeat) == RangeSide::Present) {
 						Beat nowBeat = scaleBeatIn(origBeat);
 						if (r.quantizeItem)
-							nowBeat = RoundBeatToCurrentGrid(nowBeat);
+							nowBeat = RoundBeatToCurrentGrid(context, nowBeat);
 						itemToAdd.push_back(itemToRemove);
 						SetBeat(nowBeat, itemToAdd.back());
 						changed |= (nowBeat != origBeat);
@@ -2776,7 +2831,10 @@ namespace PeepoDrumKit
 					const b8 left = !right && Gui::IsAnyPressed(*Settings.Input.Timeline_StepCursorLeft, true, InputModifierBehavior::Relaxed);
 					if (right || left)
 					{
-						const Beat targetBeat = Max(Beat::Zero(), RoundBeatToCurrentGrid(context.GetCursorBeat()) + step * (right ? +1 : -1));
+						const Beat cursorBeat = RoundBeatToCurrentGrid(context, context.GetCursorBeat());
+						const Beat targetBeat = Max(Beat::Zero(), step == GetGridBeatSnap(CurrentGridBarDivision)
+							? StepBeatOnCurrentGrid(context, cursorBeat, right ? +1 : -1)
+							: cursorBeat + step * (right ? +1 : -1));
 						context.TestPlaySeekTime = context.BeatToTime(targetBeat);
 						context.TestPlaySmoothCursor = true;
 						context.TestPlayFollowCursor = true;
@@ -2825,13 +2883,14 @@ namespace PeepoDrumKit
 				{
 					const Beat mouseBeat = context.TimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x));
 					const Beat movedBeat = Max(Beat::Zero(), BranchDrag.OriginalBeat + (mouseBeat - BranchDrag.MouseBeatOnDown));
-					const Beat target = BranchDrag.Kind == BranchDragKind::Section ? RoundBeatToCurrentGrid(movedBeat) : SnapBranchCommandToBar(branchCourse, movedBeat);
+					const Beat target = BranchDrag.Kind == BranchDragKind::Section ? RoundBeatToCurrentGrid(context, movedBeat) : SnapBranchCommandToBar(branchCourse, movedBeat);
 					if (target != BranchDrag.CurrentBeat)
 					{
 						Beat start = BranchDrag.OriginalStart, end = BranchDrag.OriginalEnd;
 						if (BranchDrag.Kind == BranchDragKind::Start) start = target;
 						if (BranchDrag.Kind == BranchDragKind::End) end = target;
 						if (BranchDrag.Kind == BranchDragKind::Forced) start = end = target;
+						const b8 openStartDrag = BranchDrag.Kind == BranchDragKind::Start && !branchCourse.Branches[BranchDrag.Index].EndsBranching;
 						b8 valid = true;
 						if (BranchDrag.Kind == BranchDragKind::Section)
 							valid = std::none_of(branchCourse.BranchSections.begin(), branchCourse.BranchSections.end(), [&](Beat other) { return other == target && other != BranchDrag.CurrentBeat; });
@@ -2848,7 +2907,12 @@ namespace PeepoDrumKit
 							{
 								if (index == BranchDrag.Index) continue;
 								const BranchRange& other = branchCourse.Branches[index];
-								valid = start != other.GetStart() && !(start < other.GetEnd() && other.GetStart() < end);
+								if (openStartDrag && !other.EndsBranching && GetBranchRangeEnd(branchCourse.Branches, other) == BranchDrag.OriginalStart)
+								{
+									valid = start > other.GetStart();
+									continue;
+								}
+								valid = start != other.GetStart() && !(start < GetBranchRangeEnd(branchCourse.Branches, other) && other.GetStart() < end);
 							}
 							for (const BranchLevelHold& hold : branchCourse.BranchLevelHolds)
 								if (valid && hold.BeatTime >= BranchDrag.OriginalStart && hold.BeatTime < BranchDrag.OriginalEnd)
@@ -2861,7 +2925,7 @@ namespace PeepoDrumKit
 						{
 							if (BranchDrag.Kind == BranchDragKind::Section) branchCourse.BranchSections[BranchDrag.Index] = target;
 							else if (BranchDrag.Kind == BranchDragKind::LevelHold) branchCourse.BranchLevelHolds[BranchDrag.Index].BeatTime = target;
-							else { BranchRange& range = branchCourse.Branches[BranchDrag.Index]; range.BeatTime = start; range.BeatDuration = end - start; }
+							else { BranchRange& range = branchCourse.Branches[BranchDrag.Index]; range.BeatTime = start; range.BeatDuration = openStartDrag ? Beat::Zero() : end - start; }
 							BranchDrag.CurrentBeat = target;
 						}
 					}
@@ -2897,7 +2961,7 @@ namespace PeepoDrumKit
 						if (kind == BranchDragKind::Start || kind == BranchDragKind::End || kind == BranchDragKind::Forced)
 						{
 							BranchDrag.OriginalStart = branchCourse.Branches[index].GetStart();
-							BranchDrag.OriginalEnd = branchCourse.Branches[index].GetEnd();
+							BranchDrag.OriginalEnd = GetBranchRangeEnd(branchCourse.Branches, branchCourse.Branches[index]);
 						}
 					};
 					if (row.RowType == TimelineRowType::BranchCommands)
@@ -2933,7 +2997,7 @@ namespace PeepoDrumKit
 
 				SelectedItemDrag.HoverTarget = EDragTarget::None;
 				SelectedItemDrag.MouseBeatLastFrame = SelectedItemDrag.MouseBeatThisFrame;
-				SelectedItemDrag.MouseBeatThisFrame = FloorBeatToCurrentGrid(context.TimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x)));
+				SelectedItemDrag.MouseBeatThisFrame = FloorBeatToCurrentGrid(context, context.TimeToBeat(Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x)));
 
 				if (selectedItemCount > 0 && Regions.Content.IsHovered && SelectedItemDrag.ActiveTarget == EDragTarget::None)
 				{
@@ -2996,6 +3060,7 @@ namespace PeepoDrumKit
 										{
 											SelectedItemDrag.ActiveTarget = target;
 											SelectedItemDrag.BeatOnMouseDown = SelectedItemDrag.MouseBeatThisFrame;
+											SelectedItemDrag.MouseBeatLastFrame = SelectedItemDrag.MouseBeatThisFrame;
 											SelectedItemDrag.BeatDistanceMovedSoFar = Beat::Zero();
 											context.Undo.DisallowMergeForLastCommand();
 										}
@@ -3123,7 +3188,9 @@ namespace PeepoDrumKit
 					};
 
 					const Beat cursorBeat = context.GetCursorBeat();
-					const Beat dragBeatIncrement = FloorBeatToCurrentGrid(SelectedItemDrag.BeatDistanceMovedSoFar);
+					const Beat dragBeatIncrement = *Settings.General.TimelineGridStartsAtBar
+						? SelectedItemDrag.BeatDistanceMovedSoFar
+						: FloorBeatToGrid(SelectedItemDrag.BeatDistanceMovedSoFar, GetGridBeatSnap(CurrentGridBarDivision));
 
 					// BUG: Doesn't account for smooth scroll delay and playback auto scrolling
 					const b8 wasMouseMovedOrScrolled = (!ApproxmiatelySame(Gui::GetIO().MouseDelta.x, 0.0f) || !ApproxmiatelySame(Gui::GetIO().MouseWheel, 0.0f));
@@ -3134,6 +3201,8 @@ namespace PeepoDrumKit
 						b8 allItemsCanBeMoved = true;
 						for (GenericList list = {}; list < GenericList::Count; IncrementEnum(list))
 						{
+							if (IsNotesList(list) && list != BranchTypeToNotesList(context.ChartSelectedBranch))
+								continue;
 							if (IsScrollChangesList(list) && list != BranchTypeToScrollChangesList(context.ChartSelectedBranch))
 								continue;
 							allItemsCanBeMoved &= checkCanSelectedItemsBeDragged(list, dragBeatIncrement, isTail);
@@ -3213,11 +3282,21 @@ namespace PeepoDrumKit
 
 			if (Regions.Content.IsHovered && BranchDrag.Kind == BranchDragKind::None && SelectedItemDrag.HoverTarget == EDragTarget::None && Gui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
+				const f32 mouseY = ScreenToLocalSpace(MousePosThisFrame).y;
+				ForEachTimelineRow(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+				{
+					if (mouseY >= row.LocalY && mouseY < row.LocalY + row.LocalHeight)
+					{
+						const BranchType branch = TimelineRowToBranchType(row.RowType);
+						if (branch != BranchType::Count)
+							context.SetSelectedChart(context.ChartSelectedCourse, branch);
+					}
+				});
 				const Time oldCursorTime = context.GetCursorTime();
 				const f32 oldCursorLocalSpaceX = Camera.TimeToLocalSpaceX(oldCursorTime);
 
 				const Time timeAtMouseX = Camera.LocalSpaceXToTime(ScreenToLocalSpace(MousePosThisFrame).x);
-				const Beat newCursorBeat = FloorBeatToCurrentGrid(context.TimeToBeat(timeAtMouseX));
+				const Beat newCursorBeat = FloorBeatToCurrentGrid(context, context.TimeToBeat(timeAtMouseX));
 
 				context.SetCursorBeat(newCursorBeat);
 				PlayNoteSoundAndHitAnimationsAtBeat(context, newCursorBeat);
@@ -3378,8 +3457,10 @@ namespace PeepoDrumKit
 					auto stepCursorByBeat = [&](Beat beatIncrement)
 					{
 						const auto oldCursorBeatAndTime = context.GetCursorBeatAndTime();
-						const Beat oldCursorBeat = RoundBeatToCurrentGrid(oldCursorBeatAndTime.Beat);
-						const Beat newCursorBeat = oldCursorBeat + beatIncrement;
+						const Beat oldCursorBeat = RoundBeatToCurrentGrid(context, oldCursorBeatAndTime.Beat);
+						const Beat newCursorBeat = abs(beatIncrement) == GetGridBeatSnap(CurrentGridBarDivision)
+							? StepBeatOnCurrentGrid(context, oldCursorBeat, Sign(beatIncrement.Ticks))
+							: oldCursorBeat + beatIncrement;
 
 						context.SetCursorBeat(newCursorBeat);
 						PlayNoteSoundAndHitAnimationsAtBeat(context, newCursorBeat);
@@ -3555,12 +3636,19 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.TimelineAutoStepAfterNoteInput.SetHasValueIfNotDefault();
 				Settings_Mutable.IsDirty = true;
 			}
+			const b8 gridModeToggledThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleGridStartsAtBar, false);
+			if (gridModeToggledThisFrame)
+			{
+				Settings_Mutable.General.TimelineGridStartsAtBar.Value = !Settings.General.TimelineGridStartsAtBar.Value;
+				Settings_Mutable.General.TimelineGridStartsAtBar.SetHasValueIfNotDefault();
+				Settings_Mutable.IsDirty = true;
+			}
 
 			auto stepCursorForwardByCurrentGrid = [this, &context]
 			{
 				const auto oldCursorBeatAndTime = context.GetCursorBeatAndTime();
-				const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context.GetCursorBeat()) : FloorBeatToCurrentGrid(context.GetCursorBeat());
-				const Beat nextCursorBeat = cursorBeat + GetGridBeatSnap(CurrentGridBarDivision);
+				const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context, context.GetCursorBeat()) : FloorBeatToCurrentGrid(context, context.GetCursorBeat());
+				const Beat nextCursorBeat = StepBeatOnCurrentGrid(context, cursorBeat, +1);
 				context.SetCursorBeat(nextCursorBeat);
 				PlayNoteSoundAndHitAnimationsAtBeat(context, nextCursorBeat);
 
@@ -3585,17 +3673,15 @@ namespace PeepoDrumKit
 
 					if (Gui::GetIO().KeyShift && context.RangeSelection.IsActiveAndHasEnd())
 					{
-						const Beat startTick = RoundBeatToCurrentGrid(context.RangeSelection.GetMin());
-						const Beat endTick = RoundBeatToCurrentGrid(context.RangeSelection.GetMax());
+						const Beat startTick = RoundBeatToCurrentGrid(context, context.RangeSelection.GetMin());
+						const Beat endTick = RoundBeatToCurrentGrid(context, context.RangeSelection.GetMax());
 						const Beat beatPerNote = GetGridBeatSnap(CurrentGridBarDivision);
 						const i32 maxExpectedNoteCountToAdd = ((endTick - startTick).Ticks / beatPerNote.Ticks) + 1;
 
 						std::vector<Note> newNotesToAdd;
 						newNotesToAdd.reserve(maxExpectedNoteCountToAdd);
-
-						for (i32 i = 0; i < maxExpectedNoteCountToAdd; i++)
+						auto tryAddNoteAtBeat = [&](Beat beatForThisNote)
 						{
-							const Beat beatForThisNote = Beat(Min(startTick, endTick).Ticks + (i * beatPerNote.Ticks));
 							if (IsNoteRangeValidForBranch(course, context.ChartSelectedBranch, beatForThisNote, beatForThisNote)
 								&& notes.TryFindOverlappingBeat(beatForThisNote, beatForThisNote) == nullptr)
 							{
@@ -3603,6 +3689,26 @@ namespace PeepoDrumKit
 								newNote.BeatTime = beatForThisNote;
 								newNote.Type = noteTypeToInsert;
 							}
+						};
+						if (*Settings.General.TimelineGridStartsAtBar)
+						{
+							course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+							{
+								if (!bar.IsBar)
+									return ControlFlow::Continue;
+								if (bar.Beat > endTick)
+									return ControlFlow::Break;
+								const Beat barEnd = bar.Beat + std::max(abs(bar.Signature.GetDurationPerBar()), Beat::FromTicks(1));
+								const Beat firstOffset = CeilBeatToGrid(std::max(startTick - bar.Beat, Beat::Zero()), beatPerNote);
+								for (Beat beatForThisNote = bar.Beat + firstOffset; beatForThisNote < barEnd && beatForThisNote <= endTick; beatForThisNote += beatPerNote)
+									tryAddNoteAtBeat(beatForThisNote);
+								return ControlFlow::Continue;
+							});
+						}
+						else
+						{
+							for (i32 i = 0; i < maxExpectedNoteCountToAdd; i++)
+								tryAddNoteAtBeat(startTick + beatPerNote * i);
 						}
 
 						if (!newNotesToAdd.empty())
@@ -3615,7 +3721,7 @@ namespace PeepoDrumKit
 					else
 					{
 						const b8 isPlayback = context.GetIsPlayback();
-						const Beat cursorBeat = isPlayback ? RoundBeatToCurrentGrid(context.GetCursorBeat()) : FloorBeatToCurrentGrid(context.GetCursorBeat());
+						const Beat cursorBeat = isPlayback ? RoundBeatToCurrentGrid(context, context.GetCursorBeat()) : FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 						if (!IsNoteRangeValidForBranch(course, context.ChartSelectedBranch, cursorBeat, cursorBeat))
 							return true;
 
@@ -3663,23 +3769,23 @@ namespace PeepoDrumKit
 			if (hasTimelineOrGamePreviewFocus)
 			{
 				const b8 shouldAutoStep = Settings.General.TimelineAutoStepAfterNoteInput.Value && !Gui::GetIO().KeyShift;
-				if (updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteDon, ToBigNoteIf(NoteType::Don, Gui::GetIO().KeyAlt)))
+				if (!gridModeToggledThisFrame && updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteDon, ToBigNoteIf(NoteType::Don, Gui::GetIO().KeyAlt)))
 				{
 					Gui::SetKeyOwner(ImGuiKey_ModAlt, Gui::GetItemID());
 					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
 				}
-				if (updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteKa, ToBigNoteIf(NoteType::Ka, Gui::GetIO().KeyAlt)))
+				if (!gridModeToggledThisFrame && updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteKa, ToBigNoteIf(NoteType::Ka, Gui::GetIO().KeyAlt)))
 				{
 					Gui::SetKeyOwner(ImGuiKey_ModAlt, Gui::GetItemID());
 					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
 				}
-				if (Settings.General.TimelineAutoStepAfterNoteInput.Value
+				if (!gridModeToggledThisFrame && Settings.General.TimelineAutoStepAfterNoteInput.Value
 					&& Gui::IsAnyPressed(*Settings.Input.Timeline_PlaceRestAndStepCursor, false, InputModifierBehavior::Relaxed))
 					stepCursorForwardByCurrentGrid();
 
 				if (PlaceBalloonBindingDownThisFrame || PlaceDrumrollBindingDownThisFrame)
 				{
-					const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context.GetCursorBeat()) : FloorBeatToCurrentGrid(context.GetCursorBeat());
+					const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context, context.GetCursorBeat()) : FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 					if (IsNoteRangeValidForBranch(*context.ChartSelectedCourse, context.ChartSelectedBranch, cursorBeat, cursorBeat))
 					{
 						LongNotePlacement.NoteType = ToBigNoteIf(PlaceBalloonBindingDownThisFrame ? NoteType::Balloon : NoteType::Drumroll, Gui::GetIO().KeyAlt);
@@ -4307,7 +4413,8 @@ namespace PeepoDrumKit
 			for (const BranchRange& branch : context.ChartSelectedCourse->Branches)
 			{
 				const Time startTime = context.BeatToTime(branch.GetStart());
-				const Time endTime = context.BeatToTime(branch.GetEnd());
+				const Beat visibleEnd = context.TimeToBeat(Camera.LocalSpaceXToTime(Regions.Content.GetWidth()));
+				const Time endTime = context.BeatToTime(Min(GetBranchRangeEnd(context.ChartSelectedCourse->Branches, branch), visibleEnd));
 				const f32 xStart = Camera.TimeToLocalSpaceX(startTime);
 				const f32 xEnd = Camera.TimeToLocalSpaceX(endTime);
 				const vec2 topLeft = LocalToScreenSpace(vec2(xStart, 0.0f));
@@ -4476,8 +4583,8 @@ namespace PeepoDrumKit
 
 				const auto minMaxVisibleTime = GetMinMaxVisibleTime();
 				const Beat gridBeatSnap = GetGridBeatSnap(CurrentGridBarDivision);
-				const Beat minVisibleBeat = FloorBeatToGrid(context.TimeToBeat(minMaxVisibleTime.Min), gridBeatSnap) - gridBeatSnap;
-				const Beat maxVisibleBeat = CeilBeatToGrid(context.TimeToBeat(minMaxVisibleTime.Max), gridBeatSnap) + gridBeatSnap;
+				const Beat minVisibleBeat = context.TimeToBeat(minMaxVisibleTime.Min);
+				const Beat maxVisibleBeat = std::min(context.TimeToBeat(minMaxVisibleTime.Max), context.GetUsedBeatDurationFast());
 
 				const u32 gridColorHex = IsTupletBarDivision(CurrentGridBarDivision)
 					? TimelineGridSnapTupletLineColor
@@ -4492,10 +4599,33 @@ namespace PeepoDrumKit
 				const u32 gridSnapLineColor = Gui::ColorU32WithAlpha(
 					gridColorHex,
 					GridSnapLineAnimationCurrent);
-				for (Beat beatIt = ClampBot(minVisibleBeat, Beat::Zero()); beatIt <= ClampTop(maxVisibleBeat, context.GetUsedBeatDurationFast()); beatIt += gridBeatSnap)
+				if (*Settings.General.TimelineGridStartsAtBar)
 				{
-					const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatIt)), 0.0f));
-					DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), gridSnapLineColor);
+					context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+					{
+						if (!bar.IsBar)
+							return ControlFlow::Continue;
+						if (bar.Beat > maxVisibleBeat)
+							return ControlFlow::Break;
+						const Beat barEnd = bar.Beat + std::max(abs(bar.Signature.GetDurationPerBar()), Beat::FromTicks(1));
+						const Beat firstOffset = CeilBeatToGrid(std::max(minVisibleBeat - bar.Beat, Beat::Zero()), gridBeatSnap);
+						for (Beat beatIt = bar.Beat + firstOffset; beatIt < barEnd && beatIt <= maxVisibleBeat; beatIt += gridBeatSnap)
+						{
+							const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatIt)), 0.0f));
+							DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), gridSnapLineColor);
+						}
+						return ControlFlow::Continue;
+					});
+				}
+				else
+				{
+					const Beat firstBeat = ClampBot(FloorBeatToGrid(minVisibleBeat, gridBeatSnap) - gridBeatSnap, Beat::Zero());
+					const Beat lastBeat = ClampTop(CeilBeatToGrid(context.TimeToBeat(minMaxVisibleTime.Max), gridBeatSnap) + gridBeatSnap, context.GetUsedBeatDurationFast());
+					for (Beat beatIt = firstBeat; beatIt <= lastBeat; beatIt += gridBeatSnap)
+					{
+						const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatIt)), 0.0f));
+						DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), gridSnapLineColor);
+					}
 				}
 			}
 		}

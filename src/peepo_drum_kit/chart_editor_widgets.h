@@ -223,6 +223,7 @@ namespace PeepoDrumKit
 		f32 WorldToScreenScaleFactor = 1.0f;
 		vec2 WorldSpaceSize {};
 		Rect LaneRect {};
+		vec2 LaneContentOffset {};
 
 		constexpr f32 LaneWidth() const { return LaneRect.GetWidth(); }
 		constexpr f32 ExtendedLaneWidthFactor() const { return LaneRect.GetWidth() / GameLaneStandardWidth; }
@@ -330,11 +331,11 @@ namespace PeepoDrumKit
 				}
 			}
 		}
-		constexpr vec2 LaneXToWorldSpace(f32 laneX) const { return (LaneRect.TL + GameHitCircle.Center + vec2(laneX, 0.0f)); }
-		constexpr vec2 LaneToWorldSpace(f32 laneX, f32 laneY) const { return (LaneRect.TL + GameHitCircle.Center + vec2(laneX, laneY)); }
+		constexpr vec2 LaneXToWorldSpace(f32 laneX) const { return (LaneRect.TL + GameHitCircle.Center + LaneContentOffset + vec2(laneX, 0.0f)); }
+		constexpr vec2 LaneToWorldSpace(f32 laneX, f32 laneY) const { return (LaneRect.TL + GameHitCircle.Center + LaneContentOffset + vec2(laneX, laneY)); }
 		constexpr vec2 LaneToScreenSpace(const vec2& laneCoord) const { return WorldToScreenSpace(LaneToWorldSpace(laneCoord.x, laneCoord.y)); }
 
-		constexpr vec2 WorldToLaneSpace(f32 worldX, f32 worldY) const { return vec2(worldX, worldY) - GameHitCircle.Center - LaneRect.TL; }
+		constexpr vec2 WorldToLaneSpace(f32 worldX, f32 worldY) const { return vec2(worldX, worldY) - GameHitCircle.Center - LaneContentOffset - LaneRect.TL; }
 
 		constexpr b8 IsPointVisibleOnLane(f32 laneX, f32 threshold = 280.0f) const { return (laneX >= -threshold) && (laneX <= (LaneWidth() + threshold)); }
 		constexpr b8 IsRangeVisibleOnLane(f32 laneHeadX, f32 laneTailX, f32 threshold = 280.0f) const { return (laneTailX >= -threshold) && (laneHeadX <= (LaneWidth() + threshold)); }
@@ -353,7 +354,10 @@ namespace PeepoDrumKit
 		const CustomDraw::GPUTexture* VideoBackgroundTexture = nullptr;
 		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::Cover;
 		VideoLayout VideoExportLayout = VideoLayout::Original;
+		b8 VideoExportPixelAligned = false;
 		BranchType VideoExportBranch = BranchType::Normal;
+		const VideoBranchRoute* VideoExportRoute = nullptr;
+		f32 VideoRollsPerSecond = 0.0f;
 		VideoExportComboTimeline VideoExportCombos;
 		b8 VideoShowTitle = true, VideoShowSubtitle = false, VideoShowDifficulty = true, VideoShowMaxCombo = true, VideoShowCurrentCombo = true;
 		f32 VideoTitleScale = 1.0f, VideoTitlePaddingScale = 1.0f;
@@ -361,17 +365,37 @@ namespace PeepoDrumKit
 		u32 VideoTitleColor = 0xFFFFFFFF, VideoTitleBandColor = 0xB0000000;
 		Rect VideoExportViewport = {};
 		ImDrawList* VideoExportDrawList = nullptr;
-		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; };
+		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayNoteState> TestPlayNotes;
 		std::unordered_map<const Note*, ChartContext::TestPlayJudgementData> TestPlayAttemptJudgements;
-		struct TestPlayLongNoteState { Note* Source; Time StartTime; Time EndTime; i32 HitCount = 0; std::vector<Time> HitTimes; };
+		struct TestPlayLongNoteState { Note* Source; Time StartTime; Time EndTime; i32 HitCount = 0; std::vector<Time> HitTimes; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayLongNoteState> TestPlayLongNotes;
 		std::optional<Time> TestPlayJumpTime;
 		ChartCourse* TestPlayCourse = nullptr;
 		BranchType TestPlayBranch = BranchType::Normal;
+		BranchType TestPlayInitialBranch = BranchType::Normal;
+		BranchType TestPlayVisualBranch = BranchType::Normal;
+		BranchType TestPlayBranchTransitionFrom = BranchType::Normal;
+		size_t TestPlayBranchTransitionIndex = 0;
+		Beat TestPlayBranchStartBeat = Beat::Zero();
+		b8 TestPlayAutoBranchActive = false;
+		b8 TestPlayLevelHeld = false;
+		size_t TestPlayNextBranchIndex = 0, TestPlayNextDecisionIndex = 0, TestPlayNextSectionIndex = 0, TestPlayNextLevelHoldIndex = 0;
+		Beat TestPlaySectionBeat = Beat::Zero();
+		std::optional<Time> TestPlayBranchDecisionTime;
+		Time TestPlayBranchTransitionDuration = Time::Zero();
+		std::vector<std::pair<size_t, BranchType>> TestPlayBranchDecisions;
+		std::vector<Beat> TestPlayBranchCutoffs;
+		std::vector<BranchLevelHold> TestPlayOrderedLevelHolds;
+		BranchType GetTestPlayNoteBranch(Beat beat) const;
+		b8 IsTestPlayNoteActive(const Note* note, BranchType branch) const;
+		void UpdateTestPlayBranches(ChartContext& context, Beat beat);
 		Time TestPlayStartTime = Time::Zero();
 		Time TestPlayEndTime = Time::Zero();
 		Time TestPlayAttemptStartTime = Time::Zero();
+		Time TestPlayRecordedThrough = Time::Zero();
+		VideoBranchRecording RecordedVideoRoute;
+		size_t VideoRecordingVersion = 0;
 		TestPlayInterval<Time> GetTestPlaySelectedRange(const ChartContext& context) const;
 		TestPlayInterval<Time> GetTestPlayInterval(const ChartContext& context) const;
 		f32 TestPlayPlaybackSpeed = 1.0f;
@@ -408,6 +432,8 @@ namespace PeepoDrumKit
 			Note* OriginalNote;
 			NoteAttr Tail;
 			vec2 LaneHead, LaneTail;
+			f32 BranchSlideYOffset = 0.0f;
+			b8 BranchSliding = false;
 			b8 HasHead, HasEnd, HasBody;
 		};
 		std::vector<DeferredNoteDrawData> ReverseNoteDrawBuffer;

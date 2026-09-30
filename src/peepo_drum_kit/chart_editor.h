@@ -117,7 +117,14 @@ namespace PeepoDrumKit
 			CustomDraw::GPUTexture DefaultBackgroundTexture = {}, CustomBackgroundTexture = {};
 			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
 			f32 LeadInSeconds = 1.0f, TailSeconds = 2.0f;
-			BranchType Branch = BranchType::Normal;
+			VideoBranchMode Branch = VideoBranchMode::Normal;
+			VideoBranchRoute Route;
+			const ChartCourse* RouteCourse = nullptr;
+			i32 RouteChanges = -1;
+			VideoBranchMode RouteMode = VideoBranchMode::Normal;
+			f32 RouteRollSpeed = -1.0f;
+			size_t RouteRecordingVersion = 0;
+			b8 RouteReady = false;
 			ChartCourse* Course = nullptr;
 			Audio::SourceHandle SongSource = Audio::SourceHandle::Invalid;
 			Time StartTime = Time::Zero(), EndTime = Time::Zero();

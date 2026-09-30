@@ -20,6 +20,11 @@ int main()
 	check(GetTestPlayJudgement(108.001, 25, 75, 108) == 0, "Outside Bad boundary");
 	check(GetTestPlayJudgement(12.5 / 0.5, 25, 75, 108) == 1, "Half-speed real-time window");
 	check(GetTestPlayJudgement(37.5 / 0.5, 25, 75, 108) == 2, "Half-speed Ok window");
+	check(GetTestPlayBranchAccuracy(2, 1, 4) == 62.5, "Branch accuracy weights Good and Ok");
+	check(GetTestPlayBranchAccuracy(0, 0, 0) == 0.0, "Empty branch accuracy window");
+	check(GetTestPlayBranchIndex(80.0, 70, 80) == 2, "Master threshold is inclusive");
+	check(GetTestPlayBranchIndex(70.0, 70, 80) == 1, "Expert threshold is inclusive");
+	check(GetTestPlayBranchIndex(69.0, 70, 80) == 0, "Below expert threshold stays normal");
 
 	const TestPlayInterval<int> selectedRange { 1000, 2000 };
 	check(selectedRange.IsValid() && selectedRange.Contains(1000) && selectedRange.Contains(2000), "Selected range endpoints");

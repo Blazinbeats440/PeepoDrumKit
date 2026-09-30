@@ -593,6 +593,7 @@ namespace PeepoDrumKit
 			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
 			X(General.TimelineAutoStepAfterNoteInput, "timeline_auto_step_after_note_input");
+			X(General.TimelineGridStartsAtBar, "timeline_grid_starts_at_bar");
 			X(General.EventShowSudden, "event_show_sudden");
 			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
 			X(General.EventShowScrollType, "event_show_scroll_type");
@@ -781,6 +782,7 @@ namespace PeepoDrumKit
 			X(Input.Timeline_TogglePlayback, "timeline_toggle_playback");
 			X(Input.Timeline_TogglePlaybackCursorFollow, "timeline_toggle_playback_cursor_follow");
 			X(Input.Timeline_ToggleAutoStepAfterNoteInput, "timeline_toggle_auto_step_after_note_input");
+			X(Input.Timeline_ToggleGridStartsAtBar, "timeline_toggle_grid_starts_at_bar");
 			X(Input.Timeline_ToggleLoopPlayback, "timeline_toggle_loop_playback");
 			X(Input.TestPlay_Don, "test_play_don");
 			X(Input.TestPlay_Ka, "test_play_ka");

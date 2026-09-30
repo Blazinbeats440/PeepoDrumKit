@@ -37,6 +37,16 @@ namespace PeepoDrumKit
 		return absoluteErrorMs <= goodWindowMs ? 1 : absoluteErrorMs <= okWindowMs ? 2 : absoluteErrorMs <= badWindowMs ? 3 : 0;
 	}
 
+	inline double GetTestPlayBranchAccuracy(int good, int ok, int totalNotes)
+	{
+		return totalNotes > 0 ? (2.0 * good + ok) * 100.0 / (2.0 * totalNotes) : 0.0;
+	}
+
+	inline int GetTestPlayBranchIndex(double value, int expertRequirement, int masterRequirement)
+	{
+		return value >= masterRequirement ? 2 : value >= expertRequirement ? 1 : 0;
+	}
+
 	enum class TestPlayPauseAction { Pause, ResumeWithLeadIn, ResumeAtCursor, StayAtEnd };
 	inline TestPlayPauseAction GetTestPlayPauseAction(bool isPlaying, bool finished, bool atAttemptStart)
 	{
