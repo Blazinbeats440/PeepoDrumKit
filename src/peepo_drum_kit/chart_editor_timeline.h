@@ -359,9 +359,10 @@ namespace PeepoDrumKit
 	public:
 		inline b8 HasKeyboardFocus() const { return Regions.Window.IsFocused; }
 
-		inline Beat FloorBeatToCurrentGrid(Beat beat) const { return FloorBeatToGrid(beat, GetGridBeatSnap(CurrentGridBarDivision)); }
-		inline Beat RoundBeatToCurrentGrid(Beat beat) const { return RoundBeatToGrid(beat, GetGridBeatSnap(CurrentGridBarDivision)); }
-		inline Beat CeilBeatToCurrentGrid(Beat beat) const { return CeilBeatToGrid(beat, GetGridBeatSnap(CurrentGridBarDivision)); }
+		Beat FloorBeatToCurrentGrid(const ChartContext& context, Beat beat) const;
+		Beat RoundBeatToCurrentGrid(const ChartContext& context, Beat beat) const;
+		Beat CeilBeatToCurrentGrid(const ChartContext& context, Beat beat) const;
+		Beat StepBeatOnCurrentGrid(const ChartContext& context, Beat beat, i32 direction) const;
 
 		inline vec2 ScreenToLocalSpace(vec2 screenSpace) const { return screenSpace - Regions.Content.TL; }
 		inline vec2 LocalToScreenSpace(vec2 localSpace) const { return localSpace + Regions.Content.TL; }

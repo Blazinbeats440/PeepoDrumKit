@@ -439,6 +439,17 @@ namespace PeepoDrumKit
 		constexpr Beat GetEnd() const { return BeatTime + BeatDuration; }
 	};
 
+	inline Beat GetBranchRangeEnd(const std::vector<BranchRange>& branches, const BranchRange& branch)
+	{
+		if (branch.EndsBranching)
+			return branch.GetEnd();
+		Beat nextStart = Beat::FromTicks(I32Max);
+		for (const BranchRange& next : branches)
+			if (next.GetStart() > branch.GetStart())
+				nextStart = Min(nextStart, next.GetStart());
+		return nextStart;
+	}
+
 	struct BranchLevelHold
 	{
 		Beat BeatTime;

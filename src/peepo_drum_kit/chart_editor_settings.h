@@ -169,6 +169,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> TimelinePlaybackCursorFollow = true;
 			WithDefault<b8> TimelineLoopPlayback = false;
 			WithDefault<b8> TimelineAutoStepAfterNoteInput = false;
+			WithDefault<b8> TimelineGridStartsAtBar = true;
 			WithDefault<b8> EventShowSudden = true;
 			WithDefault<b8> EventShowJPOSScroll = true;
 			WithDefault<b8> EventShowScrollType = true;
@@ -390,6 +391,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_TogglePlayback = { KeyBinding(ImGuiKey_Space) };
 			WithDefault<MultiInputBinding> Timeline_TogglePlaybackCursorFollow = { KeyBinding(ImGuiKey_F8) };
 			WithDefault<MultiInputBinding> Timeline_ToggleAutoStepAfterNoteInput = { KeyBinding(ImGuiKey_F7) };
+			WithDefault<MultiInputBinding> Timeline_ToggleGridStartsAtBar = { KeyBinding(ImGuiKey_G, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_ToggleLoopPlayback = { KeyBinding(ImGuiKey_F9) };
 			WithDefault<MultiInputBinding> Timeline_ToggleMetronome = { KeyBinding(ImGuiKey_M) };
 

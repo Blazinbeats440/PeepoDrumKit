@@ -12,6 +12,11 @@
 
 namespace PeepoDrumKit
 {
+	static BranchType VideoBranchForCourse(const ChartCourse& course, BranchType branch)
+	{
+		return course.Branches.empty() ? BranchType::Normal : branch;
+	}
+
 	b8 SaveScreenshotPNG(u32 width, u32 height, const std::vector<u8>& pixels, std::string& outputPath)
 	{
 		if (width == 0 || height == 0 || pixels.size() != static_cast<size_t>(width) * height * 4 || pixels.size() > UINT_MAX) return false;
@@ -79,7 +84,7 @@ namespace PeepoDrumKit
 		screenshotPreviewRequested = false;
 		if (!context.ChartSelectedCourse || videoExport.Exporting || videoExport.Preparing) return;
 		ConfigureVideoPreview(screenshotPreview);
-		if (PersistentApp.VideoExport.Branch < 0) screenshotPreview.VideoExportBranch = context.ChartSelectedBranch;
+		screenshotPreview.VideoExportBranch = VideoBranchForCourse(*context.ChartSelectedCourse, context.ChartSelectedBranch);
 		screenshotPreview.VideoExportTime = context.GetCursorTime();
 		screenshotPreview.VideoFadeInSeconds = screenshotPreview.VideoFadeOutSeconds = 0.0f;
 		screenshotPreview.VideoExportCombos.Rebuild(*context.ChartSelectedCourse, screenshotPreview.VideoExportBranch);
@@ -274,8 +279,10 @@ namespace PeepoDrumKit
 			exportData.BackgroundInitialized = true;
 		}
 		preview.VideoExportDrawList = nullptr;
+		preview.VideoExportPixelAligned = false;
 		preview.VideoExportResolutionWidth = VideoResolutionPresets[exportData.Resolution].Width;
-		preview.VideoExportBranch = exportData.Branch;
+		preview.VideoExportBranch = VideoBranchForCourse(*context.ChartSelectedCourse,
+			exportData.Branch <= VideoBranchMode::Master ? static_cast<BranchType>(exportData.Branch) : BranchType::Normal);
 		preview.VideoExportLayout = exportData.Layout;
 		preview.VideoShowTitle = exportData.ShowTitle;
 		preview.VideoShowSubtitle = exportData.ShowSubtitle;
@@ -318,6 +325,7 @@ namespace PeepoDrumKit
 		}
 		defer { Gui::End(); };
 		ConfigureVideoPreview(exportData.Preview);
+		exportData.Preview.VideoExportPixelAligned = true;
 
 		const auto* song = context.SongSource == Audio::SourceHandle::Invalid ? nullptr : Audio::Engine.GetSourceSampleBufferView(context.SongSource);
 		const ChartCourse& course = *context.ChartSelectedCourse;
@@ -350,10 +358,28 @@ namespace PeepoDrumKit
 			if (Gui::InputFloat(UI_Str("VIDEO_EXPORT_EXCERPT_SECONDS"), &exportData.ExcerptSeconds, 0.0f, 0.0f, "%.1f s"))
 				exportData.ExcerptSeconds = std::isfinite(exportData.ExcerptSeconds) ? Clamp(exportData.ExcerptSeconds, 0.1f, 3600.0f) : 15.0f;
 		}
-		const char* branchNames[] = { UI_Str("BRANCH_FORCED_NORMAL"), UI_Str("BRANCH_FORCED_EXPERT"), UI_Str("BRANCH_FORCED_MASTER") };
-		i32 branchIndex = EnumToIndex(exportData.Branch);
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BRANCH"), &branchIndex, branchNames, ArrayCountI32(branchNames)))
-			exportData.Branch = static_cast<BranchType>(branchIndex);
+		if (gamePreview.RecordedVideoRoute.Course && gamePreview.RecordedVideoRoute.Changes != context.Undo.NumberOfChangesMade)
+			gamePreview.RecordedVideoRoute = {};
+		const b8 hasRecording = gamePreview.RecordedVideoRoute.IsValid(&course, context.Undo.NumberOfChangesMade);
+		const b8 hasScoreBranch = std::any_of(course.Branches.begin(), course.Branches.end(), [](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
+		if (exportData.Branch == VideoBranchMode::TestPlay && !hasRecording) exportData.Branch = VideoBranchMode::Auto;
+		const char* branchNames[] = { UI_Str("BRANCH_FORCED_NORMAL"), UI_Str("BRANCH_FORCED_EXPERT"), UI_Str("BRANCH_FORCED_MASTER"),
+			UI_Str("VIDEO_EXPORT_BRANCH_AUTO"), UI_Str("VIDEO_EXPORT_BRANCH_TEST_PLAY") };
+		if (!course.Branches.empty())
+		{
+			if (Gui::BeginCombo(UI_Str("VIDEO_EXPORT_BRANCH"), branchNames[static_cast<i32>(exportData.Branch)]))
+			{
+				for (i32 index = 0; index < (hasRecording ? 5 : 4); ++index)
+				{
+					const VideoBranchMode mode = static_cast<VideoBranchMode>(index);
+					Gui::BeginDisabled(mode == VideoBranchMode::Auto && hasScoreBranch);
+					if (Gui::Selectable(branchNames[index], exportData.Branch == mode)) exportData.Branch = mode;
+					Gui::EndDisabled();
+				}
+				Gui::EndCombo();
+			}
+			if (hasScoreBranch) Gui::TextWrapped("%s", UI_Str("VIDEO_EXPORT_BRANCH_SCORE_UNAVAILABLE"));
+		}
 		const char* layoutNames[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
 		i32 layoutIndex = static_cast<i32>(exportData.Layout);
 		if (Gui::Combo(UI_Str("VIDEO_EXPORT_LAYOUT"), &layoutIndex, layoutNames, ArrayCountI32(layoutNames)))
@@ -441,13 +467,35 @@ namespace PeepoDrumKit
 		}
 
 		auto& preview = exportData.Preview;
+		const f32 rollsPerSecond = *Settings.General.DrumrollPreviewRollsPerSecond;
+		if (!exportData.Exporting && (exportData.RouteCourse != &course || exportData.RouteChanges != context.Undo.NumberOfChangesMade
+			|| exportData.RouteMode != exportData.Branch || exportData.RouteRollSpeed != rollsPerSecond
+			|| exportData.RouteRecordingVersion != gamePreview.VideoRecordingVersion))
+		{
+			exportData.RouteCourse = &course;
+			exportData.RouteChanges = context.Undo.NumberOfChangesMade;
+			exportData.RouteMode = exportData.Branch;
+			exportData.RouteRollSpeed = rollsPerSecond;
+			exportData.RouteRecordingVersion = gamePreview.VideoRecordingVersion;
+			exportData.RouteReady = true;
+			if (exportData.Branch == VideoBranchMode::Auto)
+				exportData.RouteReady = BuildAutoVideoBranchRoute(course, rollsPerSecond, exportData.Route);
+			else if (exportData.Branch == VideoBranchMode::TestPlay)
+			{
+				exportData.RouteReady = hasRecording;
+				exportData.Route = gamePreview.RecordedVideoRoute.Route;
+			}
+			else exportData.Route = BuildFixedVideoBranchRoute(course, static_cast<BranchType>(exportData.Branch));
+			preview.VideoExportCombos.Rebuild(course, exportData.Route);
+		}
+		preview.VideoExportRoute = &exportData.Route;
+		preview.VideoRollsPerSecond = exportData.RouteRollSpeed;
 		ConfigureVideoPreview(preview);
 		preview.VideoFadeContentStart = exportData.Exporting ? exportData.ContentStartTime : selectedStart;
 		preview.VideoFadeContentEnd = exportData.Exporting ? exportData.ContentEndTime : selectedEnd;
 		preview.VideoFadeInSeconds = exportData.LeadInSeconds;
 		preview.VideoFadeOutSeconds = exportData.TailSeconds;
 		preview.VideoFadeFrameSeconds = exportData.Exporting ? 1.0f / exportData.FramesPerSecond : 0.0f;
-		if (!exportData.Exporting) preview.VideoExportCombos.Rebuild(course, exportData.Branch);
 		preview.VideoExportTime = exportData.Exporting
 			? exportData.StartTime + Time::FromFrames(static_cast<f64>(std::min(exportData.FrameIndex, exportData.FrameCount - 1)), exportData.FramesPerSecond)
 			: Clamp(context.GetCursorTime(), selectedStart, selectedEnd);
@@ -495,7 +543,7 @@ namespace PeepoDrumKit
 		}
 		else
 		{
-			Gui::BeginDisabled(!song || selectedEnd <= selectedStart);
+			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady);
 			if (Gui::Button(UI_Str("VIDEO_EXPORT_START")))
 			{
 				exportData.OutputBasePath.clear();
@@ -586,8 +634,8 @@ namespace PeepoDrumKit
 			context.SetIsPlayback(false);
 			exportData.LastFrameElapsedSeconds = exportData.SecondsPerFrame = 0.0;
 			exportData.ExportStopwatch.Restart();
-			exportData.Preview.VideoExportCombos.Rebuild(*exportData.Course, exportData.Branch);
-			exportData.Sounds.Rebuild(*exportData.Course, exportData.Branch, *Settings.General.DrumrollPreviewRollsPerSecond);
+			exportData.Preview.VideoExportCombos.Rebuild(*exportData.Course, exportData.Route);
+			exportData.Sounds.Rebuild(*exportData.Course, exportData.Route, exportData.RouteRollSpeed);
 			exportData.Exporting = true;
 			exportData.Status.clear();
 			return;

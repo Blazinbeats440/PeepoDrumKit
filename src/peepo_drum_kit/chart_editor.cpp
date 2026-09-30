@@ -74,7 +74,7 @@ namespace PeepoDrumKit
 		videoExport.TailSeconds = Clamp(videoSettings.TailSeconds, 0.0f, 5.0f);
 		videoExport.AudioFade = videoSettings.AudioFade;
 		videoExport.ExcerptSeconds = std::isfinite(videoSettings.ExcerptSeconds) ? Clamp(videoSettings.ExcerptSeconds, 0.1f, 3600.0f) : 15.0f;
-		videoExport.Branch = static_cast<BranchType>(Clamp(videoSettings.Branch, 0, EnumCountI32<BranchType> - 1));
+		videoExport.Branch = static_cast<VideoBranchMode>(Clamp(videoSettings.Branch, 0, static_cast<i32>(VideoBranchMode::Auto)));
 		videoExport.ShowTitle = videoSettings.ShowTitle;
 		videoExport.ShowSubtitle = videoSettings.ShowSubtitle;
 		videoExport.ShowDifficulty = videoSettings.ShowDifficulty;
@@ -134,7 +134,7 @@ namespace PeepoDrumKit
 		videoSettings.TailSeconds = videoExport.TailSeconds;
 		videoSettings.AudioFade = videoExport.AudioFade;
 		videoSettings.ExcerptSeconds = videoExport.ExcerptSeconds;
-		videoSettings.Branch = EnumToIndex(videoExport.Branch);
+		videoSettings.Branch = static_cast<i32>(videoExport.Branch == VideoBranchMode::TestPlay ? VideoBranchMode::Auto : videoExport.Branch);
 		videoSettings.ShowTitle = videoExport.ShowTitle;
 		videoSettings.ShowSubtitle = videoExport.ShowSubtitle;
 		videoSettings.ShowDifficulty = videoExport.ShowDifficulty;
@@ -408,7 +408,7 @@ namespace PeepoDrumKit
 					videoExport.ShowWindow = true;
 					if (PersistentApp.VideoExport.Branch < 0)
 					{
-						videoExport.Branch = context.ChartSelectedBranch;
+						videoExport.Branch = static_cast<VideoBranchMode>(context.ChartSelectedBranch);
 						PersistentApp.VideoExport.Branch = EnumToIndex(videoExport.Branch);
 					}
 					videoExport.Range = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero()
@@ -1554,6 +1554,8 @@ namespace PeepoDrumKit
 							ChartProject convertedChart {};
 							CreateChartProjectFromTJA(tjaTestWindow.LoadedTJAFile.Parsed, convertedChart);
 							createBackupOfOriginalTJABeforeOverwriteSave = false;
+							gamePreview.RecordedVideoRoute = {};
+							videoExport.RouteCourse = nullptr;
 							context.Chart = std::move(convertedChart);
 							context.ChartFilePath = tjaTestWindow.LoadedTJAFile.FilePath;
 							context.ResetChartsCompared();
@@ -1746,6 +1748,9 @@ namespace PeepoDrumKit
 		DrawVideoExportWindow();
 		DrawScreenshotPreview();
 		context.Undo.FlushAndExecuteEndOfFrameCommands();
+		if (gamePreview.RecordedVideoRoute.Course && (gamePreview.RecordedVideoRoute.Changes != context.Undo.NumberOfChangesMade
+			|| std::none_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& course) { return course.get() == gamePreview.RecordedVideoRoute.Course; })))
+			gamePreview.RecordedVideoRoute = {};
 	}
 
 	void ChartEditor::RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID)
@@ -1829,6 +1834,8 @@ namespace PeepoDrumKit
 		InternalUpdateAsyncLoading();
 
 		createBackupOfOriginalTJABeforeOverwriteSave = false;
+		gamePreview.RecordedVideoRoute = {};
+		videoExport.RouteCourse = nullptr;
 		context.Chart = {};
 		context.Marker = {};
 		context.ChartFilePath.clear();
@@ -2023,6 +2030,11 @@ namespace PeepoDrumKit
 			File::WriteAllBytes(filePath, tjaText);
 
 			context.ChartFilePath = filePath;
+			if (gamePreview.RecordedVideoRoute.Course)
+			{
+				if (gamePreview.RecordedVideoRoute.Changes == context.Undo.NumberOfChangesMade) gamePreview.RecordedVideoRoute.Changes = 0;
+				else gamePreview.RecordedVideoRoute = {};
+			}
 			context.Undo.ClearChangesWereMade();
 
 			PersistentApp.RecentFiles.Add(std::string { filePath });
@@ -2284,6 +2296,8 @@ namespace PeepoDrumKit
 			// TODO: Maybe also do date version check (?)
 			createBackupOfOriginalTJABeforeOverwriteSave = !loadResult.TJA.Parsed.HasPeepoDrumKitComment;
 
+			gamePreview.RecordedVideoRoute = {};
+			videoExport.RouteCourse = nullptr;
 			context.Chart = std::move(loadResult.Chart);
 			context.Marker = {};
 			context.ChartFilePath = std::move(loadResult.ChartFilePath);

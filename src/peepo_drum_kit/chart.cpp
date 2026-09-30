@@ -423,7 +423,7 @@ namespace PeepoDrumKit
 			outCourse.Metadata.START_PLAYERSIDE = inCourse.PlayerSide;
 			outCourse.Metadata.NOTESDESIGNER = inCourse.CourseCreator;
 			for (const Note& inNote : inCourse.Notes_Normal) if (IsBalloonNote(inNote.Type)) { outCourse.Metadata.BALLOON.push_back(inNote.BalloonPopCount); }
-			const b8 hasNonZeroLengthBranch = std::any_of(inCourse.Branches.begin(), inCourse.Branches.end(), [](const BranchRange& branch) { return branch.BeatDuration > Beat::Zero(); });
+			const b8 hasNonZeroLengthBranch = std::any_of(inCourse.Branches.begin(), inCourse.Branches.end(), [](const BranchRange& branch) { return branch.BeatDuration > Beat::Zero() || !branch.EndsBranching; });
 			if (hasNonZeroLengthBranch)
 			{
 				for (const Note& inNote : inCourse.Notes_Normal) if (IsBalloonNote(inNote.Type)) { outCourse.Metadata.BALLOON_Normal.push_back(inNote.BalloonPopCount); }
@@ -581,7 +581,9 @@ namespace PeepoDrumKit
 			for (Beat sectionBeat : inCourse.BranchSections)
 			{
 				TJA::ConvertedMeasure* outConvertedMeasure = tryFindMeasureForBeat(outConvertedMeasures, sectionBeat);
-				if (assert(outConvertedMeasure != nullptr); outConvertedMeasure != nullptr)
+				const b8 coincidesWithBranchStart = std::any_of(inCourse.Branches.begin(), inCourse.Branches.end(),
+					[&](const BranchRange& branch) { return branch.GetStart() == sectionBeat; });
+				if (assert(outConvertedMeasure != nullptr); outConvertedMeasure != nullptr && !coincidesWithBranchStart)
 					outConvertedMeasure->BranchSectionChanges.push_back(sectionBeat - outConvertedMeasure->StartTime);
 			}
 
@@ -603,7 +605,6 @@ namespace PeepoDrumKit
 					measure.Notes.clear();
 					measure.DelayChanges.clear();
 					measure.ScrollChanges.clear();
-					measure.BranchSectionChanges.clear();
 				}
 			}
 			appendNotesToMeasures(inCourse.Notes_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
@@ -668,7 +669,8 @@ namespace PeepoDrumKit
 			for (const BranchRange& branch : branches)
 			{
 				const size_t startMeasureIndex = beatToMeasureIndex(branch.GetStart());
-				const size_t endMeasureIndex = beatToMeasureIndex(branch.GetEnd());
+				const Beat effectiveEnd = GetBranchRangeEnd(inCourse.Branches, branch);
+				const size_t endMeasureIndex = beatToMeasureIndex(effectiveEnd);
 				if (startMeasureIndex < currentMeasureIndex || endMeasureIndex < startMeasureIndex || endMeasureIndex > outConvertedMeasures.size())
 					continue;
 
@@ -680,7 +682,10 @@ namespace PeepoDrumKit
 				TJA::ParsedChartCommand branchStart { TJA::ParsedChartCommandType::BranchStart };
 				branchStart.Param.BranchStart = { branch.Condition, branch.RequirementExpert, branch.RequirementMaster };
 				outCourse.ChartCommands.push_back(branchStart);
-				if (branch.BeatDuration > Beat::Zero())
+				for (Beat sectionBeat : inCourse.BranchSections)
+					if (sectionBeat == branch.GetStart())
+						outCourse.ChartCommands.push_back(TJA::ParsedChartCommand { TJA::ParsedChartCommandType::ResetAccuracyValues });
+				if (endMeasureIndex > startMeasureIndex)
 				{
 					for (BranchType branchType = BranchType::Normal; branchType < BranchType::Count; IncrementEnum(branchType))
 					{
@@ -822,6 +827,8 @@ namespace PeepoDrumKit
 		for (std::string_view marker : { "#SECTION", "#BRANCHSTART p,70,80", "#N", "#E", "#M", "#BRANCHEND", "#LEVELHOLD", "BALLOONNOR:5", "BALLOONEXP:", "BALLOONMAS:" })
 			if (exportedText.find(marker) == std::string::npos)
 				return fail("Exported TJA is missing branch data");
+		if (exportedText.find("#BRANCHSTART p,70,80\n#SECTION\n#N") == std::string::npos)
+			return fail("#SECTION at branch start was not exported after #BRANCHSTART");
 		auto countOccurrences = [](std::string_view text, std::string_view value)
 		{
 			size_t count = 0;
@@ -831,7 +838,7 @@ namespace PeepoDrumKit
 		};
 		if (countOccurrences(exportedText, "\n#N\n") != 2 || countOccurrences(exportedText, "\n#E\n") != 2 || countOccurrences(exportedText, "\n#M\n") != 2)
 			return fail("Zero-length branch unexpectedly exported branch selectors");
-		if (countOccurrences(exportedText, "#BRANCHSTART") != 3 || countOccurrences(exportedText, "#BRANCHEND") != 1)
+		if (countOccurrences(exportedText, "#BRANCHSTART") != 3 || countOccurrences(exportedText, "#BRANCHEND") != 2)
 			return fail("Implicit or explicit branch endings were not preserved during export");
 
 		TJA::ParsedTJA reparsed;
@@ -875,6 +882,39 @@ namespace PeepoDrumKit
 			return fail("Zero-length-only branch chart unexpectedly exported branch selectors");
 		if (zeroLengthOnlyText.find("#BRANCHSTART") == std::string::npos || zeroLengthOnlyText.find("#BRANCHEND") == std::string::npos)
 			return fail("Zero-length-only branch commands were not exported");
+
+		static constexpr std::string_view openSource =
+			"TITLE:Open Branch Test\nBPM:120\nCOURSE:Oni\nLEVEL:5\n#START\n"
+			"#BRANCHSTART p,70,80\n#N\n1111,\n#E\n2222,\n#M\n3333,\n"
+			"#BRANCHSTART r,10,20\n#N\n1111,\n#E\n2222,\n#M\n3333,\n#END\n";
+		TJA::ParsedTJA openParsed;
+		if (!parse(openSource, openParsed)) return false;
+		ChartProject openChart;
+		if (!CreateChartProjectFromTJA(openParsed, openChart) || openChart.Courses.size() != 1 || openChart.Courses[0]->Branches.size() != 2)
+			return fail("Consecutive open branches were not imported");
+		ChartCourse& openCourse = *openChart.Courses[0];
+		if (openCourse.Branches[0].EndsBranching || openCourse.Branches[1].EndsBranching)
+			return fail("An open branch was incorrectly closed");
+		openCourse.Branches[0].BeatDuration = openCourse.Branches[1].BeatDuration = Beat::Zero();
+		if (GetBranchRangeEnd(openCourse.Branches, openCourse.Branches[0]) != openCourse.Branches[1].GetStart()
+			|| GetBranchRangeEnd(openCourse.Branches, openCourse.Branches[1]) <= openCourse.Branches[1].GetStart())
+			return fail("An open branch did not extend to the next branch or chart end");
+		TJA::ParsedTJA openExported;
+		if (!ConvertChartProjectToTJA(openChart, openExported, false))
+			return fail("Failed to export consecutive open branches");
+		std::string openText;
+		TJA::ConvertParsedToText(openExported, openText, TJA::SaveFormat::Current);
+		if (countOccurrences(openText, "#BRANCHSTART") != 2 || countOccurrences(openText, "#BRANCHEND") != 0
+			|| countOccurrences(openText, "\n#N\n") != 2 || countOccurrences(openText, "\n#E\n") != 2 || countOccurrences(openText, "\n#M\n") != 2)
+			return fail("Open branches lost their selectors or gained an ending during export");
+		TJA::ParsedTJA openReparsed;
+		if (!parse(openText, openReparsed)) return false;
+		ChartProject openRoundTripped;
+		if (!CreateChartProjectFromTJA(openReparsed, openRoundTripped) || openRoundTripped.Courses.size() != 1
+			|| openRoundTripped.Courses[0]->Branches.size() != 2
+			|| openRoundTripped.Courses[0]->Notes_Expert.TryFindExactAtBeat(Beat::FromBars(1)) == nullptr
+			|| openRoundTripped.Courses[0]->Notes_Master.TryFindExactAtBeat(Beat::FromBars(1)) == nullptr)
+			return fail("Notes after the second open branch were lost during round trip");
 
 		outError.clear();
 		return true;

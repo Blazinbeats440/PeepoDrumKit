@@ -107,6 +107,17 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-video-branches")
+			{
+				std::string error;
+				if (!RunVideoBranchSelfTest(error))
+				{
+					Log::Write("Video branch self-test failed: %s", error.c_str());
+					return 1;
+				}
+				Log::Write("Video branch self-test passed");
+				return 0;
+			}
 			if (argv[i] == "--test-screenshot-png")
 			{
 				const std::vector<u8> pixels = { 0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255 };

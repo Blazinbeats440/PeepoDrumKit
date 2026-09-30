@@ -210,6 +210,8 @@ X("SETTINGS_TEST_PLAY_EXIT", "Exit") \
 X("TEST_PLAY_START_BEGINNING", "Start from Beginning") \
 X("TEST_PLAY_START_CURRENT", "Start from Current Position") \
 X("TEST_PLAY_START_MARKER", "Start from Marker") \
+X("TEST_PLAY_AUTO_BRANCH", "Automatic Branching") \
+X("TEST_PLAY_SCORE_BRANCH_UNAVAILABLE", "Automatic branching is unavailable for score conditions") \
 X("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS", "Show start buttons in chart preview") \
 X("TEST_PLAY_PAUSE", "Pause") \
 X("TEST_PLAY_RESUME", "Resume") \
@@ -288,6 +290,8 @@ X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES", "Game Preview: Comment hold measures
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC", "Keep comments at the hit position for this many measures. Set to 0 to keep scrolling.") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC", "When enabled, the timeline follows the cursor during playback. The shortcut is F8.") \
+X("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR", "Timeline: Align Grid to Bar Starts") \
+X("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC", "Start the grid at each bar line. Turn off to use the song start as the grid origin. The default shortcut is Ctrl+G.") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Auto-Step After Note Input") \
@@ -394,6 +398,12 @@ X("VIDEO_EXPORT_RANGE_PREVIEW", "From preview position") \
 X("VIDEO_EXPORT_RANGE_MARKER", "From marker position") \
 X("VIDEO_EXPORT_EXCERPT_SECONDS", "Duration") \
 X("VIDEO_EXPORT_BRANCH", "Branch route") \
+X("VIDEO_EXPORT_BRANCH_AUTO", "Auto") \
+X("VIDEO_EXPORT_BRANCH_TEST_PLAY", "Use test play result") \
+X("VIDEO_EXPORT_BRANCH_SCORE_UNAVAILABLE", "Auto is unavailable for score (s) branches.") \
+X("VIDEO_EXPORT_BRANCH_RECORDING_INCOMPLETE", "The export range is outside the recorded attempt. Shorten the range or play and record that range again.") \
+X("TEST_PLAY_RECORD_VIDEO_ROUTE", "Record result for video") \
+X("TEST_PLAY_VIDEO_ROUTE_RECORDED", "Video branch route recorded in memory. Unplayed notes are misses and unplayed rolls have 0 hits.") \
 X("VIDEO_EXPORT_LAYOUT", "Layout") \
 X("VIDEO_EXPORT_LAYOUT_ORIGINAL", "Original") \
 X("VIDEO_EXPORT_LAYOUT_TAIKO", "Taiko") \
@@ -631,6 +641,7 @@ X("BRANCH_CONDITION_SCORE",						"Score") \
 X("INFO_BRANCH_BEAT_RANGE",						"%.3f - %.3f beats") \
 X("INFO_BRANCH_START_BEAT",                         "Start %.3f") \
 X("INFO_BRANCH_END_BEAT",                           "End %.3f") \
+X("INFO_BRANCH_END_OPEN",                           "Open end") \
 X("ACT_BRANCH_USE_SELECTION",						"Use Selection") \
 X("ACT_BRANCH_TOGGLE_LEVELHOLD_AT_CURSOR",			"Toggle #LEVELHOLD at Cursor") \
 X("DETAILS_COURSE_PROP_OTHER_METADATA",				"Other Course Metadata") \

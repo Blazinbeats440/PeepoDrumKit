@@ -31,13 +31,28 @@ namespace
 
 	LONG WINAPI PeepoUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo)
 	{
-		const DWORD code = exceptionInfo != nullptr && exceptionInfo->ExceptionRecord != nullptr
-			? exceptionInfo->ExceptionRecord->ExceptionCode : 0;
-		const void* address = exceptionInfo != nullptr && exceptionInfo->ExceptionRecord != nullptr
-			? exceptionInfo->ExceptionRecord->ExceptionAddress : nullptr;
-		char message[256] = {};
-		sprintf_s(message, "UNHANDLED EXCEPTION: code=0x%08lX address=%p thread=%lu", code, address, ::GetCurrentThreadId());
+		const EXCEPTION_RECORD* record = exceptionInfo != nullptr ? exceptionInfo->ExceptionRecord : nullptr;
+		const DWORD code = record != nullptr ? record->ExceptionCode : 0;
+		const void* address = record != nullptr ? record->ExceptionAddress : nullptr;
+		const auto moduleBase = reinterpret_cast<uintptr_t>(::GetModuleHandleW(nullptr));
+		const auto exceptionAddress = reinterpret_cast<uintptr_t>(address);
+		const auto relativeAddress = exceptionAddress >= moduleBase ? exceptionAddress - moduleBase : 0;
+		const ULONG_PTR accessType = record != nullptr && record->NumberParameters >= 1 ? record->ExceptionInformation[0] : 0;
+		const ULONG_PTR accessAddress = record != nullptr && record->NumberParameters >= 2 ? record->ExceptionInformation[1] : 0;
+		char message[512] = {};
+		sprintf_s(message, "UNHANDLED EXCEPTION: code=0x%08lX address=%p module=%p rva=0x%llX access=%llu target=%p thread=%lu",
+			code, address, reinterpret_cast<void*>(moduleBase), static_cast<unsigned long long>(relativeAddress),
+			static_cast<unsigned long long>(accessType), reinterpret_cast<void*>(accessAddress), ::GetCurrentThreadId());
 		WriteLine(message);
+#if defined(_M_X64)
+		if (exceptionInfo != nullptr && exceptionInfo->ContextRecord != nullptr)
+		{
+			const CONTEXT& context = *exceptionInfo->ContextRecord;
+			sprintf_s(message, "REGISTERS: rax=%016llX rbx=%016llX rcx=%016llX rdx=%016llX r14=%016llX rip=%016llX",
+				context.Rax, context.Rbx, context.Rcx, context.Rdx, context.R14, context.Rip);
+			WriteLine(message);
+		}
+#endif
 		return EXCEPTION_EXECUTE_HANDLER;
 	}
 

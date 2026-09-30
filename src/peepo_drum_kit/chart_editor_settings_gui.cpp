@@ -954,6 +954,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.TimelineGridStartsAtBar,
+							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR"),
+							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.EventShowSudden,
 							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN"),
 							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
@@ -1377,6 +1382,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
 						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, "Timeline: Toggle Playback Cursor Follow", },
 						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, "Timeline: Toggle Auto-Step After Note Input", },
+						{ &settings.Input.Timeline_ToggleGridStartsAtBar, "Timeline: Toggle Grid Origin Between Bar and Song Start", },
 						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
 						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
 						{},
