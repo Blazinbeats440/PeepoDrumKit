@@ -97,7 +97,8 @@ namespace PeepoDrumKit
 		template <typename TEvent>
 		static void RefreshChart(ChartCourse* Course, ChartCourseListType<TEvent>* Map)
 		{
-			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) { Map->RebuildAccelerationStructure(); Course->RecalculateNoteStates(); }
+			if constexpr (expect_type_v<TEvent, TempoChange>) Map->RebuildAccelerationStructure();
+			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) Course->RecalculateNoteStates();
 			else if constexpr (expect_type_v<TEvent, Note>) { Course->RecalculateNoteStates(); }
 		}
 

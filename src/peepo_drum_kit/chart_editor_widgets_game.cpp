@@ -513,24 +513,28 @@ namespace PeepoDrumKit
 			const Beat beat = note.BeatTime;
 			const Time head = (course.TempoMap.BeatToTime(beat) + note.TimeOffset);
 			const Beat beatTail = (note.BeatDuration > Beat::Zero()) ? (beat + note.BeatDuration) : beat;
-			const Time tail = (note.BeatDuration > Beat::Zero()) ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
+			const b8 hasDuration = (beatTail != beat);
+			const Time tail = hasDuration ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
 			const Complex scrollSpeed = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beat));
-			const Complex scrollSpeedTail = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beatTail));
+			const Tempo tempo = TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beat));
+			const ScrollMethod scrollType = ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beat));
+			const TJA::SuddenParams sudden = SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beat));
+			const Complex scrollSpeedTail = hasDuration ? ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beatTail)) : scrollSpeed;
 			perNoteFunc(ForEachNoteLaneData {
 				{
 					beat, head,
-					TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beat)),
+					tempo,
 					scrollSpeed, scrollSpeedToView(scrollSpeed),
-					ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beat)),
-					SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beat)),
+					scrollType,
+					sudden,
 				},
 				&note,
 				{
 					beatTail, tail,
-					TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beatTail)),
+					hasDuration ? TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beatTail)) : tempo,
 					scrollSpeedTail, scrollSpeedToView(scrollSpeedTail),
-					ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beatTail)),
-					SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beatTail)),
+					hasDuration ? ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beatTail)) : scrollType,
+					hasDuration ? SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beatTail)) : sudden,
 				},
 			});
 		}
@@ -817,7 +821,9 @@ namespace PeepoDrumKit
 		TestPlayRecordFilter = 0;
 		TestPlayRecordScope = 0;
 		TestPlayNotes.clear();
+		TestPlayNoteIndices.clear();
 		TestPlayLongNotes.clear();
+		TestPlayLongNoteIndices.clear();
 		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
 		for (Note& note : TestPlayCourse->GetNotes(branch))
 		{
@@ -836,6 +842,12 @@ namespace PeepoDrumKit
 					TestPlayLongNotes.push_back({ &note, startTime, endTime, 0, {}, branch });
 			}
 		}
+		TestPlayNoteIndices.reserve(TestPlayNotes.size());
+		for (size_t index = 0; index < TestPlayNotes.size(); index++)
+			TestPlayNoteIndices.emplace(TestPlayNotes[index].Source, index);
+		TestPlayLongNoteIndices.reserve(TestPlayLongNotes.size());
+		for (size_t index = 0; index < TestPlayLongNotes.size(); index++)
+			TestPlayLongNoteIndices.emplace(TestPlayLongNotes[index].Source, index);
 		TestPlayEndTime = Max(TestPlayEndTime, TestPlayStartTime);
 		TestPlayPreviousPlaybackSpeed = context.GetPlaybackSpeed();
 		TestPlayPlaybackSpeed = Clamp(*Settings.TestPlay.PlaybackSpeedPercent, 25, 100) / 100.0f;
@@ -951,8 +963,10 @@ namespace PeepoDrumKit
 		context.TestPlaySmoothCursor = context.TestPlayFollowCursor = false;
 		context.SetCursorTime(TestPlayStartTime);
 		TestPlayNotes.clear();
+		TestPlayNoteIndices.clear();
 		TestPlayAttemptJudgements.clear();
 		TestPlayLongNotes.clear();
+		TestPlayLongNoteIndices.clear();
 		TestPlayOrderedLevelHolds.clear();
 		TestPlayBranchCutoffs.clear();
 	}
@@ -1297,6 +1311,16 @@ namespace PeepoDrumKit
 		}
 
 		}
+		const auto findNoteState = [&](const Note* note) -> const TestPlayNoteState*
+		{
+			const auto found = TestPlayNoteIndices.find(note);
+			return found != TestPlayNoteIndices.end() ? &TestPlayNotes[found->second] : nullptr;
+		};
+		const auto findLongNoteState = [&](const Note* note) -> const TestPlayLongNoteState*
+		{
+			const auto found = TestPlayLongNoteIndices.find(note);
+			return found != TestPlayLongNoteIndices.end() ? &TestPlayLongNotes[found->second] : nullptr;
+		};
 		std::vector<std::pair<ChartCourse*, BranchType>> comparedLanes;
 		if (isVideoExport)
 			comparedLanes.emplace_back(context.ChartSelectedCourse, VideoExportBranch);
@@ -1835,6 +1859,8 @@ namespace PeepoDrumKit
 			std::vector<Rect> testPlayLabelBounds;
 			auto drawTestPlayNote = [&](const ForEachNoteLaneData& it, BranchType noteBranch)
 			{
+			if (!IsTestPlaying && IsRegularNote(it.OriginalNote->Type) &&
+				TimeSinceNoteHit(it.Time, cursorTimeOrAnimated) > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type)) return;
 				const b8 slidingNote = branchSliding && transitionIndex < course->Branches.size()
 					&& it.Beat >= course->Branches[transitionIndex].GetStart()
 					&& it.Beat < GetBranchRangeEnd(course->Branches, course->Branches[transitionIndex]);
@@ -1892,10 +1918,10 @@ namespace PeepoDrumKit
 					}
 				}
 
-				Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
-				if (IsTestPlaying)
-					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end())
-						timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
+			Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
+			if (IsTestPlaying)
+				if (const TestPlayNoteState* state = findNoteState(it.OriginalNote))
+					timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
 				const Time timeSinceTailHit = TimeSinceNoteHit(it.Tail.Time, cursorTimeOrAnimated);
 
 				// sudden move
@@ -1970,9 +1996,9 @@ namespace PeepoDrumKit
 					}
 					if (timeSinceHeadHit > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type))
 						isVisible = isVisibleHead = isVisibleTail = false;
-					if (IsTestPlaying)
-						if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end() && state->Judgement == 3)
-							isVisible = isVisibleHead = isVisibleTail = false;
+				if (IsTestPlaying)
+					if (const TestPlayNoteState* state = findNoteState(it.OriginalNote); state && state->Judgement == 3)
+						isVisible = isVisibleHead = isVisibleTail = false;
 				}
 				else {
 					if (TJA::GetSuddenActiveState(it.Sudden).HideRollActive)
@@ -1985,9 +2011,9 @@ namespace PeepoDrumKit
 						laneHead = laneTail;
 					}
 
-					if (IsBalloonNote(it.OriginalNote->Type)) {
-						const auto balloonState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; });
-						if (timeSinceTailHit >= Time::Zero() || (IsTestPlaying && balloonState != TestPlayLongNotes.end() && balloonState->HitCount >= it.OriginalNote->BalloonPopCount)) {
+				if (IsBalloonNote(it.OriginalNote->Type)) {
+					const TestPlayLongNoteState* balloonState = IsTestPlaying ? findLongNoteState(it.OriginalNote) : nullptr;
+					if (timeSinceTailHit >= Time::Zero() || (balloonState && balloonState->HitCount >= it.OriginalNote->BalloonPopCount)) {
 							laneHead = laneTail;
 							isVisible = isVisibleHead = isVisibleTail = isVisibleBody = false;
 						}
@@ -2036,9 +2062,9 @@ namespace PeepoDrumKit
 				defer { if (it->BranchSliding) drawList->PopClipRect(); };
 				Time timeSinceHit = TimeSinceNoteHit(it->Time, cursorTimeOrAnimated);
 				if (IsTestPlaying)
-					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; }); state != TestPlayNotes.end())
+					if (const TestPlayNoteState* state = findNoteState(it->OriginalNote))
 						timeSinceHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
-				const auto longState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; });
+				const TestPlayLongNoteState* longState = IsTestPlaying ? findLongNoteState(it->OriginalNote) : nullptr;
 				vec2 laneHeadDisplay = it->LaneHead;
 				vec2 laneTailDisplay = it->LaneTail;
 
@@ -2053,7 +2079,7 @@ namespace PeepoDrumKit
 					if (IsBalloonNote(it->OriginalNote->Type))
 					{
 						if (videoRoute && it->OriginalNote->BalloonPopCount > 0 && videoHitCount >= it->OriginalNote->BalloonPopCount) continue;
-						if (IsTestPlaying && longState != TestPlayLongNotes.end() && longState->HitCount >= it->OriginalNote->BalloonPopCount)
+						if (longState && longState->HitCount >= it->OriginalNote->BalloonPopCount)
 							continue;
 						b8 afterHit = (timeSinceHit >= Time::Zero());
 						vec2 headPos = afterHit ? hitCirclePosLane + vec2(0.0f, it->BranchSlideYOffset) : it->LaneHead; // head might be detached
@@ -2068,7 +2094,7 @@ namespace PeepoDrumKit
 							drawList->ChannelsSetCurrent(4);
 							DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromCenter(Camera.LaneToWorldSpace(headPos.x, headPos.y)),
 								std::to_string(videoRoute ? std::max(0, it->OriginalNote->BalloonPopCount - videoHitCount)
-									: IsTestPlaying && longState != TestPlayLongNotes.end() ? std::max(0, it->OriginalNote->BalloonPopCount - longState->HitCount) : it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
+									: longState ? std::max(0, it->OriginalNote->BalloonPopCount - longState->HitCount) : it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
 							balloonPopCountDrawn = true;
 							drawList->ChannelsSetCurrent(3);
 						}
@@ -2083,7 +2109,7 @@ namespace PeepoDrumKit
 						{
 							if (videoRoute) drumrollHitsSoFar = videoHitCount;
 							else if (IsTestPlaying)
-								drumrollHitsSoFar = longState != TestPlayLongNotes.end() ? longState->HitCount : 0;
+								drumrollHitsSoFar = longState ? longState->HitCount : 0;
 							else for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
 							{
 								const Time subHitTime = it->Time + (drumrollHitInterval * iHit);

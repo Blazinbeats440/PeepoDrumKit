@@ -367,9 +367,11 @@ namespace PeepoDrumKit
 		ImDrawList* VideoExportDrawList = nullptr;
 		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayNoteState> TestPlayNotes;
+		std::unordered_map<const Note*, size_t> TestPlayNoteIndices;
 		std::unordered_map<const Note*, ChartContext::TestPlayJudgementData> TestPlayAttemptJudgements;
 		struct TestPlayLongNoteState { Note* Source; Time StartTime; Time EndTime; i32 HitCount = 0; std::vector<Time> HitTimes; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayLongNoteState> TestPlayLongNotes;
+		std::unordered_map<const Note*, size_t> TestPlayLongNoteIndices;
 		std::optional<Time> TestPlayJumpTime;
 		ChartCourse* TestPlayCourse = nullptr;
 		BranchType TestPlayBranch = BranchType::Normal;

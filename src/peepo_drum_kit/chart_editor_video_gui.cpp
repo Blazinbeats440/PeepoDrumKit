@@ -325,7 +325,6 @@ namespace PeepoDrumKit
 		}
 		defer { Gui::End(); };
 		ConfigureVideoPreview(exportData.Preview);
-		exportData.Preview.VideoExportPixelAligned = true;
 
 		const auto* song = context.SongSource == Audio::SourceHandle::Invalid ? nullptr : Audio::Engine.GetSourceSampleBufferView(context.SongSource);
 		const ChartCourse& course = *context.ChartSelectedCourse;
@@ -491,6 +490,7 @@ namespace PeepoDrumKit
 		preview.VideoExportRoute = &exportData.Route;
 		preview.VideoRollsPerSecond = exportData.RouteRollSpeed;
 		ConfigureVideoPreview(preview);
+		preview.VideoExportPixelAligned = true;
 		preview.VideoFadeContentStart = exportData.Exporting ? exportData.ContentStartTime : selectedStart;
 		preview.VideoFadeContentEnd = exportData.Exporting ? exportData.ContentEndTime : selectedEnd;
 		preview.VideoFadeInSeconds = exportData.LeadInSeconds;

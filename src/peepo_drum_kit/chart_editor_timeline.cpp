@@ -899,11 +899,11 @@ namespace PeepoDrumKit
 			std::vector<Rect> testPlayLabelBounds;
 			for (const Note& it : list)
 			{
-				if (IsBeatInsideBranchRange(course, it.BeatTime) == isUnbranchedNotesRow)
-					continue;
 				const Time startTime = context.BeatToTime(it.GetStart()) + it.TimeOffset;
 				const Time endTime = (it.BeatDuration > Beat::Zero()) ? context.BeatToTime(it.GetEnd()) + it.TimeOffset : startTime;
 				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
+					continue;
+				if (IsBeatInsideBranchRange(course, it.BeatTime) == isUnbranchedNotesRow)
 					continue;
 
 				const vec2 localTL = vec2(timeline.Camera.TimeToLocalSpaceX(startTime), rowIt.LocalY);
