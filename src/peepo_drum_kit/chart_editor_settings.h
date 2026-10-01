@@ -270,7 +270,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_DecreaseGuiScale = { KeyBinding(ImGuiKey_Minus, ImGuiMod_Ctrl), KeyBinding(ImGuiKey_KeypadSubtract, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_ResetGuiScale = { KeyBinding(ImGuiKey_0, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_Undo = { KeyBinding(ImGuiKey_Z, ImGuiMod_Ctrl) };
-			WithDefault<MultiInputBinding> Editor_Redo = { KeyBinding(ImGuiKey_Y, ImGuiMod_Ctrl) };
+			WithDefault<MultiInputBinding> Editor_Redo = { KeyBinding(ImGuiKey_Y, ImGuiMod_Ctrl), KeyBinding(ImGuiKey_Z, ImGuiMod_CtrlShift) };
 			WithDefault<MultiInputBinding> Editor_OpenHelp = { KeyBinding(ImGuiKey_F1) };
 			WithDefault<MultiInputBinding> Editor_OpenUpdateNotes = { KeyBinding(ImGuiKey_F2) };
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
