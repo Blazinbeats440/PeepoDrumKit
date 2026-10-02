@@ -5,6 +5,7 @@
 #include "audio/audio_file_formats.h"
 #include "chart_editor_i18n.h"
 #include <cmath>
+#include <filesystem>
 #include <thorvg/thorvg.h>
 
 namespace PeepoDrumKit
@@ -67,6 +68,8 @@ namespace PeepoDrumKit
 		videoExport.BackgroundSource = Clamp(videoSettings.BackgroundSource, -1, 3);
 		videoExport.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(Clamp(videoSettings.BackgroundImageFit, 0, 4));
 		videoExport.BackgroundColor = videoSettings.BackgroundColor;
+		videoExport.LaneBackgroundTransparency = std::isfinite(videoSettings.LaneBackgroundTransparency)
+			? Clamp(videoSettings.LaneBackgroundTransparency, 0.0f, 100.0f) : 0.0f;
 		videoExport.BackgroundImagePath = videoSettings.BackgroundImagePath;
 		videoExport.SongVolume = Clamp(videoSettings.SongVolume, 0.0f, 2.0f);
 		videoExport.DrumVolume = Clamp(videoSettings.DrumVolume, 0.0f, 2.0f);
@@ -127,6 +130,7 @@ namespace PeepoDrumKit
 		videoSettings.BackgroundSource = videoExport.BackgroundSource;
 		videoSettings.BackgroundImageFit = static_cast<i32>(videoExport.BackgroundImageFit);
 		videoSettings.BackgroundColor = videoExport.BackgroundColor;
+		videoSettings.LaneBackgroundTransparency = videoExport.LaneBackgroundTransparency;
 		videoSettings.BackgroundImagePath = videoExport.BackgroundImagePath;
 		videoSettings.SongVolume = videoExport.SongVolume;
 		videoSettings.DrumVolume = videoExport.DrumVolume;
@@ -395,6 +399,12 @@ namespace PeepoDrumKit
 						PersistentApp.RecentFiles.SortedPaths.clear();
 					Gui::EndMenu();
 				}
+
+				std::error_code folderError;
+				const b8 canReopenDroppedFolder = !lastDroppedFolderPath.empty() && !droppedPathFuture.valid() && !saveConfirmationPopup.OpenOnNextFrame
+					&& std::filesystem::is_directory(std::filesystem::u8path(lastDroppedFolderPath), folderError) && !folderError;
+				if (Gui::MenuItem(UI_Str("ACT_FILE_REOPEN_FOLDER"), nullptr, false, canReopenDroppedFolder))
+					reopenDroppedFolderRequested = true;
 
 				if (Gui::MenuItem(UI_Str("ACT_FILE_OPEN_CHART_DIRECTORY"), ToShortcutString(*Settings.Input.Editor_ChartOpenDirectory).Data, nullptr, CanOpenChartDirectoryInFileExplorer(context))) { OpenChartDirectoryInFileExplorer(context); }
 				Gui::Separator();
@@ -1095,6 +1105,13 @@ namespace PeepoDrumKit
 								// jump to course property for editing
 								if (Gui::MenuItem(UI_Str("ACT_COURSES_EDIT"), " "))
 									propertiesWindow.FocusCoursePropertyHeaderNextFrame = ChartPropertiesWindow::EFocus::Focus;
+								Gui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 122, 122, 255));
+								if (Gui::MenuItem(UI_Str("ACT_COURSES_DELETE"), " "))
+								{
+									pendingDeleteCourse = course.get();
+									openDeleteCoursePopup = true;
+								}
+								Gui::PopStyleColor();
 
 								Gui::Separator();
 								Gui::MenuItem(UI_Str("INFO_COURSES_REORDER"), nullptr, false, false);
@@ -1198,6 +1215,60 @@ namespace PeepoDrumKit
 
 			Gui::EndMenuBar();
 		}
+		if (openDeleteCoursePopup)
+		{
+			Gui::OpenPopup(UI_Str("COURSE_DELETE_TITLE"));
+			openDeleteCoursePopup = false;
+		}
+		const ImGuiViewport* mainViewport = Gui::GetMainViewport();
+		Gui::SetNextWindowViewport(mainViewport->ID);
+		Gui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Always, vec2(0.5f, 0.5f));
+		if (Gui::BeginPopupModal(UI_Str("COURSE_DELETE_TITLE"), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+		{
+			auto& courses = context.Chart.Courses;
+			const auto courseIt = std::find_if(courses.begin(), courses.end(), [&](const auto& course) { return course.get() == pendingDeleteCourse; });
+			if (courseIt == courses.end())
+				Gui::CloseCurrentPopup();
+			else
+			{
+				Gui::TextWrapped("%s", UI_Str("COURSE_DELETE_PROMPT"));
+				Gui::TextUnformatted((*courseIt)->ToString().c_str());
+				Gui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 122, 122, 255));
+				const b8 confirmed = Gui::Button(UI_Str("ACT_COURSES_DELETE"));
+				Gui::PopStyleColor();
+				if (confirmed)
+				{
+					context.Undo.ExecuteEndOfFrame<Commands::DeleteChartCourse>(&context, static_cast<size_t>(courseIt - courses.begin()));
+					pendingDeleteCourse = nullptr;
+					Gui::CloseCurrentPopup();
+				}
+				Gui::SameLine();
+				if (Gui::Button(UI_Str("ACT_MSGBOX_CANCEL")))
+				{
+					pendingDeleteCourse = nullptr;
+					Gui::CloseCurrentPopup();
+				}
+			}
+			Gui::EndPopup();
+		}
+	}
+
+	void ChartEditor::StartAsyncReadingDroppedPath(std::string_view path, b8 isDirectory)
+	{
+		if (droppedPathFuture.valid()) return;
+		droppedFolderPath = path;
+		if (isDirectory) lastDroppedFolderPath = droppedFolderPath;
+		droppedFolderCharts.clear();
+		droppedPathFailure = FileDrop::Error::None;
+		droppedPathLoading = true;
+		droppedPathCanceled = false;
+		const i32 searchDepth = std::max(0, *Settings.General.FolderDropSearchDepth);
+		const std::string extractionRoot = Directory::GetExecutableDirectory() + "/Extracted zip";
+		droppedPathFuture = std::async(std::launch::async, [pathCopy = droppedFolderPath, isDirectory, searchDepth, extractionRoot]
+		{
+			return isDirectory ? FileDrop::ReadFolder(pathCopy, searchDepth) : FileDrop::ExtractZip(pathCopy, extractionRoot, searchDepth);
+		});
+		Gui::OpenPopup(UI_WindowName("FOLDER_DROP_TITLE"));
 	}
 
 	void ChartEditor::DrawGui()
@@ -1261,12 +1332,91 @@ namespace PeepoDrumKit
 			context.SfxVoicePool.SetSoundGroupVolume(SoundGroup::Metronome, *Settings.Audio.MetronomeVolume);
 		}
 		// NOTE: Drag and drop handling
+		std::string droppedChartToOpen;
+		if (droppedPathFuture.valid() && droppedPathFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+		{
+			FileDrop::Result result = droppedPathFuture.get();
+			droppedPathLoading = false;
+			if (!droppedPathCanceled)
+			{
+				droppedFolderPath = std::move(result.DirectoryPath);
+				droppedFolderCharts = std::move(result.ChartPaths);
+				droppedPathFailure = result.Failure;
+				if (droppedPathFailure == FileDrop::Error::None && droppedFolderCharts.size() == 1)
+					droppedChartToOpen = droppedFolderCharts.front();
+			}
+		}
+		if (reopenDroppedFolderRequested && !droppedPathFuture.valid() && !saveConfirmationPopup.OpenOnNextFrame
+			&& Gui::GetCurrentContext()->OpenPopupStack.Size == 0)
+		{
+			reopenDroppedFolderRequested = false;
+			StartAsyncReadingDroppedPath(lastDroppedFolderPath, true);
+		}
 		for (const std::string& droppedFilePath : ApplicationHost::GlobalState.FilePathsDroppedThisFrame)
 		{
+			if (Gui::GetCurrentContext()->OpenPopupStack.Size > 0 || saveConfirmationPopup.OpenOnNextFrame || droppedPathFuture.valid()) break;
+			std::error_code directoryError;
+			const b8 isDirectory = std::filesystem::is_directory(std::filesystem::u8path(droppedFilePath), directoryError);
+			if (isDirectory || Path::HasExtension(droppedFilePath, ".zip"))
+			{
+				StartAsyncReadingDroppedPath(droppedFilePath, isDirectory);
+				break;
+			}
 			if (Path::HasAnyExtension(droppedFilePath, TJA::Extension)) { CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = droppedFilePath] { StartAsyncImportingChartFile(pathCopy); }); break; }
 			if (Path::HasAnyExtension(droppedFilePath, Audio::SupportedFileFormatExtensionsPacked)) { SetAndStartLoadingChartSongFileName(droppedFilePath, context.Undo); break; }
 			if (Path::HasAnyExtension(droppedFilePath, TJA::PreimageExtensions)) { SetAndStartLoadingSongJacketFileName(droppedFilePath, context.Undo); break; }
 		}
+		if (Gui::BeginPopupModal(UI_WindowName("FOLDER_DROP_TITLE"), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+		{
+			Gui::TextUnformatted(droppedFolderPath.c_str());
+			if (!droppedChartToOpen.empty()) Gui::CloseCurrentPopup();
+			if (droppedPathLoading)
+				Gui::TextUnformatted(UI_Str("FOLDER_DROP_LOADING"));
+			else if (droppedPathFailure != FileDrop::Error::None)
+			{
+				cstr errorMessage = UI_Str("FOLDER_DROP_READ_FAILED");
+				switch (droppedPathFailure)
+				{
+				case FileDrop::Error::InvalidZip: errorMessage = UI_Str("ZIP_DROP_INVALID"); break;
+				case FileDrop::Error::UnsupportedZip: errorMessage = UI_Str("ZIP_DROP_UNSUPPORTED"); break;
+				case FileDrop::Error::UnsafePath: errorMessage = UI_Str("ZIP_DROP_UNSAFE_PATH"); break;
+				case FileDrop::Error::SizeLimit: errorMessage = UI_Str("ZIP_DROP_SIZE_LIMIT"); break;
+				case FileDrop::Error::ExtractionFailed: errorMessage = UI_Str("ZIP_DROP_EXTRACTION_FAILED"); break;
+				default: break;
+				}
+				Gui::TextUnformatted(errorMessage);
+			}
+			else if (droppedFolderCharts.empty())
+				Gui::TextUnformatted(UI_Str("FOLDER_DROP_NO_CHARTS"));
+			else
+			{
+				Gui::TextUnformatted(UI_Str("FOLDER_DROP_SELECT_CHART"));
+				Gui::BeginChild("DroppedFolderCharts", GuiScale(vec2(520.0f, 240.0f)), true);
+				for (const std::string& chartPath : droppedFolderCharts)
+				{
+					Gui::PushID(chartPath.c_str());
+					const std::string fileName = std::filesystem::u8path(chartPath).lexically_relative(std::filesystem::u8path(droppedFolderPath)).generic_u8string();
+					const b8 selected = Gui::Selectable(fileName.c_str());
+					Gui::PopID();
+					if (selected)
+					{
+						Gui::CloseCurrentPopup();
+						droppedChartToOpen = chartPath;
+						break;
+					}
+				}
+				Gui::EndChild();
+			}
+			if (Gui::Button(UI_Str("ACT_MSGBOX_CANCEL")) || Gui::IsAnyPressed(*Settings.Input.Dialog_Cancel, false))
+			{
+				droppedPathCanceled = true;
+				droppedChartToOpen.clear();
+				Gui::CloseCurrentPopup();
+			}
+			Gui::EndPopup();
+		}
+		if (!droppedChartToOpen.empty())
+			CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = droppedChartToOpen] { StartAsyncImportingChartFile(pathCopy); });
 		// NOTE: Global input bindings
 		{
 			const b8 noActiveID = (Gui::GetActiveID() == 0);

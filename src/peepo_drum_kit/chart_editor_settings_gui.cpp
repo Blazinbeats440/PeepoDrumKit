@@ -141,7 +141,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers,
 		};
 
 		struct SettingsEntry
@@ -311,6 +311,22 @@ namespace PeepoDrumKit
 						changesWereMade |= Gui::InputScalar("##NewBufferSize", ImGuiDataType_U32, &inOutI32->Value, PtrArg<u32>(8), PtrArg<u32>(64), "%u Frames (Request)");
 						if (changesWereMade)
 							inOutI32->Value = std::clamp(inOutI32->Value, 0, i32{ Audio::Engine.MaxBufferFrameCount });
+					}
+					else if (in.Widget == WidgetType::I32_GamePreviewMeasureNumbers)
+					{
+						const cstr displayModes[] = { UI_Str("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN"), UI_Str("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE"), UI_Str("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
+						if (Gui::BeginCombo("##", displayModes[inOutI32->Value]))
+						{
+							const i32 displayOrder[] = { 1, 0, 2 };
+							for (i32 mode : displayOrder)
+							{
+								const b8 isSelected = (mode == inOutI32->Value);
+								if (Gui::Selectable(displayModes[mode], isSelected)) { inOutI32->Value = mode; changesWereMade = true; }
+								if (isSelected) Gui::SetItemDefaultFocus();
+							}
+							Gui::EndCombo();
+						}
 					}
 					else if (in.Widget == WidgetType::I32_ScrollSpeedViewType)
 					{
@@ -926,7 +942,8 @@ namespace PeepoDrumKit
 						SettingsGui::SettingsEntry(
 							settings.General.GamePreviewShowMeasureNumbers,
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
-							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC")),
+							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
 
 						SettingsGui::SettingsEntry(
 							settings.General.GamePreviewShowJPOSPosition,

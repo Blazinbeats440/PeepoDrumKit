@@ -343,7 +343,7 @@ namespace PeepoDrumKit
 
 	struct ChartGamePreview
 	{
-		enum class VideoBackgroundFit { Stretch, Contain, Cover, Width, Height };
+		enum class VideoBackgroundFit { Stretch, Contain, ContainWithWidth, Width, Height };
 		enum class VideoLayout { Original, Taiko };
 		GameCamera Camera = {};
 		std::optional<Time> VideoExportTime;
@@ -351,8 +351,9 @@ namespace PeepoDrumKit
 		f32 VideoFadeInSeconds = 0.0f, VideoFadeOutSeconds = 0.0f, VideoFadeFrameSeconds = 0.0f;
 		u32 VideoExportResolutionWidth = 0;
 		u32 VideoBackgroundColor = 0xFF1F1F1F;
+		f32 VideoLaneBackgroundOpacity = 1.0f;
 		const CustomDraw::GPUTexture* VideoBackgroundTexture = nullptr;
-		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::Cover;
+		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::ContainWithWidth;
 		VideoLayout VideoExportLayout = VideoLayout::Original;
 		b8 VideoExportPixelAligned = false;
 		BranchType VideoExportBranch = BranchType::Normal;
@@ -367,9 +368,11 @@ namespace PeepoDrumKit
 		ImDrawList* VideoExportDrawList = nullptr;
 		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayNoteState> TestPlayNotes;
+		std::unordered_map<const Note*, size_t> TestPlayNoteIndices;
 		std::unordered_map<const Note*, ChartContext::TestPlayJudgementData> TestPlayAttemptJudgements;
 		struct TestPlayLongNoteState { Note* Source; Time StartTime; Time EndTime; i32 HitCount = 0; std::vector<Time> HitTimes; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayLongNoteState> TestPlayLongNotes;
+		std::unordered_map<const Note*, size_t> TestPlayLongNoteIndices;
 		std::optional<Time> TestPlayJumpTime;
 		ChartCourse* TestPlayCourse = nullptr;
 		BranchType TestPlayBranch = BranchType::Normal;

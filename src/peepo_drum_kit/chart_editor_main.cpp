@@ -239,6 +239,9 @@ namespace PeepoDrumKit
 			assert(!"Unreachable"); break;
 		}
 
+		if (!Settings.General.FolderDropSearchDepth.HasValue)
+			Settings_Mutable.IsDirty = true;
+
 		static std::unique_ptr<ImGuiApplication> app;
 		ApplicationHost::StartupParam startupParam = {};
 		ApplicationHost::UserCallbacks callbacks = {};

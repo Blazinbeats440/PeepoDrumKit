@@ -2,12 +2,78 @@
 #include "core_types.h"
 #include "core_undo.h"
 #include "chart.h"
+#include "chart_editor_context.h"
 
 namespace PeepoDrumKit
 {
 	// NOTE: General chart commands
 	namespace Commands
 	{
+		struct DeleteChartCourse : Undo::Command
+		{
+			DeleteChartCourse(ChartContext* context, size_t index)
+				: Context(context), Index(index), Course(context->Chart.Courses[index].get()), SelectedCourse(context->ChartSelectedCourse), SelectedBranch(context->ChartSelectedBranch), Compared(context->ChartsCompared)
+			{
+				if (context->Chart.Courses.size() == 1)
+				{
+					Replacement = std::make_unique<ChartCourse>();
+					Replacement->TempoMap = context->Chart.Courses[index]->TempoMap;
+					ReplacementCourse = Replacement.get();
+				}
+			}
+
+			void Undo() override
+			{
+				auto& courses = Context->Chart.Courses;
+				courses.insert(courses.begin() + std::min(Index, courses.size()), std::move(Removed));
+				Context->SetSelectedChart(SelectedCourse, SelectedBranch);
+				Context->ChartsCompared = Compared;
+				if (AddedReplacement)
+				{
+					const auto replacementIt = std::find_if(courses.begin(), courses.end(), [&](const auto& course) { return course.get() == ReplacementCourse; });
+					Replacement = std::move(*replacementIt);
+					Context->ChartsCompared.erase(ReplacementCourse);
+					courses.erase(replacementIt);
+				}
+			}
+
+			void Redo() override
+			{
+				auto& courses = Context->Chart.Courses;
+				const auto courseIt = std::find_if(courses.begin(), courses.end(), [&](const auto& course) { return course.get() == Course; });
+				Index = static_cast<size_t>(courseIt - courses.begin());
+				Removed = std::move(courses[Index]);
+				AddedReplacement = (courses.size() == 1);
+				if (AddedReplacement)
+				{
+					if (!Replacement)
+					{
+						Replacement = std::make_unique<ChartCourse>();
+						Replacement->TempoMap = Removed->TempoMap;
+						ReplacementCourse = Replacement.get();
+					}
+					courses.push_back(std::move(Replacement));
+				}
+				if (Context->ChartSelectedCourse == Removed.get())
+					Context->SetSelectedChart(courses[Index + 1 < courses.size() ? Index + 1 : Index - 1].get(), BranchType::Normal);
+				Context->ChartsCompared.erase(Removed.get());
+				courses.erase(courses.begin() + Index);
+			}
+
+			Undo::MergeResult TryMerge(Undo::Command&) override { return Undo::MergeResult::Failed; }
+			Undo::CommandInfo GetInfo() const override { return { "Delete Difficulty" }; }
+
+			ChartContext* Context;
+			size_t Index;
+			ChartCourse* Course;
+			ChartCourse* ReplacementCourse = nullptr;
+			ChartCourse* SelectedCourse;
+			BranchType SelectedBranch;
+			decltype(ChartContext::ChartsCompared) Compared;
+			std::unique_ptr<ChartCourse> Removed, Replacement;
+			b8 AddedReplacement = false;
+		};
+
 		struct ReplaceChartCourse : Undo::Command
 		{
 			ReplaceChartCourse(ChartCourse* course, ChartCourse newValue)
@@ -97,7 +163,8 @@ namespace PeepoDrumKit
 		template <typename TEvent>
 		static void RefreshChart(ChartCourse* Course, ChartCourseListType<TEvent>* Map)
 		{
-			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) { Map->RebuildAccelerationStructure(); Course->RecalculateNoteStates(); }
+			if constexpr (expect_type_v<TEvent, TempoChange>) Map->RebuildAccelerationStructure();
+			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) Course->RecalculateNoteStates();
 			else if constexpr (expect_type_v<TEvent, Note>) { Course->RecalculateNoteStates(); }
 		}
 

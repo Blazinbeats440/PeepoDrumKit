@@ -458,6 +458,7 @@ namespace PeepoDrumKit
 		Complex ScrollSpeed;
 		ScrollMethod ScrollType;
 		i32 BarIndex;
+		b8 IsVisible;
 	};
 
 	template <typename Func>
@@ -478,15 +479,14 @@ namespace PeepoDrumKit
 			if (!it.IsBar)
 				return ControlFlow::Continue;
 
-			if (!VisibleOrDefault(barLineChangeIt.Next(course.BarLineChanges.Sorted, it.Beat)))
-				return ControlFlow::Continue;
+			const b8 isVisible = VisibleOrDefault(barLineChangeIt.Next(course.BarLineChanges.Sorted, it.Beat));
 
 			const Time time = course.TempoMap.BeatToTime(it.Beat);
 			perBarFunc(ForEachBarLaneData { it.Beat, time,
 				TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, it.Beat)),
 				scrollTypeToView(ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, it.Beat))),
 				ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, it.Beat)),
-				it.BarIndex });
+				it.BarIndex, isVisible });
 
 			return ControlFlow::Continue;
 		});
@@ -513,24 +513,28 @@ namespace PeepoDrumKit
 			const Beat beat = note.BeatTime;
 			const Time head = (course.TempoMap.BeatToTime(beat) + note.TimeOffset);
 			const Beat beatTail = (note.BeatDuration > Beat::Zero()) ? (beat + note.BeatDuration) : beat;
-			const Time tail = (note.BeatDuration > Beat::Zero()) ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
+			const b8 hasDuration = (beatTail != beat);
+			const Time tail = hasDuration ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
 			const Complex scrollSpeed = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beat));
-			const Complex scrollSpeedTail = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beatTail));
+			const Tempo tempo = TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beat));
+			const ScrollMethod scrollType = ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beat));
+			const TJA::SuddenParams sudden = SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beat));
+			const Complex scrollSpeedTail = hasDuration ? ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beatTail)) : scrollSpeed;
 			perNoteFunc(ForEachNoteLaneData {
 				{
 					beat, head,
-					TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beat)),
+					tempo,
 					scrollSpeed, scrollSpeedToView(scrollSpeed),
-					ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beat)),
-					SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beat)),
+					scrollType,
+					sudden,
 				},
 				&note,
 				{
 					beatTail, tail,
-					TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beatTail)),
+					hasDuration ? TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beatTail)) : tempo,
 					scrollSpeedTail, scrollSpeedToView(scrollSpeedTail),
-					ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beatTail)),
-					SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beatTail)),
+					hasDuration ? ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beatTail)) : scrollType,
+					hasDuration ? SuddenOrDefault(SuddenChangeIt.Next(course.SuddenChanges.Sorted, beatTail)) : sudden,
 				},
 			});
 		}
@@ -817,7 +821,9 @@ namespace PeepoDrumKit
 		TestPlayRecordFilter = 0;
 		TestPlayRecordScope = 0;
 		TestPlayNotes.clear();
+		TestPlayNoteIndices.clear();
 		TestPlayLongNotes.clear();
+		TestPlayLongNoteIndices.clear();
 		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
 		for (Note& note : TestPlayCourse->GetNotes(branch))
 		{
@@ -836,6 +842,12 @@ namespace PeepoDrumKit
 					TestPlayLongNotes.push_back({ &note, startTime, endTime, 0, {}, branch });
 			}
 		}
+		TestPlayNoteIndices.reserve(TestPlayNotes.size());
+		for (size_t index = 0; index < TestPlayNotes.size(); index++)
+			TestPlayNoteIndices.emplace(TestPlayNotes[index].Source, index);
+		TestPlayLongNoteIndices.reserve(TestPlayLongNotes.size());
+		for (size_t index = 0; index < TestPlayLongNotes.size(); index++)
+			TestPlayLongNoteIndices.emplace(TestPlayLongNotes[index].Source, index);
 		TestPlayEndTime = Max(TestPlayEndTime, TestPlayStartTime);
 		TestPlayPreviousPlaybackSpeed = context.GetPlaybackSpeed();
 		TestPlayPlaybackSpeed = Clamp(*Settings.TestPlay.PlaybackSpeedPercent, 25, 100) / 100.0f;
@@ -951,8 +963,10 @@ namespace PeepoDrumKit
 		context.TestPlaySmoothCursor = context.TestPlayFollowCursor = false;
 		context.SetCursorTime(TestPlayStartTime);
 		TestPlayNotes.clear();
+		TestPlayNoteIndices.clear();
 		TestPlayAttemptJudgements.clear();
 		TestPlayLongNotes.clear();
+		TestPlayLongNoteIndices.clear();
 		TestPlayOrderedLevelHolds.clear();
 		TestPlayBranchCutoffs.clear();
 	}
@@ -1297,6 +1311,16 @@ namespace PeepoDrumKit
 		}
 
 		}
+		const auto findNoteState = [&](const Note* note) -> const TestPlayNoteState*
+		{
+			const auto found = TestPlayNoteIndices.find(note);
+			return found != TestPlayNoteIndices.end() ? &TestPlayNotes[found->second] : nullptr;
+		};
+		const auto findLongNoteState = [&](const Note* note) -> const TestPlayLongNoteState*
+		{
+			const auto found = TestPlayLongNoteIndices.find(note);
+			return found != TestPlayLongNoteIndices.end() ? &TestPlayLongNotes[found->second] : nullptr;
+		};
 		std::vector<std::pair<ChartCourse*, BranchType>> comparedLanes;
 		if (isVideoExport)
 			comparedLanes.emplace_back(context.ChartSelectedCourse, VideoExportBranch);
@@ -1315,9 +1339,14 @@ namespace PeepoDrumKit
 			const f32 commentFontSize = static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128));
 			const f32 wrapWidth = GameLaneStandardWidth - 40.0f - commentFontSize * 0.45f;
 			commentLaneHeight = 112.0f;
-			for (const auto& lane : comparedLanes)
-				for (const CommentChange& comment : lane.first->Comments)
+			for (size_t laneIndex = 0; laneIndex < comparedLanes.size(); laneIndex++)
+			{
+				const ChartCourse* course = comparedLanes[laneIndex].first;
+				if (std::any_of(comparedLanes.begin(), comparedLanes.begin() + laneIndex,
+					[course](const auto& lane) { return lane.first == course; })) continue;
+				for (const CommentChange& comment : course->Comments)
 					commentLaneHeight = std::max(commentLaneHeight, Gui::GetFont()->CalcTextSizeA(commentFontSize, F32Max, wrapWidth, comment.Text.c_str()).y + 24.0f);
+			}
 		}
 		const ImGuiID guiID = Gui::GetItemID();
 
@@ -1420,6 +1449,13 @@ namespace PeepoDrumKit
 				const vec2 viewportSize = viewport.GetSize();
 				if (imageSize.x > 0.0f && imageSize.y > 0.0f)
 				{
+					if (VideoBackgroundImageFit == VideoBackgroundFit::ContainWithWidth)
+					{
+						const vec2 backgroundSize = imageSize * (viewportSize.x / imageSize.x);
+						const vec2 backgroundTopLeft = viewport.TL + (viewportSize - backgroundSize) * 0.5f;
+						drawList->AddImage(VideoBackgroundTexture->GetTexID(), backgroundTopLeft, backgroundTopLeft + backgroundSize,
+							vec2(0.0f), vec2(1.0f), Gui::ColorConvertFloat4ToU32(ImVec4(0.35f, 0.35f, 0.35f, 1.0f)));
+					}
 					vec2 drawnSize = viewportSize;
 					if (VideoBackgroundImageFit != VideoBackgroundFit::Stretch)
 					{
@@ -1427,8 +1463,7 @@ namespace PeepoDrumKit
 						const f32 heightScale = viewportSize.y / imageSize.y;
 						const f32 scale = VideoBackgroundImageFit == VideoBackgroundFit::Width ? widthScale
 							: VideoBackgroundImageFit == VideoBackgroundFit::Height ? heightScale
-							: VideoBackgroundImageFit == VideoBackgroundFit::Contain ? std::min(widthScale, heightScale)
-							: std::max(widthScale, heightScale);
+							: std::min(widthScale, heightScale);
 						drawnSize = imageSize * scale;
 					}
 					const vec2 drawnTopLeft = viewport.TL + (viewportSize - drawnSize) * 0.5f;
@@ -1572,24 +1607,29 @@ namespace PeepoDrumKit
 			}
 
 			auto laneBorderColor = isFocusedLane ? GameLaneBorderFocusedColor : GameLaneBorderColor;
+			const f32 laneBackgroundOpacity = isVideoExport ? VideoLaneBackgroundOpacity : 1.0f;
 
 			Rect stdLaneRectBR = { Camera.LaneRect.TL, vec2{ Camera.LaneRect.TL.x + GameLaneStandardWidth, Camera.LaneRect.BR.y } };
 			Rect stdLaneLeftRect = { Camera.WorldToScreenSpace(stdLaneRectBR.GetTL() - vec2(GameLanePaddingL, 0.0f)), Camera.WorldToScreenSpace(stdLaneRectBR.GetBL()) };
 			// NOTE: Lane background and borders
 			drawList->ChannelsSetCurrent(0);
 			{
-				drawList->AddRectFilled( // NOTE: Top, middle and bottom border, truncated at standard lane width
+				drawList->AddRectFilled( // NOTE: Top border, truncated at standard lane width
 					Camera.WorldToScreenSpace(stdLaneRectBR.TL),
-					Camera.WorldToScreenSpace(stdLaneRectBR.BR),
+					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.BR.x, stdLaneRectBR.TL.y + GameLaneSlice.TopBorder)),
 					laneBorderColor);
+				drawList->AddRectFilled( // NOTE: Bottom border
+					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.TL.x, stdLaneRectBR.TL.y + GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
+					Camera.WorldToScreenSpace(stdLaneRectBR.BR), laneBorderColor);
 				drawList->AddRectFilled( // NOTE: Keep middle border color unfocused and untruncated
 					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + GameLaneSlice.Content)),
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
+					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder)),
 					GameLaneBorderColor);
+					if (!branchSliding)
 					drawList->AddRectFilled( // NOTE: Content
 						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
 						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
-						GameLaneContentBackgroundColor);
+						Gui::ColorU32WithAlpha(GameLaneContentBackgroundColor, laneBackgroundOpacity));
 					const BranchType laneBranch = autoBranchLane ? visualBranch : branch;
 					if (branchSliding)
 					{
@@ -1601,10 +1641,10 @@ namespace PeepoDrumKit
 							const f32 offset = (branchSlidePosition - static_cast<f32>(EnumToIndex(layer))) * GameLaneSlice.Content;
 							const vec2 top = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + offset));
 							const vec2 bottom = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + offset));
-							drawList->AddRectFilled(top, bottom, GameLaneContentBackgroundColor);
+							drawList->AddRectFilled(top, bottom, Gui::ColorU32WithAlpha(GameLaneContentBackgroundColor, laneBackgroundOpacity));
 							const u32 color = layer == BranchType::Expert ? *Settings.Appearance.PreviewBranchExpertLaneBackgroundColor
 								: layer == BranchType::Master ? *Settings.Appearance.PreviewBranchMasterLaneBackgroundColor : 0;
-							if (color != 0) drawList->AddRectFilled(top, bottom, color);
+							if (color != 0) drawList->AddRectFilled(top, bottom, Gui::ColorU32WithAlpha(color, laneBackgroundOpacity));
 						}
 						drawList->PopClipRect();
 					}
@@ -1616,19 +1656,19 @@ namespace PeepoDrumKit
 							drawList->AddRectFilled(
 								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
 								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
-								color);
+								Gui::ColorU32WithAlpha(color, laneBackgroundOpacity));
 					}
 					if (gogoLaneAlpha > 0) {
 					f32 worldHeightZoomOffset = GameLaneSlice.Content / 2 * (1 - gogoLaneZoom);
 					drawList->AddRectFilled( // NOTE: Gogo layer
 						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + worldHeightZoomOffset)),
 						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content - worldHeightZoomOffset)),
-						Gui::ColorU32WithAlpha(GameLaneContentBackgroundColorGogo, gogoLaneAlpha));
+						Gui::ColorU32WithAlpha(GameLaneContentBackgroundColorGogo, gogoLaneAlpha * laneBackgroundOpacity));
 				}
 				drawList->AddRectFilled( // NOTE: Footer
 					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder)),
 					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
-					GameLaneFooterBackgroundColor);
+					Gui::ColorU32WithAlpha(GameLaneFooterBackgroundColor, laneBackgroundOpacity));
 			}
 
 			// click lane to select course
@@ -1787,6 +1827,8 @@ namespace PeepoDrumKit
 			}
 			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](const ForEachBarLaneData& it)
 			{
+				const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
+				if (!it.IsVisible && measureNumberDisplay != 2) return;
 				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
 				const f32 laneX = lane.x, laneY = lane.y;
 
@@ -1800,9 +1842,10 @@ namespace PeepoDrumKit
 						return branchRange.GetStart() == it.Beat;
 					});
 					const u32 barLineColor = isBranchStart ? GameLaneBranchStartBarLineColor : GameLaneBarLineColor;
-					drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), barLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
+					if (it.IsVisible)
+						drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), barLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
 
-					if (*Settings.General.GamePreviewShowMeasureNumbers)
+					if (measureNumberDisplay != 0)
 					{
 						char barLineStr[32];
 						DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(tl + vec2(5.0f, 1.0f), vec2(0.5f)),
@@ -1835,6 +1878,8 @@ namespace PeepoDrumKit
 			std::vector<Rect> testPlayLabelBounds;
 			auto drawTestPlayNote = [&](const ForEachNoteLaneData& it, BranchType noteBranch)
 			{
+			if (!IsTestPlaying && IsRegularNote(it.OriginalNote->Type) &&
+				TimeSinceNoteHit(it.Time, cursorTimeOrAnimated) > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type)) return;
 				const b8 slidingNote = branchSliding && transitionIndex < course->Branches.size()
 					&& it.Beat >= course->Branches[transitionIndex].GetStart()
 					&& it.Beat < GetBranchRangeEnd(course->Branches, course->Branches[transitionIndex]);
@@ -1892,10 +1937,10 @@ namespace PeepoDrumKit
 					}
 				}
 
-				Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
-				if (IsTestPlaying)
-					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end())
-						timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
+			Time timeSinceHeadHit = TimeSinceNoteHit(it.Time, cursorTimeOrAnimated);
+			if (IsTestPlaying)
+				if (const TestPlayNoteState* state = findNoteState(it.OriginalNote))
+					timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
 				const Time timeSinceTailHit = TimeSinceNoteHit(it.Tail.Time, cursorTimeOrAnimated);
 
 				// sudden move
@@ -1970,9 +2015,9 @@ namespace PeepoDrumKit
 					}
 					if (timeSinceHeadHit > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type))
 						isVisible = isVisibleHead = isVisibleTail = false;
-					if (IsTestPlaying)
-						if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; }); state != TestPlayNotes.end() && state->Judgement == 3)
-							isVisible = isVisibleHead = isVisibleTail = false;
+				if (IsTestPlaying)
+					if (const TestPlayNoteState* state = findNoteState(it.OriginalNote); state && state->Judgement == 3)
+						isVisible = isVisibleHead = isVisibleTail = false;
 				}
 				else {
 					if (TJA::GetSuddenActiveState(it.Sudden).HideRollActive)
@@ -1985,9 +2030,9 @@ namespace PeepoDrumKit
 						laneHead = laneTail;
 					}
 
-					if (IsBalloonNote(it.OriginalNote->Type)) {
-						const auto balloonState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it.OriginalNote; });
-						if (timeSinceTailHit >= Time::Zero() || (IsTestPlaying && balloonState != TestPlayLongNotes.end() && balloonState->HitCount >= it.OriginalNote->BalloonPopCount)) {
+				if (IsBalloonNote(it.OriginalNote->Type)) {
+					const TestPlayLongNoteState* balloonState = IsTestPlaying ? findLongNoteState(it.OriginalNote) : nullptr;
+					if (timeSinceTailHit >= Time::Zero() || (balloonState && balloonState->HitCount >= it.OriginalNote->BalloonPopCount)) {
 							laneHead = laneTail;
 							isVisible = isVisibleHead = isVisibleTail = isVisibleBody = false;
 						}
@@ -2036,9 +2081,9 @@ namespace PeepoDrumKit
 				defer { if (it->BranchSliding) drawList->PopClipRect(); };
 				Time timeSinceHit = TimeSinceNoteHit(it->Time, cursorTimeOrAnimated);
 				if (IsTestPlaying)
-					if (auto state = std::find_if(TestPlayNotes.begin(), TestPlayNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; }); state != TestPlayNotes.end())
+					if (const TestPlayNoteState* state = findNoteState(it->OriginalNote))
 						timeSinceHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
-				const auto longState = std::find_if(TestPlayLongNotes.begin(), TestPlayLongNotes.end(), [&](const auto& note) { return note.Source == it->OriginalNote; });
+				const TestPlayLongNoteState* longState = IsTestPlaying ? findLongNoteState(it->OriginalNote) : nullptr;
 				vec2 laneHeadDisplay = it->LaneHead;
 				vec2 laneTailDisplay = it->LaneTail;
 
@@ -2053,7 +2098,7 @@ namespace PeepoDrumKit
 					if (IsBalloonNote(it->OriginalNote->Type))
 					{
 						if (videoRoute && it->OriginalNote->BalloonPopCount > 0 && videoHitCount >= it->OriginalNote->BalloonPopCount) continue;
-						if (IsTestPlaying && longState != TestPlayLongNotes.end() && longState->HitCount >= it->OriginalNote->BalloonPopCount)
+						if (longState && longState->HitCount >= it->OriginalNote->BalloonPopCount)
 							continue;
 						b8 afterHit = (timeSinceHit >= Time::Zero());
 						vec2 headPos = afterHit ? hitCirclePosLane + vec2(0.0f, it->BranchSlideYOffset) : it->LaneHead; // head might be detached
@@ -2068,7 +2113,7 @@ namespace PeepoDrumKit
 							drawList->ChannelsSetCurrent(4);
 							DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromCenter(Camera.LaneToWorldSpace(headPos.x, headPos.y)),
 								std::to_string(videoRoute ? std::max(0, it->OriginalNote->BalloonPopCount - videoHitCount)
-									: IsTestPlaying && longState != TestPlayLongNotes.end() ? std::max(0, it->OriginalNote->BalloonPopCount - longState->HitCount) : it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
+									: longState ? std::max(0, it->OriginalNote->BalloonPopCount - longState->HitCount) : it->OriginalNote->BalloonPopCount).c_str(), 0xFFFFFFFF);
 							balloonPopCountDrawn = true;
 							drawList->ChannelsSetCurrent(3);
 						}
@@ -2083,7 +2128,7 @@ namespace PeepoDrumKit
 						{
 							if (videoRoute) drumrollHitsSoFar = videoHitCount;
 							else if (IsTestPlaying)
-								drumrollHitsSoFar = longState != TestPlayLongNotes.end() ? longState->HitCount : 0;
+								drumrollHitsSoFar = longState ? longState->HitCount : 0;
 							else for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
 							{
 								const Time subHitTime = it->Time + (drumrollHitInterval * iHit);

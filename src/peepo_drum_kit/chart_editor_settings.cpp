@@ -323,6 +323,7 @@ namespace PeepoDrumKit
 				else if (it.Key == "background_source") { if (!ASCII::TryParse(in, settings.BackgroundSource)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "background_image_fit") { if (!ASCII::TryParse(in, settings.BackgroundImageFit)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "background_color") { if (!ASCII::TryParse(in, settings.BackgroundColor)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "lane_background_transparency") { if (!ASCII::TryParse(in, settings.LaneBackgroundTransparency)) return parser.Error_InvalidFloat(); }
 				else if (it.Key == "background_image_path") { settings.BackgroundImagePath = in; }
 				else if (it.Key == "song_volume") { if (!ASCII::TryParse(in, settings.SongVolume)) return parser.Error_InvalidFloat(); }
 				else if (it.Key == "drum_volume") { if (!ASCII::TryParse(in, settings.DrumVolume)) return parser.Error_InvalidFloat(); }
@@ -400,6 +401,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_I32("background_source", video.BackgroundSource);
 		writer.LineKeyValue_I32("background_image_fit", video.BackgroundImageFit);
 		writer.LineKeyValue_Str("background_color", std::to_string(video.BackgroundColor));
+		writer.LineKeyValue_F32("lane_background_transparency", video.LaneBackgroundTransparency);
 		writer.LineKeyValue_Str("background_image_path", video.BackgroundImagePath);
 		writer.LineKeyValue_F32("song_volume", video.SongVolume);
 		writer.LineKeyValue_F32("drum_volume", video.DrumVolume);
@@ -449,7 +451,13 @@ namespace PeepoDrumKit
 				const auto& member = AppSettingsReflectionMap.MemberSlots[i];
 				if (parser.CurrentSection == member.SerializedSection && it.Key == member.SerializedName)
 				{
-					const IniMemberParseResult memberParseResult = member.FromStringFunc(it.Value, { reinterpret_cast<u8*>(&out) + member.ByteOffsetValue, member.ByteSizeValue });
+					std::string_view value = it.Value;
+					if (it.Key == "game_preview_show_measure_numbers")
+					{
+						if (value == "true") value = "1";
+						else if (value == "false") value = "0";
+					}
+					const IniMemberParseResult memberParseResult = member.FromStringFunc(value, { reinterpret_cast<u8*>(&out) + member.ByteOffsetValue, member.ByteSizeValue });
 					if (!memberParseResult.HasError)
 						*(reinterpret_cast<b8*>(reinterpret_cast<u8*>(&out) + member.ByteOffsetHasValueB8)) = true;
 					else
@@ -527,7 +535,7 @@ namespace PeepoDrumKit
 			const auto& member = AppSettingsReflectionMap.MemberSlots[i];
 			if (member.SerializedSection != lastSection) { writer.Line(); writer.LineSection(member.SerializedSection); lastSection = member.SerializedSection; }
 
-			if (!*(reinterpret_cast<const b8*>(reinterpret_cast<const u8*>(&in) + member.ByteOffsetHasValueB8)))
+			if (!*(reinterpret_cast<const b8*>(reinterpret_cast<const u8*>(&in) + member.ByteOffsetHasValueB8)) && std::string_view(member.SerializedName) != "folder_drop_search_depth")
 			{
 				writer.Comment();
 				member.ToStringFunc({ const_cast<u8*>(reinterpret_cast<const u8*>(&in)) + member.ByteOffsetDefault, member.ByteSizeValue }, strBuffer);
@@ -571,6 +579,7 @@ namespace PeepoDrumKit
 			X(General.VSyncOffFPSLimit, "vsync_off_fps_limit");
 			X(General.DefaultCreatorName, "default_creator_name");
 			X(General.TJAFileSaveFormat, "tja_file_save_format");
+			X(General.FolderDropSearchDepth, "folder_drop_search_depth");
 			X(General.WarnTaikojiroIncompatibleCharts, "warn_taikojiro_incompatible_charts");
 			X(General.IncludePeepoDrumKitComment, "include_peepo_drum_kit_comment");
 			X(General.DrumrollPreviewRollsPerSecond, "drumroll_preview_rolls_per_second");

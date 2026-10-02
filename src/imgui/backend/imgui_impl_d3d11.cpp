@@ -129,6 +129,7 @@ static void ImGui_ImplDX11_ShutdownMultiViewportSupport();
 namespace CustomDraw
 {
 	static void DX11RenderInit(ImGui_ImplDX11_Data* bd);
+	static void DX11NewFrame();
 	static void DX11BeginRenderDrawData(ImDrawData* drawData);
 	static void DX11EndRenderDrawData(ImDrawData* drawData);
 	static void DX11ReleaseDeferedResources(ImGui_ImplDX11_Data* bd);
@@ -742,6 +743,7 @@ void ImGui_ImplDX11_Shutdown()
 
 void ImGui_ImplDX11_NewFrame()
 {
+    CustomDraw::DX11NewFrame();
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
     IM_ASSERT(bd != nullptr && "Context or backend not initialized! Did you call ImGui_ImplDX11_Init()?");
 
@@ -1033,6 +1035,11 @@ namespace CustomDraw
 	static ImDrawData* ThisFrameImDrawData = nullptr;
 	static std::vector<DX11CustomDrawCommand> CustomDrawCommandsThisFrame;
 
+	static void DX11NewFrame()
+	{
+		CustomDrawCommandsThisFrame.clear();
+	}
+
 	static void DX11RenderInit(ImGui_ImplDX11_Data* bd)
 	{
 		CustomDrawCommandsThisFrame.reserve(64);
@@ -1049,7 +1056,6 @@ namespace CustomDraw
 	{
 		assert(drawData == ThisFrameImDrawData);
 		ThisFrameImDrawData = nullptr;
-		CustomDrawCommandsThisFrame.clear();
 	}
 
 	static void DX11ReleaseDeferedResources(ImGui_ImplDX11_Data* bd)
@@ -1068,7 +1074,10 @@ namespace CustomDraw
 		ImDrawCallback callback = [](const ImDrawList* parentList, const ImDrawCmd* cmd)
 		{
 			static_assert(sizeof(WAVEFORM_CONSTANT_BUFFER::Amplitudes) == sizeof(WaveformChunk::PerPixelAmplitude));
-			const DX11CustomDrawCommand& customCommand = CustomDrawCommandsThisFrame[reinterpret_cast<size_t>(cmd->UserCallbackData)];
+			const size_t commandIndex = reinterpret_cast<size_t>(cmd->UserCallbackData);
+			if (commandIndex >= CustomDrawCommandsThisFrame.size())
+				return;
+			const DX11CustomDrawCommand& customCommand = CustomDrawCommandsThisFrame[commandIndex];
 
 			ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
 			ID3D11DeviceContext* ctx = bd->pd3dDeviceContext;

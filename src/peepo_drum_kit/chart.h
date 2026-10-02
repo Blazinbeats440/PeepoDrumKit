@@ -313,7 +313,7 @@ namespace PeepoDrumKit
 	constexpr ScrollChange FallbackEvent<ScrollChange> = {Beat::Zero(), Complex(1.0f, 0.0f)};
 
 	enum class EScrollSpeedViewType { TJAP3, Jiro2, Disabled, Count };
-	constexpr cstr strScrollSpeedViewType[] = { u8"TJAP3 (i is up)", u8"Jiro2 (i is down)", u8"Disabled" };
+	constexpr cstr strScrollSpeedViewType[] = { u8"TJAP3 (i is up)", u8"Jiro2 / Nauts (i is down)", u8"Disabled" };
 	static const std::function<Complex(Complex)> scrollSpeedToViews[] = {
 		[](Complex cpx) { return cpx; },
 		[](Complex cpx) { return Complex{cpx.GetRealPart(), -cpx.GetImaginaryPart()}; },
