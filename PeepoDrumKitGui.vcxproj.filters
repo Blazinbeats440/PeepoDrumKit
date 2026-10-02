@@ -60,6 +60,9 @@
     <ClCompile Include="src\peepo_drum_kit\chart_editor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_file_drop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\audio\audio_file_formats.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -186,6 +189,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_file_drop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart.h">

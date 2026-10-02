@@ -343,7 +343,7 @@ namespace PeepoDrumKit
 
 	struct ChartGamePreview
 	{
-		enum class VideoBackgroundFit { Stretch, Contain, Cover, Width, Height };
+		enum class VideoBackgroundFit { Stretch, Contain, ContainWithWidth, Width, Height };
 		enum class VideoLayout { Original, Taiko };
 		GameCamera Camera = {};
 		std::optional<Time> VideoExportTime;
@@ -351,8 +351,9 @@ namespace PeepoDrumKit
 		f32 VideoFadeInSeconds = 0.0f, VideoFadeOutSeconds = 0.0f, VideoFadeFrameSeconds = 0.0f;
 		u32 VideoExportResolutionWidth = 0;
 		u32 VideoBackgroundColor = 0xFF1F1F1F;
+		f32 VideoLaneBackgroundOpacity = 1.0f;
 		const CustomDraw::GPUTexture* VideoBackgroundTexture = nullptr;
-		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::Cover;
+		VideoBackgroundFit VideoBackgroundImageFit = VideoBackgroundFit::ContainWithWidth;
 		VideoLayout VideoExportLayout = VideoLayout::Original;
 		b8 VideoExportPixelAligned = false;
 		BranchType VideoExportBranch = BranchType::Normal;

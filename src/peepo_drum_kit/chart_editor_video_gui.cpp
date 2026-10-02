@@ -296,6 +296,7 @@ namespace PeepoDrumKit
 		preview.VideoTitleColor = exportData.TitleColor;
 		preview.VideoTitleBandColor = exportData.TitleBandColor;
 		preview.VideoBackgroundColor = Gui::ColorU32WithNewAlpha(exportData.BackgroundColor, 1.0f);
+		preview.VideoLaneBackgroundOpacity = 1.0f - exportData.LaneBackgroundTransparency / 100.0f;
 		preview.VideoBackgroundTexture = exportData.BackgroundSource == 1 ? &exportData.DefaultBackgroundTexture
 			: exportData.BackgroundSource == 2 ? &exportData.CustomBackgroundTexture
 			: exportData.BackgroundSource == 3 ? &context.JacketTexture : nullptr;
@@ -404,29 +405,34 @@ namespace PeepoDrumKit
 				exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
 			}
 		}
-		Gui::ColorEdit3_U32(UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), &exportData.BackgroundColor);
-		if (Gui::Button(UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE")))
+		if (exportData.BackgroundSource == 2)
 		{
-			Shell::FileDialog fileDialog {};
-			fileDialog.InTitle = UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE");
-			fileDialog.InFilters = { { "Image Files", "*.jpg;*.jpeg;*.png" } };
-			fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
-			if (fileDialog.OpenRead() == Shell::FileDialogResult::OK)
+			if (Gui::Button(UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE")))
 			{
-				CustomDraw::GPUTexture texture = {};
-				if (LoadVideoBackgroundImage(fileDialog.OutFilePath, texture))
+				Shell::FileDialog fileDialog {};
+				fileDialog.InTitle = UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE");
+				fileDialog.InFilters = { { "Image Files", "*.jpg;*.jpeg;*.png" } };
+				fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+				if (fileDialog.OpenRead() == Shell::FileDialogResult::OK)
 				{
-					exportData.CustomBackgroundTexture = std::move(texture);
-					exportData.BackgroundImagePath = fileDialog.OutFilePath;
-					exportData.BackgroundSource = 2;
-					exportData.Status.clear();
+					CustomDraw::GPUTexture texture = {};
+					if (LoadVideoBackgroundImage(fileDialog.OutFilePath, texture))
+					{
+						exportData.CustomBackgroundTexture = std::move(texture);
+						exportData.BackgroundImagePath = fileDialog.OutFilePath;
+						exportData.BackgroundSource = 2;
+						exportData.Status.clear();
+					}
+					else exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
 				}
-				else exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
 			}
+			if (!exportData.BackgroundImagePath.empty()) Gui::TextWrapped("%s", exportData.BackgroundImagePath.c_str());
 		}
-		if (!exportData.BackgroundImagePath.empty()) Gui::TextWrapped("%s", exportData.BackgroundImagePath.c_str());
+		Gui::ColorEdit3_U32(UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), &exportData.BackgroundColor);
+		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY"), &exportData.LaneBackgroundTransparency,
+			0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
 		const char* backgroundFitNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_STRETCH"), UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN"),
-			UI_Str("VIDEO_EXPORT_BACKGROUND_COVER"), UI_Str("VIDEO_EXPORT_BACKGROUND_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_HEIGHT") };
+			UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_HEIGHT") };
 		i32 backgroundFitIndex = static_cast<i32>(exportData.BackgroundImageFit);
 		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND_FIT"), &backgroundFitIndex, backgroundFitNames, ArrayCountI32(backgroundFitNames)))
 			exportData.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(backgroundFitIndex);

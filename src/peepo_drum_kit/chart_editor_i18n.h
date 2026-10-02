@@ -64,6 +64,16 @@ X("TEXT_EDITOR_ERROR_BODY_ONLY",				"The text must contain only one #START to #E
 X("TEMPLATE_SAVE_SECTION",						"Save") \
 X("TEMPLATE_RECALL_SECTION",					"Recall") \
 X("TEMPLATE_CATEGORY",							"Category") \
+X("FOLDER_DROP_TITLE", "Open Chart from Folder or ZIP") \
+X("FOLDER_DROP_SELECT_CHART", "Select a TJA file to open.") \
+X("FOLDER_DROP_NO_CHARTS", "No TJA files were found within the configured search depth.") \
+X("FOLDER_DROP_READ_FAILED", "The folder could not be read.") \
+X("FOLDER_DROP_LOADING", "Searching for charts / extracting ZIP...") \
+X("ZIP_DROP_INVALID", "The ZIP file is damaged or invalid.") \
+X("ZIP_DROP_UNSUPPORTED", "Encrypted, ZIP64, split archives, and compression methods other than Store/Deflate are not supported.") \
+X("ZIP_DROP_UNSAFE_PATH", "The ZIP contains an unsafe file path or unsupported link.") \
+X("ZIP_DROP_SIZE_LIMIT", "ZIP size limit exceeded (archive: 1 GiB, each file: 256 MiB, total extracted: 2 GiB).") \
+X("ZIP_DROP_EXTRACTION_FAILED", "ZIP extraction failed. Check write access and free space. Files already extracted are kept.") \
 X("TEMPLATE_CATEGORY_HINT",					"Enter a category") \
 X("TEMPLATE_NO_CATEGORY",					"No category") \
 X("TEMPLATE_REGISTER_CATEGORY",				"Register category") \
@@ -283,7 +293,10 @@ X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing t
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
-X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Display measure numbers at the bar lines in the game preview window.") \
+X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are displayed in the game preview. Hidden bar lines can show numbers while the lines remain hidden.") \
+X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
+X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
+X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC", "Display the current JPOS coordinates beside the hit circle in the game preview and exported video.") \
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES", "Game Preview: Comment hold measures") \
@@ -378,6 +391,7 @@ X("ACT_EDIT_CUT",									"Cut") \
 X("ACT_EDIT_PASTE",									"Paste") \
 /* file menu */ \
 X("ACT_FILE_OPEN_RECENT",							"Open Recent") \
+X("ACT_FILE_REOPEN_FOLDER", "Reopen Folder") \
 X("ACT_FILE_EXIT",									"Exit") \
 X("ACT_FILE_NEW_CHART",								"New Chart") \
 X("ACT_FILE_OPEN",									"Open...") \
@@ -411,6 +425,7 @@ X("VIDEO_EXPORT_RESOLUTION", "Resolution") \
 X("VIDEO_EXPORT_FPS", "Frame rate") \
 X("VIDEO_EXPORT_BACKGROUND", "Background") \
 X("VIDEO_EXPORT_BACKGROUND_COLOR", "Background color") \
+X("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY", "Lane background transparency") \
 X("VIDEO_EXPORT_BACKGROUND_ASSET", "assets/background.png") \
 X("VIDEO_EXPORT_BACKGROUND_CUSTOM", "Selected image") \
 X("VIDEO_EXPORT_BACKGROUND_JACKET", "Chart jacket") \
@@ -418,7 +433,7 @@ X("VIDEO_EXPORT_BACKGROUND_CHOOSE", "Choose image...") \
 X("VIDEO_EXPORT_BACKGROUND_FIT", "Image fit") \
 X("VIDEO_EXPORT_BACKGROUND_STRETCH", "Stretch") \
 X("VIDEO_EXPORT_BACKGROUND_CONTAIN", "Fit entire image") \
-X("VIDEO_EXPORT_BACKGROUND_COVER", "Fill and crop") \
+X("VIDEO_EXPORT_BACKGROUND_CONTAIN_WIDTH", "Fit entire image + cropped fit width") \
 X("VIDEO_EXPORT_BACKGROUND_WIDTH", "Fit width") \
 X("VIDEO_EXPORT_BACKGROUND_HEIGHT", "Fit height") \
 X("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED", "Could not load the background image.") \
@@ -555,6 +570,9 @@ X("ACT_COURSES_COMPARE_ACROSS_BRANCHES",			"Across Branches") \
 X("ACT_COURSES_COMPARE_MODE",						"Comparison Mode") \
 X("ACT_COURSES_COMPARE_THIS",						"Compare This") \
 X("ACT_COURSES_EDIT",								"Edit...") \
+X("ACT_COURSES_DELETE", "Delete") \
+X("COURSE_DELETE_TITLE", "Delete Difficulty") \
+X("COURSE_DELETE_PROMPT", "Delete this difficulty? Click Delete again to confirm.") \
 X("INFO_COURSES_REORDER",							"Drag tabs to reorder") \
 /* audio menu */ \
 X("ACT_AUDIO_OPEN_DEVICE",							"Open Audio Device") \

@@ -94,6 +94,7 @@ namespace PeepoDrumKit
 			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
 			f32 LeadInSeconds = 1.0f, TailSeconds = 2.0f;
 			f32 ExcerptSeconds = 15.0f;
+			f32 LaneBackgroundTransparency = 0.0f;
 			b8 AudioFade = true;
 			i32 Branch = -1;
 			b8 ShowTitle = true, ShowSubtitle = false, ShowDifficulty = true, ShowMaxCombo = true, ShowCurrentCombo = true;
@@ -147,6 +148,7 @@ namespace PeepoDrumKit
 			WithDefault<i32> VSyncOffFPSLimit = 0;
 			WithDefault<std::string> DefaultCreatorName = {};
 			WithDefault<i32> TJAFileSaveFormat = 0;
+			WithDefault<i32> FolderDropSearchDepth = 2;
 			WithDefault<b8> WarnTaikojiroIncompatibleCharts = false;
 			WithDefault<b8> IncludePeepoDrumKitComment = true;
 			WithDefault<f32> DrumrollPreviewRollsPerSecond = 8.0f;
@@ -158,7 +160,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
-			WithDefault<b8> GamePreviewShowMeasureNumbers = true;
+			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
 			WithDefault<i32> GamePreviewCommentFontSize = 28;
 			WithDefault<i32> GamePreviewCommentHoldMeasures = 0;

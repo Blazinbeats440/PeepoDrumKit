@@ -96,10 +96,12 @@ namespace ApplicationHost
 	static HANDLE					GlobalSwapChainWaitableObject = NULL;
 	static ImGuiStyle				GlobalOriginalScaleStyle = {};
 	static b8						GlobalD3D11DeviceRecoveryRequested = false;
+	static b8 GlobalD3D11DeviceRecoveryInProgress = false;
+	static b8 GlobalFrameInProgress = false;
 
 	static b8 CreateGlobalD3D11(const StartupParam& startupParam, HWND hWnd);
 	static void CleanupGlobalD3D11();
-	static void CreateGlobalD3D11SwapchainRenderTarget();
+	static b8 CreateGlobalD3D11SwapchainRenderTarget();
 	static void CleanupGlobalD3D11SwapchainRenderTarget();
 	static b8 RecoverGlobalD3D11(const StartupParam& startupParam, HWND hWnd);
 
@@ -504,6 +506,11 @@ namespace ApplicationHost
 
 	static void ImGuiAndUserUpdateThenRenderAndPresentFrame()
 	{
+		if (GlobalFrameInProgress || GlobalD3D11DeviceRecoveryRequested || GlobalD3D11DeviceRecoveryInProgress ||
+			GlobalMainRenderTargetView == nullptr || ImGui::GetIO().BackendRendererUserData == nullptr)
+			return;
+		GlobalFrameInProgress = true;
+		defer { GlobalFrameInProgress = false; };
 		static std::chrono::steady_clock::time_point nextFrameTime = {};
 		if (GlobalState.SwapInterval == 0 && GlobalState.VSyncOffFPSLimit > 0)
 		{
@@ -982,8 +989,7 @@ namespace ApplicationHost
 		}
 
 		GlobalSwapChainCreationDesc = sd;
-		CreateGlobalD3D11SwapchainRenderTarget();
-		return true;
+		return CreateGlobalD3D11SwapchainRenderTarget();
 	}
 
 	static void CleanupGlobalD3D11()
@@ -998,6 +1004,8 @@ namespace ApplicationHost
 	static b8 RecoverGlobalD3D11(const StartupParam& startupParam, HWND hWnd)
 	{
 		Log::Write("D3D11 device recovery begin");
+		GlobalD3D11DeviceRecoveryInProgress = true;
+		defer { GlobalD3D11DeviceRecoveryInProgress = false; };
 		CustomDraw::InvalidateDeviceObjects();
 		ImGui_ImplDX11_Shutdown();
 		ImGui_ImplWin32_Shutdown();
@@ -1013,12 +1021,20 @@ namespace ApplicationHost
 		return true;
 	}
 
-	static void CreateGlobalD3D11SwapchainRenderTarget()
+	static b8 CreateGlobalD3D11SwapchainRenderTarget()
 	{
-		ID3D11Texture2D* pBackBuffer;
-		GlobalSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-		GlobalD3D11Device->CreateRenderTargetView(pBackBuffer, nullptr, &GlobalMainRenderTargetView);
+		ID3D11Texture2D* pBackBuffer = nullptr;
+		HRESULT result = GlobalSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+		if (FAILED(result))
+		{
+			Log::WriteHRESULT("IDXGISwapChain::GetBuffer", result);
+			return false;
+		}
+		result = GlobalD3D11Device->CreateRenderTargetView(pBackBuffer, nullptr, &GlobalMainRenderTargetView);
 		pBackBuffer->Release();
+		if (FAILED(result))
+			Log::WriteHRESULT("ID3D11Device::CreateRenderTargetView", result);
+		return SUCCEEDED(result);
 	}
 
 	static void CleanupGlobalD3D11SwapchainRenderTarget()
@@ -1064,14 +1080,22 @@ namespace ApplicationHost
 
 		case WM_SIZE:
 			GlobalIsWindowMinimized = (wParam == SIZE_MINIMIZED);
-			if (GlobalD3D11Device != nullptr && wParam != SIZE_MINIMIZED)
+			if (GlobalD3D11Device != nullptr && wParam != SIZE_MINIMIZED &&
+				!GlobalD3D11DeviceRecoveryRequested && !GlobalD3D11DeviceRecoveryInProgress && !GlobalFrameInProgress)
 			{
 				GlobalState.WindowSize = ivec2(static_cast<i32>(LOWORD(lParam)), static_cast<i32>(HIWORD(lParam)));
 
 				CleanupGlobalD3D11SwapchainRenderTarget();
 
-				GlobalSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, GlobalSwapChainCreationDesc.Flags);
-				CreateGlobalD3D11SwapchainRenderTarget();
+				const HRESULT resizeResult = GlobalSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, GlobalSwapChainCreationDesc.Flags);
+				if (FAILED(resizeResult))
+					Log::WriteHRESULT("IDXGISwapChain::ResizeBuffers", resizeResult);
+				if (resizeResult == DXGI_ERROR_DEVICE_REMOVED || resizeResult == DXGI_ERROR_DEVICE_RESET ||
+					!CreateGlobalD3D11SwapchainRenderTarget())
+				{
+					GlobalD3D11DeviceRecoveryRequested = true;
+					return 0;
+				}
 
 				// HACK: Rendering during a resize is far from perfect but should still be much better than freezing completely
 				if (GlobalOnUserUpdate != nullptr)

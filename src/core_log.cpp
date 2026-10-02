@@ -34,9 +34,12 @@ namespace
 		const EXCEPTION_RECORD* record = exceptionInfo != nullptr ? exceptionInfo->ExceptionRecord : nullptr;
 		const DWORD code = record != nullptr ? record->ExceptionCode : 0;
 		const void* address = record != nullptr ? record->ExceptionAddress : nullptr;
-		const auto moduleBase = reinterpret_cast<uintptr_t>(::GetModuleHandleW(nullptr));
+		HMODULE exceptionModule = nullptr;
+		::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(address), &exceptionModule);
+		const auto moduleBase = reinterpret_cast<uintptr_t>(exceptionModule);
 		const auto exceptionAddress = reinterpret_cast<uintptr_t>(address);
-		const auto relativeAddress = exceptionAddress >= moduleBase ? exceptionAddress - moduleBase : 0;
+		const auto relativeAddress = moduleBase != 0 && exceptionAddress >= moduleBase ? exceptionAddress - moduleBase : 0;
 		const ULONG_PTR accessType = record != nullptr && record->NumberParameters >= 1 ? record->ExceptionInformation[0] : 0;
 		const ULONG_PTR accessAddress = record != nullptr && record->NumberParameters >= 2 ? record->ExceptionInformation[1] : 0;
 		char message[512] = {};
@@ -44,6 +47,13 @@ namespace
 			code, address, reinterpret_cast<void*>(moduleBase), static_cast<unsigned long long>(relativeAddress),
 			static_cast<unsigned long long>(accessType), reinterpret_cast<void*>(accessAddress), ::GetCurrentThreadId());
 		WriteLine(message);
+		wchar_t modulePath[MAX_PATH] = {};
+		if (exceptionModule != nullptr && ::GetModuleFileNameW(exceptionModule, modulePath, static_cast<DWORD>(std::size(modulePath))) != 0)
+		{
+			char modulePathUtf8[MAX_PATH * 3] = {};
+			::WideCharToMultiByte(CP_UTF8, 0, modulePath, -1, modulePathUtf8, static_cast<int>(std::size(modulePathUtf8)), nullptr, nullptr);
+			Log::Write("EXCEPTION MODULE: %s", modulePathUtf8);
+		}
 #if defined(_M_X64)
 		if (exceptionInfo != nullptr && exceptionInfo->ContextRecord != nullptr)
 		{

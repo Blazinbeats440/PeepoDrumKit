@@ -1485,21 +1485,28 @@ namespace PeepoDrumKit
 					return !hasRangeSelection || (note.GetStart() <= rangeSelectionMax && note.GetEnd() >= rangeSelectionMin);
 				};
 
-				int _donSmallCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsDonNote(N.Type) && !IsBigNote(N.Type);});
-				int _donBigCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsDonNote(N.Type) && IsBigNote(N.Type);});
-				int _kaSmallCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsKaNote(N.Type) && !IsBigNote(N.Type);});
-				int _kaBigCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsKaNote(N.Type) && IsBigNote(N.Type);});
-				int _donCount = _donSmallCount + _donBigCount;
-				int _kaCount = _kaSmallCount + _kaBigCount;
-				int _kaDonCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsKaDonNote(N.Type);});
-				int _adLibCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsAdlibNote(N.Type);});
-				int _bombCount = notes.CountIf([&](const Note& N) {return isInStatsRange(N) && IsBombNote(N.Type);});
+				int _donSmallCount = 0, _donBigCount = 0;
+				int _kaSmallCount = 0, _kaBigCount = 0;
+				int _kaDonCount = 0, _adLibCount = 0, _bombCount = 0;
 				f64 _rollDuration = 0.0;
 				f64 _balloonDuration = 0.0;
 				int _balloonPopCount = 0;
 				for (const Note& note : notes)
 				{
 					if (!isInStatsRange(note)) continue;
+					if (IsDonNote(note.Type))
+					{
+						if (IsBigNote(note.Type)) _donBigCount++;
+						else _donSmallCount++;
+					}
+					if (IsKaNote(note.Type))
+					{
+						if (IsBigNote(note.Type)) _kaBigCount++;
+						else _kaSmallCount++;
+					}
+					if (IsKaDonNote(note.Type)) _kaDonCount++;
+					if (IsAdlibNote(note.Type)) _adLibCount++;
+					if (IsBombNote(note.Type)) _bombCount++;
 					Beat noteStart = note.GetStart();
 					Beat noteEnd = note.GetEnd();
 					if (hasRangeSelection)
@@ -1517,6 +1524,8 @@ namespace PeepoDrumKit
 						_balloonPopCount += note.BalloonPopCount;
 					}
 				}
+				int _donCount = _donSmallCount + _donBigCount;
+				int _kaCount = _kaSmallCount + _kaBigCount;
 				int _maxCombo = _donCount + _kaCount + _kaDonCount;
 
 				const Time statsDuration = hasRangeSelection ? context.GetRangeSelectionDuration() : chart.ChartDuration;
@@ -2250,7 +2259,7 @@ namespace PeepoDrumKit
 	static std::map<std::tuple<SprID, u32, float, float, float, float>, ImImageQuad> sprImageQuadCache = {};
 	// [{sprite_id, tint_col, uv0.x, uv0.y, uv1.x, uv1.y}] = quad;
 	// Cannot use std::unordered_map because std::hash<std::tuple<...>> is not defined.
-	static i32 sprImageGuiScaleCache = GuiScaleFactorCurrent;
+	static f32 sprImageGuiScaleCache = GuiScaleFactorCurrent;
 
 	static bool SpriteButton(const char* tooltip_key, const ChartContext& context, SprID sprite_id, const ImVec2& button_size,
 		const ImVec2& uv0 = ImVec2(0, 0), const ImVec2& uv1 = ImVec2(1, 1),
@@ -2258,6 +2267,7 @@ namespace PeepoDrumKit
 	{
 		if (GuiScaleFactorCurrent != sprImageGuiScaleCache) {
 			sprImageQuadCache.clear(); // remove invalidated textures
+			sprImageGuiScaleCache = GuiScaleFactorCurrent;
 		}
 
 		u32 u32_tint_col = Gui::ColorConvertFloat4ToU32(tint_col);

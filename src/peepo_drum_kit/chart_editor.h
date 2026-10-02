@@ -6,6 +6,7 @@
 #include "chart_editor_widgets.h"
 #include "chart_editor_video_writer.h"
 #include "chart_editor_settings_gui.h"
+#include "chart_editor_file_drop.h"
 #include "chart_editor_timeline.h"
 #include "imgui/imgui_include.h"
 #include "audio/audio_engine.h"
@@ -87,9 +88,20 @@ namespace PeepoDrumKit
 		void DrawTextEditorWindow();
 
 	private:
+		void StartAsyncReadingDroppedPath(std::string_view path, b8 isDirectory);
+
 		ChartContext context = {};
 		ChartTimeline timeline = {};
 		ChartGamePreview gamePreview = {};
+		ChartCourse* pendingDeleteCourse = nullptr;
+		b8 openDeleteCoursePopup = false;
+		std::vector<std::string> droppedFolderCharts;
+		std::string droppedFolderPath;
+		std::string lastDroppedFolderPath;
+		b8 reopenDroppedFolderRequested = false;
+		FileDrop::Error droppedPathFailure = FileDrop::Error::None;
+		std::future<FileDrop::Result> droppedPathFuture;
+		b8 droppedPathLoading = false, droppedPathCanceled = false;
 		b8 screenshotWindowRequested = false, screenshotPreviewRequested = false;
 		i32 screenshotWindowDelay = 0;
 		ChartGamePreview screenshotPreview = {};
@@ -102,6 +114,7 @@ namespace PeepoDrumKit
 			b8 ShowWindow = false, Preparing = false, Exporting = false, Finalizing = false, Finished = false, FramePrepared = false;
 			RangeMode Range = RangeMode::Full;
 			f32 ExcerptSeconds = 15.0f;
+			f32 LaneBackgroundTransparency = 0.0f;
 			b8 AudioFade = true;
 			ChartGamePreview::VideoLayout Layout = ChartGamePreview::VideoLayout::Original;
 			b8 ShowTitle = true, ShowSubtitle = false, ShowDifficulty = true, ShowMaxCombo = true, ShowCurrentCombo = true;
@@ -112,7 +125,7 @@ namespace PeepoDrumKit
 			i32 BackgroundSource = 0;
 			u32 BackgroundColor = 0xFF1F1F1F;
 			b8 BackgroundInitialized = false;
-			ChartGamePreview::VideoBackgroundFit BackgroundImageFit = ChartGamePreview::VideoBackgroundFit::Cover;
+			ChartGamePreview::VideoBackgroundFit BackgroundImageFit = ChartGamePreview::VideoBackgroundFit::ContainWithWidth;
 			std::string BackgroundImagePath;
 			CustomDraw::GPUTexture DefaultBackgroundTexture = {}, CustomBackgroundTexture = {};
 			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
