@@ -595,6 +595,7 @@ namespace PeepoDrumKit
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
+			X(General.GamePreviewShowUnselectedNoteTooltips, "game_preview_show_unselected_note_tooltips");
 			X(General.GamePreviewCommentFontSize, "game_preview_comment_font_size");
 			X(General.GamePreviewCommentHoldMeasures, "game_preview_comment_hold_measures");
 			X(General.GamePreviewShowComments, "game_preview_show_comments");

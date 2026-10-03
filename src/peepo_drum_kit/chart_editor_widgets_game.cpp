@@ -2190,7 +2190,7 @@ namespace PeepoDrumKit
 				}
 
 				// Select box
-				if (!isVideoExport && (!context.CompareMode || isFocusedLane) && (it->OriginalNote->IsSelected || doBoxSelectThisFrame)) {
+				if (!isVideoExport && (!context.CompareMode || isFocusedLane) && (it->OriginalNote->IsSelected || doBoxSelectThisFrame || *Settings.General.GamePreviewShowUnselectedNoteTooltips)) {
 					const auto hitBoxSize = vec2(Camera.WorldToScreenScale((IsBigNote(it->OriginalNote->Type) ? GameSelectedNoteHitBoxSizeBig : GameSelectedNoteHitBoxSizeSmall)));
 					const auto hitBoxHead = Rect::FromCenterSize(Camera.LaneToScreenSpace(laneHeadDisplay), hitBoxSize);
 					const auto hitBoxTail = Rect::FromCenterSize(Camera.LaneToScreenSpace(laneTailDisplay), hitBoxSize);
@@ -2209,13 +2209,15 @@ namespace PeepoDrumKit
 						it->OriginalNote->IsSelected = isSelected;
 					}
 
-					if (it->OriginalNote->IsSelected) {
+					if (it->OriginalNote->IsSelected || *Settings.General.GamePreviewShowUnselectedNoteTooltips) {
 						drawList->ChannelsSetCurrent(4); // above notes
 
 						auto drawBox = [&](const ChartTimeline::TempDrawSelectionBox& box, b8 isHead = true)
 						{
-							drawList->AddRectFilled(box.ScreenSpaceRect.TL, box.ScreenSpaceRect.BR, box.FillColor);
-							drawList->AddRect(box.ScreenSpaceRect.TL, box.ScreenSpaceRect.BR, box.BorderColor);
+							if (it->OriginalNote->IsSelected) {
+								drawList->AddRectFilled(box.ScreenSpaceRect.TL, box.ScreenSpaceRect.BR, box.FillColor);
+								drawList->AddRect(box.ScreenSpaceRect.TL, box.ScreenSpaceRect.BR, box.BorderColor);
+							}
 
 							const auto buttonRect = Intersect(box.ScreenSpaceRect, Camera.ScreenSpaceViewportRect);
 							if (buttonRect.GetWidth() <= 0 || buttonRect.GetHeight() <= 0)
@@ -2238,34 +2240,61 @@ namespace PeepoDrumKit
 									}
 									return res;
 								};
-								ImGui::TextUnformatted("Position: " + fmt([&](const NoteAttr& attr, const vec2& pos)
-								{ return "(" + ASCII::ToString(pos.x) + ", " + ASCII::ToString(pos.y) + ") px @ 720p"; }));
-								ImGui::TextUnformatted("Time: " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_NOTE_POSITION")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								{ return "(" + ASCII::ToString(pos.x) + ", " + ASCII::ToString(pos.y) + ") " + UI_Str("GAME_PREVIEW_POSITION_UNIT"); }));
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_NOTE_TIME")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{ return attr.Time.ToString(true); }));
-								ImGui::TextUnformatted("Internal Beat: " + fmt([&](const NoteAttr& attr, const vec2& pos)
-								{ return ASCII::ToString(attr.Beat.Ticks / f32{ Beat::TicksPerBeat }) + " beats"; }));
-								ImGui::TextUnformatted("HBScroll Beat: " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_INTERNAL_BEAT")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								{ return ASCII::ToString(attr.Beat.Ticks / f32{ Beat::TicksPerBeat }) + " " + UI_Str("GAME_PREVIEW_BEAT_UNIT"); }));
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_HBSCROLL_BEAT")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{
 									f32 ticksHBScrollBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(attr.Beat, attr.Time);
-									return ASCII::ToString(ticksHBScrollBeat / Beat::TicksPerBeat) + " beats";
+									return ASCII::ToString(ticksHBScrollBeat / Beat::TicksPerBeat) + " " + UI_Str("GAME_PREVIEW_BEAT_UNIT");
 								}));
-								ImGui::TextUnformatted("Tempo: " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								ImGui::TextUnformatted(std::string(UI_Str("EVENT_TEMPO")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{ return ASCII::ToString(attr.Tempo.BPM) + " BPM"; }));
-								ImGui::TextUnformatted("Scroll: " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_NOTE_SCROLL")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{ return attr.ScrollSpeed.toStringCompat("x") + "x (" + ScrollSpeedToBPM(attr.ScrollSpeed, attr.Tempo).toStringCompat(" BPM") + " BPM)"; }));
-								ImGui::TextUnformatted("ScrollType: " + fmt([&](const NoteAttr& attr, const vec2& pos)
-								{ return UI_StrRuntime(ToI18nString(attr.ScrollType)); }));
-								ImGui::TextUnformatted("Sudden: " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								if (!it->ScrollSpeed.IsReal() || (isLong && !it->Tail.ScrollSpeed.IsReal()))
 								{
-									std::string res = ASCII::ToString(attr.Sudden.AppearanceOffset.Seconds) + "s (show), " + ASCII::ToString(attr.Sudden.MovementOffset.Seconds) + "s (move)";
+									auto previewScroll = [](const NoteAttr& attr)
+									{ return (attr.ScrollType == ScrollMethod::BMSCROLL) ? Complex(1.0f, 0.0f) : attr.ScrollSpeedView; };
+									ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_SCROLL_SPEED")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+									{
+										const f32 speed = std::abs(previewScroll(attr).cpx);
+										char buffer[128];
+										sprintf_s(buffer, "%.3fx (%.3f BPM)", speed, speed * std::abs(attr.Tempo.BPM));
+										return std::string(buffer);
+									}));
+									ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_SCROLL_ANGLE")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+									{
+										Complex direction = previewScroll(attr);
+										if (attr.ScrollType == ScrollMethod::NMSCROLL)
+											direction *= attr.Tempo.BPM;
+										if (direction == Complex(0.0f, 0.0f))
+											return std::string(UI_Str("GAME_PREVIEW_SCROLL_ANGLE_UNDEFINED"));
+										f32 degrees = -Angle::FromRadians(std::arg(direction.cpx)).ToDegrees();
+										if (degrees <= -180.0f) degrees += 360.0f;
+										if (std::abs(degrees) < 0.05f) degrees = 0.0f;
+										char buffer[64];
+										sprintf_s(buffer, "%.1f", degrees);
+										return std::string(buffer) + " " + UI_Str("GAME_PREVIEW_ANGLE_UNIT");
+									}));
+								}
+								ImGui::TextUnformatted(std::string(UI_Str("EVENT_SCROLL_TYPE")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								{ return UI_StrRuntime(ToI18nString(attr.ScrollType)); }));
+								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_NOTE_SUDDEN")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
+								{
+									std::string res = ASCII::ToString(attr.Sudden.AppearanceOffset.Seconds) + " " + UI_Str("GAME_PREVIEW_SECONDS_UNIT") + " (" + UI_Str("GAME_PREVIEW_SUDDEN_SHOW") + "), "
+										+ ASCII::ToString(attr.Sudden.MovementOffset.Seconds) + " " + UI_Str("GAME_PREVIEW_SECONDS_UNIT") + " (" + UI_Str("GAME_PREVIEW_SUDDEN_MOVE") + ")";
 									if (attr.Sudden.HideRoll)
-										res += ", hide roll";
+										res += std::string(", ") + UI_Str("GAME_PREVIEW_SUDDEN_HIDE_ROLL");
 									return res;
 								}));
 
 								if (IsBalloonNote(it->OriginalNote->Type))
-									ImGui::TextUnformatted("Pop count: " + ASCII::ToString(it->OriginalNote->BalloonPopCount)
-										+ " (" + ASCII::ToString(it->OriginalNote->BalloonPopCount / (it->Tail.Time - it->Time).Seconds) + " hits/s)");
+									ImGui::TextUnformatted(std::string(UI_Str("EVENT_PROP_BALLOON_POP_COUNT")) + ": " + ASCII::ToString(it->OriginalNote->BalloonPopCount)
+										+ " (" + ASCII::ToString(it->OriginalNote->BalloonPopCount / (it->Tail.Time - it->Time).Seconds) + " " + UI_Str("GAME_PREVIEW_HITS_PER_SECOND_UNIT") + ")");
 
 								ImGui::EndTooltip();
 							}
