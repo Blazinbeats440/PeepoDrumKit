@@ -689,17 +689,50 @@ namespace PeepoDrumKit
 			{
 				for (const auto& decision : TestPlayBranchDecisions)
 					if (decision.first == index) return decision.second;
-				if (range.GetStart() < TestPlayBranchStartBeat && beat >= TestPlayBranchStartBeat) return TestPlayInitialBranch;
+				if (range.GetStart() < TestPlayBranchStartBeat) return TestPlayInitialBranch;
 				return TestPlayVisualBranch;
 			}
 		}
 		return BranchType::Normal;
 	}
 
+	void ChartGamePreview::RebuildTestPlayScrolls()
+	{
+		if (TestPlayCourse == nullptr) return;
+		VideoBranchRoute route = BuildFixedVideoBranchRoute(*TestPlayCourse, TestPlayInitialBranch);
+		for (const auto& decision : TestPlayBranchDecisions)
+			if (decision.first < route.Branches.size()) route.Branches[decision.first] = decision.second;
+		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		{
+			TestPlayScrolls[EnumToIndex(branch)].Rebuild(*TestPlayCourse, route, branch, TestPlayNextDecisionIndex);
+			TestPlayTransitionScrolls[EnumToIndex(branch)].Rebuild(*TestPlayCourse, route, branch, TestPlayNextDecisionIndex, TestPlayBranchTransitionIndex);
+		}
+	}
+
+	void ChartGamePreview::UpdateVideoScrolls(const ChartCourse& course, Time time)
+	{
+		if (VideoExportRoute == nullptr) return;
+		const auto& route = *VideoExportRoute;
+		size_t decided = route.Branches.size();
+		if (route.Animate)
+		{
+			decided = 0;
+			while (decided < route.DecisionTimes.size() && route.DecisionTimes[decided] <= time) ++decided;
+		}
+		if (VideoScrollDecisionCount == decided) return;
+		VideoScrollDecisionCount = decided;
+		const size_t transitionBranch = route.GetVisualState(course, time).Index;
+		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		{
+			VideoExportScrolls[EnumToIndex(branch)].Rebuild(course, route, branch, decided);
+			VideoExportTransitionScrolls[EnumToIndex(branch)].Rebuild(course, route, branch, decided, transitionBranch);
+		}
+	}
+
 	b8 ChartGamePreview::IsTestPlayNoteActive(const Note* note, BranchType branch) const
 	{
 		if (!TestPlayAutoBranchActive) return true;
-		for (size_t index = TestPlayNextBranchIndex; index < TestPlayCourse->Branches.size(); index++)
+		for (size_t index = TestPlayNextDecisionIndex; index < TestPlayCourse->Branches.size(); index++)
 		{
 			const BranchRange& range = TestPlayCourse->Branches[index];
 			if (note->BeatTime >= range.GetStart() && note->BeatTime < GetBranchRangeEnd(TestPlayCourse->Branches, range)) return false;
@@ -710,6 +743,7 @@ namespace PeepoDrumKit
 	void ChartGamePreview::UpdateTestPlayBranches(ChartContext& context, Beat beat)
 	{
 		if (!TestPlayAutoBranchActive || TestPlayCourse == nullptr) return;
+		const size_t previousDecisionCount = TestPlayNextDecisionIndex;
 		const auto& branches = TestPlayCourse->Branches;
 		const auto& sections = TestPlayCourse->BranchSections;
 		const auto& holds = TestPlayOrderedLevelHolds;
@@ -782,6 +816,7 @@ namespace PeepoDrumKit
 					TestPlayLevelHeld = true;
 			}
 		}
+		if (TestPlayNextDecisionIndex != previousDecisionCount) RebuildTestPlayScrolls();
 	}
 
 	void ChartGamePreview::StartTestPlay(ChartContext& context, TestPlayStartMode mode)
@@ -790,6 +825,7 @@ namespace PeepoDrumKit
 		if (std::any_of(context.ChartSelectedCourse->Branches.begin(), context.ChartSelectedCourse->Branches.end(),
 			[](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; })) return;
 		TestPlayCourse = context.ChartSelectedCourse;
+		TestPlayBranchDecisions.clear();
 		TestPlayBranch = context.ChartSelectedBranch;
 		TestPlayAutoBranchActive = !TestPlayCourse->Branches.empty();
 		TestPlayBranchCutoffs.clear();
@@ -862,13 +898,20 @@ namespace PeepoDrumKit
 		TestPlayRecordedThrough = startTime;
 		if (TestPlayAutoBranchActive)
 		{
+			TestPlayBranchStartBeat = TestPlayCourse->TempoMap.TimeToBeat(startTime);
+			erase_remove_if(TestPlayBranchDecisions, [&](const auto& decision)
+				{ return decision.first >= TestPlayCourse->Branches.size() || TestPlayCourse->Branches[decision.first].GetStart() >= TestPlayBranchStartBeat; });
+			for (const auto& decision : TestPlayBranchDecisions)
+			{
+				const BranchRange& range = TestPlayCourse->Branches[decision.first];
+				if (TestPlayBranchStartBeat >= range.GetStart() && TestPlayBranchStartBeat < GetBranchRangeEnd(TestPlayCourse->Branches, range))
+					TestPlayInitialBranch = decision.second;
+			}
 			TestPlayBranch = TestPlayInitialBranch;
 			TestPlayVisualBranch = TestPlayBranch;
 			TestPlayBranchTransitionFrom = TestPlayBranch;
-			TestPlayBranchStartBeat = TestPlayCourse->TempoMap.TimeToBeat(startTime);
 			TestPlaySectionBeat = TestPlayBranchStartBeat;
 			TestPlayLevelHeld = false;
-			TestPlayBranchDecisions.clear();
 			TestPlayNextBranchIndex = 0;
 			while (TestPlayNextBranchIndex < TestPlayCourse->Branches.size() && TestPlayCourse->Branches[TestPlayNextBranchIndex].GetStart() < TestPlayBranchStartBeat) ++TestPlayNextBranchIndex;
 			TestPlayNextDecisionIndex = TestPlayNextBranchIndex;
@@ -879,6 +922,7 @@ namespace PeepoDrumKit
 			TestPlayNextLevelHoldIndex = 0;
 			while (TestPlayNextLevelHoldIndex < TestPlayOrderedLevelHolds.size() && TestPlayOrderedLevelHolds[TestPlayNextLevelHoldIndex].BeatTime < TestPlayBranchStartBeat) ++TestPlayNextLevelHoldIndex;
 		}
+		RebuildTestPlayScrolls();
 		TestPlayAttemptJudgements.clear();
 		for (auto& note : TestPlayNotes) { note.Judgement = note.NoteTime < startTime ? 4 : 0; note.HitTime = Time::Zero(); note.TimingError = 0; note.WasHit = false; }
 		for (auto& note : TestPlayLongNotes) { note.HitCount = 0; note.HitTimes.clear(); }
@@ -1582,9 +1626,18 @@ namespace PeepoDrumKit
 				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->GetEnd()), cursorTimeOrAnimated);
 			const auto [gogoFireZoom, gogoFireAlpha, gogoLaneZoom, gogoLaneAlpha] = getGogoTransition(isGogo, timeSinceGogo, timeAfterGogo);
 			const VideoBranchRoute* videoRoute = isVideoExport ? VideoExportRoute : nullptr;
+			if (videoRoute) UpdateVideoScrolls(*course, cursorTimeOrAnimated);
+			const auto* playbackScrolls = videoRoute ? &VideoExportScrolls : IsTestPlaying && course == TestPlayCourse ? &TestPlayScrolls : nullptr;
+			const auto* transitionScrolls = videoRoute ? &VideoExportTransitionScrolls : IsTestPlaying && course == TestPlayCourse ? &TestPlayTransitionScrolls : nullptr;
 			const VideoBranchVisualState videoState = videoRoute ? videoRoute->GetVisualState(*course, cursorTimeOrAnimated) : VideoBranchVisualState {};
 			const b8 autoBranchLane = videoRoute != nullptr || (IsTestPlaying && TestPlayAutoBranchActive && course == TestPlayCourse);
 			const BranchType visualBranch = videoRoute ? videoState.Branch : TestPlayVisualBranch;
+			const auto getScrollBranch = [&](Beat beat, BranchType noteBranch)
+			{
+				for (const BranchRange& range : course->Branches)
+					if (beat >= range.GetStart() && beat < GetBranchRangeEnd(course->Branches, range)) return noteBranch;
+				return visualBranch < BranchType::Count ? visualBranch : noteBranch;
+			};
 			const BranchType transitionFrom = videoRoute ? videoState.From : TestPlayBranchTransitionFrom;
 			const size_t transitionIndex = videoRoute ? videoState.Index : TestPlayBranchTransitionIndex;
 			const b8 hasTransition = videoRoute ? videoState.Index != SIZE_MAX : TestPlayBranchDecisionTime.has_value();
@@ -1825,8 +1878,13 @@ namespace PeepoDrumKit
 				}
 				drawList->PopClipRect();
 			}
-			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](const ForEachBarLaneData& it)
+			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](ForEachBarLaneData it)
 			{
+				if (playbackScrolls)
+				{
+					const BranchType barBranch = videoRoute ? videoRoute->GetDisplayBranch(*course, it.Beat, cursorTimeOrAnimated) : GetTestPlayNoteBranch(it.Beat);
+					if (barBranch < BranchType::Count) it.ScrollSpeed = scrollSpeedToView((*playbackScrolls)[EnumToIndex(getScrollBranch(it.Beat, barBranch))].GetScroll(it.Beat));
+				}
 				const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
 				if (!it.IsVisible && measureNumberDisplay != 2) return;
 				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
@@ -1876,7 +1934,7 @@ namespace PeepoDrumKit
 
 			drawList->ChannelsSetCurrent(3);
 			std::vector<Rect> testPlayLabelBounds;
-			auto drawTestPlayNote = [&](const ForEachNoteLaneData& it, BranchType noteBranch)
+			auto drawTestPlayNote = [&](ForEachNoteLaneData it, BranchType noteBranch)
 			{
 			if (!IsTestPlaying && IsRegularNote(it.OriginalNote->Type) &&
 				TimeSinceNoteHit(it.Time, cursorTimeOrAnimated) > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type)) return;
@@ -1884,6 +1942,14 @@ namespace PeepoDrumKit
 					&& it.Beat >= course->Branches[transitionIndex].GetStart()
 					&& it.Beat < GetBranchRangeEnd(course->Branches, course->Branches[transitionIndex]);
 				if (autoBranchLane && !slidingNote && (videoRoute ? videoRoute->GetDisplayBranch(*course, it.Beat, cursorTimeOrAnimated) : GetTestPlayNoteBranch(it.Beat)) != noteBranch) return;
+				if (playbackScrolls)
+				{
+					const auto& timeline = (slidingNote ? *transitionScrolls : *playbackScrolls)[EnumToIndex(getScrollBranch(it.Beat, noteBranch))];
+					it.ScrollSpeed = timeline.GetScroll(it.Beat);
+					it.ScrollSpeedView = scrollSpeedToView(it.ScrollSpeed);
+					it.Tail.ScrollSpeed = timeline.GetScroll(it.Tail.Beat);
+					it.Tail.ScrollSpeedView = scrollSpeedToView(it.Tail.ScrollSpeed);
+				}
 				const f32 slideYOffset = slidingNote ? (branchSlidePosition - static_cast<f32>(EnumToIndex(noteBranch))) * GameLaneSlice.Content : 0.0f;
 				if (IsTestPlaying)
 				{

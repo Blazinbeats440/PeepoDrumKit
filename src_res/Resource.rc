@@ -69,12 +69,12 @@ BEGIN
         BLOCK "041104b0"
         BEGIN
             VALUE "CompanyName", "Samyuu™"
-            VALUE "FileDescription", "Peepo Drum Kit"
+            VALUE "FileDescription", "PeepoDrumKit Ver.B"
             VALUE "FileVersion", PEEPO_VERSION_STR
             VALUE "InternalName", "PeepoDrumKit.exe"
             VALUE "LegalCopyright", "Copyright (C) 2022 Samyuu"
             VALUE "OriginalFilename", "PeepoDrumKit.exe"
-            VALUE "ProductName", "Peepo Drum Kit"
+            VALUE "ProductName", "PeepoDrumKit Ver.B"
             VALUE "ProductVersion", PEEPO_VERSION_STR
         END
     END

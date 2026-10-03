@@ -111,4 +111,5 @@ namespace ApplicationHost
 	b8 CaptureWindowToBGRA(u32& width, u32& height, std::vector<u8>& outPixels);
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks);
+	b8 RunD3D11DeviceRecoverySelfTest();
 }

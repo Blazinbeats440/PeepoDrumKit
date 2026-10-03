@@ -7,6 +7,8 @@
 
 namespace PeepoDrumKit
 {
+	enum class ChartSettingsCategory : u8 { General, File, Timeline, Editor, Audio, TestPlay, Appearance, Keys, Count };
+
 	struct ChartSettingsWindowTempActiveWidgetGroup
 	{
 		void* ValuePtr;
@@ -29,6 +31,7 @@ namespace PeepoDrumKit
 		b8 DrawGui(ChartContext& context, UserSettingsData& settings);
 
 	private:
+		ChartSettingsCategory selectedCategory = ChartSettingsCategory::General;
 		ImGuiTextFilter settingsFilterMain = {};
 		ImGuiTextFilter settingsFilterInput = {};
 		ChartSettingsWindowTempActiveWidgetGroup lastActiveGroup = {};

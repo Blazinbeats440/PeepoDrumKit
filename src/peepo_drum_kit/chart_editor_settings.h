@@ -6,7 +6,7 @@
 
 namespace PeepoDrumKit
 {
-	constexpr std::string_view PeepoDrumKitApplicationTitle = PEEPO_DEBUG ? "Peepo Drum Kit (Debug)" : "Peepo Drum Kit";
+	constexpr std::string_view PeepoDrumKitApplicationTitle = PEEPO_DEBUG ? "PeepoDrumKit Ver.B (Debug)" : "PeepoDrumKit Ver.B";
 
 	struct RecentFilesList
 	{

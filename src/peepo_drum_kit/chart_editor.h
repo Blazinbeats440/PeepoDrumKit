@@ -42,7 +42,7 @@ namespace PeepoDrumKit
 	struct AsyncLoadJacketResult
 	{
 		std::string JacketFilePath;
-		CustomDraw::GPUTexture JacketTexture = {};
+		RasterizedBitmap JacketBitmap = {};
 	};
 
 	struct ChartEditor

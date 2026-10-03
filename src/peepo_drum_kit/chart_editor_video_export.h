@@ -33,6 +33,13 @@ namespace PeepoDrumKit
 		VideoBranchVisualState GetVisualState(const ChartCourse& course, Time time) const;
 		BranchType GetDisplayBranch(const ChartCourse& course, Beat beat, Time time) const;
 	};
+	struct PlaybackScrollTimeline
+	{
+		SortedScrollChangesList Changes;
+		void Rebuild(const ChartCourse& course, const VideoBranchRoute& route, BranchType pendingBranch = BranchType::Count,
+			size_t decidedBranches = SIZE_MAX, size_t transitionBranch = SIZE_MAX);
+		Complex GetScroll(Beat beat) const;
+	};
 	struct VideoBranchRecording
 	{
 		const ChartCourse* Course = nullptr;

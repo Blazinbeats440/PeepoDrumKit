@@ -193,6 +193,31 @@ X("EVENT_PROP_BALLOON_DURATION", "Balloon Duration") \
 X("EVENT_PROP_BALLOON_HITS_PER_SECOND", "Expected Hits per Second") \
 X("ACT_BALLOON_CALCULATE_POP_COUNT", "Calculate Pop Count") \
 X("SETTINGS_TAB_GENERAL", "General") \
+X("SETTINGS_CATEGORY_GENERAL", "General & Language") \
+X("SETTINGS_CATEGORY_FILE", "Files & Saving") \
+X("SETTINGS_CATEGORY_TIMELINE", "Timeline") \
+X("SETTINGS_CATEGORY_EDITOR", "Editor & Preview") \
+X("SETTINGS_CATEGORY_APPEARANCE", "Appearance & Behavior") \
+X("SETTINGS_CATEGORY_KEYS", "Key Bindings") \
+X("SETTINGS_SECTION_DEFAULTS", "Defaults") \
+X("SETTINGS_SECTION_SAVE", "Saving") \
+X("SETTINGS_SECTION_COMPATIBILITY", "Compatibility") \
+X("SETTINGS_SECTION_INPUT", "Note Input & Grid") \
+X("SETTINGS_SECTION_SCROLL", "Scrolling") \
+X("SETTINGS_SECTION_PLAYBACK", "Playback") \
+X("SETTINGS_SECTION_DISPLAY", "Display") \
+X("SETTINGS_SECTION_PROPERTIES", "Chart Properties") \
+X("SETTINGS_SECTION_EVENTS", "Events & Branches") \
+X("SETTINGS_SECTION_PREVIEW", "Chart Preview") \
+X("SETTINGS_SECTION_ANIMATION", "Animation") \
+X("SETTINGS_SECTION_PERFORMANCE", "Performance") \
+X("SETTINGS_SECTION_VOLUME", "Volume & Sound Effects") \
+X("SETTINGS_SECTION_DEVICE", "Audio Device") \
+X("SETTINGS_SECTION_JUDGEMENT_DISPLAY", "Judgement Display") \
+X("SETTINGS_SECTION_JUDGEMENT_WINDOWS", "Judgement Windows") \
+X("SETTINGS_SECTION_INPUT_COMPENSATION", "Input Compensation") \
+X("SETTINGS_SECTION_CALIBRATION", "Input Latency Measurement") \
+X("SETTINGS_SECTION_COLORS", "Colors") \
 X("SETTINGS_TAB_INPUT_BINDINGS", "Keys") \
 X("SETTINGS_TAB_AUDIO", "Audio") \
 X("SETTINGS_TAB_TEST_PLAY", "Test Play") \
@@ -352,8 +377,8 @@ X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC", "Show the JPOS Scroll field in the Chart Events window. It is always shown when the chart contains #JPOSSCROLL.") \
 X("SETTINGS_EVENT_SHOW_SCROLL_TYPE", "Chart Events: Show Scroll Type") \
 X("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC", "Show the Scroll Type field in the Chart Events window. It is always shown when the chart contains #NMSCROLL, #HBSCROLL, or #BMSCROLL.") \
-X("SETTINGS_SCROLL_SPEED_VIEW_TYPE", "Timeline: Scroll Speed View Type") \
-X("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC", "Select how complex scroll speeds are displayed on the timeline.") \
+X("SETTINGS_SCROLL_SPEED_VIEW_TYPE", "Chart Preview: Scroll Speed View Type") \
+X("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC", "Select how complex scroll speeds are displayed in the chart preview.") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL", "Timeline: Invert Scroll Wheel Direction") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL_DESC", "Invert the mouse wheel scroll direction so that scrolling downwards results in moving forward through the timeline.") \
 X("SETTINGS_TIMELINE_SCROLL_SENSITIVITY", "Timeline: Scroll Wheel Sensitivity") \
@@ -588,6 +613,7 @@ X("ACT_TEST_SHOW_IMGUI_STYLE_EDITOR",				"Show ImGui Style Editor") \
 X("ACT_TEST_RESET_STYLE_COLORS",					"Reset Style Colors") \
 /* help menu */ \
 X("INFO_HELP_COPYRIGHT_YEAR",						"Copyright (c) 2022") \
+X("INFO_HELP_MODIFIED_BY",							"Modified by:") \
 X("INFO_HELP_BUILD_TIME",							"Build Time:") \
 X("INFO_HELP_BUILD_DATE",							"Build Date:") \
 X("INFO_HELP_BUILD_CONFIGURATION",					"Build Configuration:") \
@@ -622,7 +648,7 @@ X("INFO_LATENCY_MAX",								"Max: ") \
 /* audio menu (contd.) */ \
 X("ACT_AUDIO_USE_FMT_%s_DEVICE",					"Use %s") \
 /* unsaved message box */ \
-X("INFO_MSGBOX_UNSAVED",							"Peepo Drum Kit - Unsaved Changes") \
+X("INFO_MSGBOX_UNSAVED",							"PeepoDrumKit Ver.B - Unsaved Changes") \
 X("PROMPT_MSGBOX_UNSAVED_SAVE_CHANGES",				"Save changes to the current file?") \
 X("ACT_MSGBOX_UNSAVED_SAVE_CHANGES",				"Save Changes") \
 X("ACT_MSGBOX_UNSAVED_DISCARD_CHANGES",				"Discard Changes") \

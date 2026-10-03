@@ -65,6 +65,19 @@ int main()
 		"Current attempt counts use latest results");
 	check(stats.AverageMs == 10.0 && stats.StandardDeviationMs == 20.0, "Signed average and standard deviation");
 
+	std::unordered_map<int, Result> badResults;
+	StoreLatestTestPlayResult(badResults, 1, Result { 3, -90, true });
+	StoreLatestTestPlayResult(badResults, 2, Result { 3, +100, true });
+	StoreLatestTestPlayResult(badResults, 3, Result { 3, 0, false });
+	check(badResults.at(1).WasHit && badResults.at(1).TimingError == -90
+		&& badResults.at(2).WasHit && badResults.at(2).TimingError == 100,
+		"Hit Bad judgements retain signed timing errors");
+	const auto badStats = CalculateTestPlayStatistics(badResults);
+	check(badStats.Bad == 3 && badStats.TimedHits == 2 && badStats.Fast == 1 && badStats.Slow == 1,
+		"Hit Bad judgements count timing while missed notes do not");
+	check(badStats.AverageMs == 5.0 && badStats.StandardDeviationMs == 95.0,
+		"Bad timing statistics exclude missed notes");
+
 	if (failures == 0) std::cout << "Test play rules: all checks passed\n";
 	return failures == 0 ? 0 : 1;
 }

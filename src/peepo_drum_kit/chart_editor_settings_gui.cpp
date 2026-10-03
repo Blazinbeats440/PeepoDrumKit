@@ -148,6 +148,8 @@ namespace PeepoDrumKit
 		{
 			DataType DataType;
 			WidgetType Widget;
+			ChartSettingsCategory Category = ChartSettingsCategory::Count;
+			std::string_view Section;
 			void* ValuePtr;
 			b8* HasValuePtr;
 			std::string_view Header;
@@ -169,6 +171,14 @@ namespace PeepoDrumKit
 				ResetToDefaultFunc = [](void* valuePtr) { static_cast<WithDefault<T>*>(valuePtr)->ResetToDefault(); };
 				SetHasValueIfNotDefaultFunc = [](void* valuePtr) { static_cast<WithDefault<T>*>(valuePtr)->SetHasValueIfNotDefault(); };
 			}
+
+			template <typename T>
+			SettingsEntry(ChartSettingsCategory category, std::string_view section, WithDefault<T>& v, std::string_view header, std::string_view description, WidgetType widgetType = WidgetType::Default, std::string* inputTextValue = nullptr)
+				: SettingsEntry(v, header, description, widgetType, inputTextValue)
+			{
+				Category = category;
+				Section = section;
+			}
 		};
 
 		static b8 DrawEntryWidgetGroupGui(SettingsEntry& in)
@@ -184,7 +194,10 @@ namespace PeepoDrumKit
 			{
 				Gui::AlignTextToFramePadding();
 				Gui::PushFont(FontMain, GuiScaleI32_AtTarget(FontBaseSizes::Medium));
-				GuiTextWithCategoryHighlight(in.Header);
+				if (in.Section.empty())
+					GuiTextWithCategoryHighlight(in.Header);
+				else
+					Gui::TextUnformatted(GuiSplitCategoryText(in.Header).Text);
 				Gui::PopFont();
 
 				if (!in.Description.empty())
@@ -460,7 +473,7 @@ namespace PeepoDrumKit
 			return changesWereMade;
 		}
 
-		static b8 DrawEntriesListTableGui(SettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempActiveWidgetGroup& lastActiveGroup)
+		static b8 DrawEntriesListTableGui(SettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempActiveWidgetGroup& lastActiveGroup, ChartSettingsCategory category = ChartSettingsCategory::Count)
 		{
 			const auto& style = Gui::GetStyle();
 			b8 changesWereMade = false;
@@ -475,24 +488,34 @@ namespace PeepoDrumKit
 			}
 
 			Gui::PushStyleVar(ImGuiStyleVar_CellPadding, GuiScale(vec2(8.0f, 4.0f)));
-			const b8 beginTable = Gui::BeginTable("InnerTable", 2, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_ScrollY, Gui::GetContentRegionAvail());
+			const b8 beginTable = Gui::BeginTable("InnerTable", 2, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersOuter);
 			Gui::PopStyleVar(2);
 			if (beginTable)
 			{
 				Gui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, Gui::CalcTextSize("(Default)").x + Gui::GetFrameHeight());
 
-				Gui::UpdateSmoothScrollWindow();
 				Gui::PushStyleVar(ImGuiStyleVar_ItemSpacing, GuiScale(vec2(8.0f, 8.0f)));
 
+				std::string_view lastSection;
 				b8 isAnyItemGroupHoveredOrActive = false;
 				for (size_t entryIndex = 0; entryIndex < entriesCount; entryIndex++)
 				{
 					SettingsEntry& entry = entries[entryIndex];
+					if (category != ChartSettingsCategory::Count && entry.Category != category)
+						continue;
 					if (filter != nullptr)
 					{
 						if (!filter->PassFilter(Gui::StringViewStart(entry.Header), Gui::StringViewEnd(entry.Header)) &&
 							!filter->PassFilter(Gui::StringViewStart(entry.Description), Gui::StringViewEnd(entry.Description)))
 							continue;
+					}
+
+					if (!entry.Section.empty() && entry.Section != lastSection)
+					{
+						Gui::TableNextRow();
+						Gui::TableSetColumnIndex(1);
+						Gui::SeparatorText(entry.Section.data());
+						lastSection = entry.Section;
 					}
 
 					Gui::TableNextRow();
@@ -862,12 +885,98 @@ namespace PeepoDrumKit
 		b8 changesWereMade = false;
 
 		const ImVec2 originalFramePadding = Gui::GetStyle().FramePadding;
-		Gui::PushStyleVar(ImGuiStyleVar_FramePadding, GuiScale(vec2(10.0f, 5.0f)));
-		Gui::PushStyleColor(ImGuiCol_TabHovered, Gui::GetStyleColorVec4(ImGuiCol_HeaderActive));
-		Gui::PushStyleColor(ImGuiCol_TabSelected, Gui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
-		if (Gui::BeginTabBar("SettingsTabs", ImGuiTabBarFlags_None))
+		cstr categoryLabels[] =
 		{
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_GENERAL")))
+			UI_Str("SETTINGS_CATEGORY_GENERAL"),
+			UI_Str("SETTINGS_CATEGORY_FILE"),
+			UI_Str("SETTINGS_CATEGORY_TIMELINE"),
+			UI_Str("SETTINGS_CATEGORY_EDITOR"),
+			UI_Str("SETTINGS_TAB_AUDIO"),
+			UI_Str("SETTINGS_TAB_TEST_PLAY"),
+			UI_Str("SETTINGS_CATEGORY_APPEARANCE"),
+			UI_Str("SETTINGS_CATEGORY_KEYS"),
+		};
+		static_assert(ArrayCount(categoryLabels) == static_cast<size_t>(ChartSettingsCategory::Count));
+
+		f32 categoryWidth = 0.0f;
+		for (cstr label : categoryLabels)
+			categoryWidth = Max(categoryWidth, Gui::CalcTextSize(label).x);
+		categoryWidth += GuiScale(24.0f) + Gui::GetStyle().ScrollbarSize;
+		categoryWidth = Min(categoryWidth, Max(1.0f, Gui::GetContentRegionAvail().x * 0.38f));
+
+		if (Gui::BeginChild("SettingsCategories", vec2(categoryWidth, 0.0f), ImGuiChildFlags_Borders))
+		{
+			Gui::PushStyleVar(ImGuiStyleVar_FramePadding, GuiScale(vec2(10.0f, 5.0f)));
+			for (size_t categoryIndex = 0; categoryIndex < ArrayCount(categoryLabels); categoryIndex++)
+			{
+				const auto category = static_cast<ChartSettingsCategory>(categoryIndex);
+				if (Gui::Selectable(categoryLabels[categoryIndex], selectedCategory == category, ImGuiSelectableFlags_None, vec2(0.0f, Gui::GetFrameHeight())) && selectedCategory != category)
+				{
+					selectedCategory = category;
+					settingsFilterMain.Clear();
+					lastActiveGroup = {};
+					inputState.SelectedMultiBinding = nullptr;
+					inputState.TempAssignedBinding = nullptr;
+					inputState.MultiBindingPopupFadeCurrent = inputState.MultiBindingPopupFadeTarget = 0.0f;
+					testPlayCalibrationActive = false;
+				}
+				if (Gui::IsItemHovered())
+					Gui::SetTooltip("%s", categoryLabels[categoryIndex]);
+			}
+			Gui::PopStyleVar();
+		}
+		Gui::EndChild();
+		Gui::SameLine();
+
+		Gui::PushID(static_cast<i32>(selectedCategory));
+		if (Gui::BeginChild("SettingsContent", vec2(0.0f, 0.0f), ImGuiChildFlags_None))
+		{
+			Gui::UpdateSmoothScrollWindow();
+			Gui::SeparatorText(categoryLabels[static_cast<size_t>(selectedCategory)]);
+
+			if (selectedCategory == ChartSettingsCategory::General)
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
+				{
+					Gui::SeparatorText(UI_Str("SETTINGS_TAB_LANGUAGE"));
+					std::string selectedLanguageName = SelectedGuiLanguage;
+					for (const auto& it : i18n::LocaleEntries)
+					{
+						if (SelectedGuiLanguage == it.id)
+						{
+							selectedLanguageName = it.name + " (" + it.id + ")";
+							break;
+						}
+					}
+
+					Gui::AlignTextToFramePadding();
+					Gui::TextUnformatted(UI_Str("SETTINGS_GENERAL_LANGUAGE"));
+					Gui::SameLine();
+					Gui::SetNextItemWidth(-1.0f);
+					if (Gui::BeginCombo("##SettingsLanguage", selectedLanguageName.c_str(), ImGuiComboFlags_None))
+					{
+						for (const auto& it : i18n::LocaleEntries)
+						{
+							std::string languageName = it.name + " (" + it.id + ")";
+							const b8 isSelected = (SelectedGuiLanguage == it.id);
+							if (Gui::Selectable(languageName.c_str(), isSelected))
+							{
+								SelectedGuiLanguage = it.id;
+								SelectedGuiLanguageTJA = ASCII::IETFLangTagToTJALangTag(SelectedGuiLanguage);
+								i18n::ReloadLocaleFile(SelectedGuiLanguage.c_str());
+							}
+							if (isSelected) Gui::SetItemDefaultFocus();
+						}
+						Gui::EndCombo();
+					}
+					if (Gui::Button(UI_Str("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES"), { Gui::CalcItemWidth(), 0.0f }))
+						i18n::ExportBuiltinLocaleFiles();
+				}
+				Gui::PopStyleVar();
+			}
+
+			if (selectedCategory == ChartSettingsCategory::General || selectedCategory == ChartSettingsCategory::File ||
+				selectedCategory == ChartSettingsCategory::Timeline || selectedCategory == ChartSettingsCategory::Editor || selectedCategory == ChartSettingsCategory::Appearance)
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
@@ -876,245 +985,244 @@ namespace PeepoDrumKit
 
 					SettingsGui::SettingsEntry settingsEntriesMain[] =
 					{
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::General, UI_Str("SETTINGS_SECTION_DEFAULTS"),
 							settings.General.DefaultCreatorName,
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR"),
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC")),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_SAVE"),
 							settings.General.TJAFileSaveFormat,
 							UI_Str("SETTINGS_TJA_SAVE_FORMAT"),
 							UI_Str("SETTINGS_TJA_SAVE_FORMAT_DESC"),
 							SettingsGui::WidgetType::I32_TJAFileSaveFormat),
 
-						SettingsGui::SettingsEntry(
-							settings.General.WarnTaikojiroIncompatibleCharts,
-							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE"),
-							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE_DESC")),
-
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_SAVE"),
 							settings.General.IncludePeepoDrumKitComment,
 							UI_Str("SETTINGS_TJA_INCLUDE_HEADER"),
 							UI_Str("SETTINGS_TJA_INCLUDE_HEADER_DESC")),
 
-						SettingsGui::SettingsEntry(
-							settings.General.DisplayTimeInSongSpace,
-							UI_Str("SETTINGS_GENERAL_TIME_DISPLAY"),
-							UI_Str("SETTINGS_GENERAL_TIME_DISPLAY_DESC"),
-							SettingsGui::WidgetType::B8_ChartSongSpaceComboBox),
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_COMPATIBILITY"),
+							settings.General.WarnTaikojiroIncompatibleCharts,
+							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE"),
+							UI_Str("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE_DESC")),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.BalloonExpectedHitsPerSecond,
 							UI_Str("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS"),
 							UI_Str("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS_DESC"),
 							SettingsGui::WidgetType::F32_BalloonExpectedHitsPerSecond),
 
-						SettingsGui::SettingsEntry(
-							settings.General.ShowChartTitleLocalized,
-							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS"),
-							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.ShowChartSubtitleLocalized,
-							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS"),
-							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.ShowChartOtherMetadata,
-							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA"),
-							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.ShowCourseOtherMetadata,
-							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA"),
-							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.ShowForcedBranchButtons,
-							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS"),
-							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineShowBranchStartLines,
-							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES"),
-							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.GamePreviewShowMeasureNumbers,
-							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
-							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
-							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
-
-						SettingsGui::SettingsEntry(
-							settings.General.GamePreviewShowJPOSPosition,
-							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION"),
-							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.GamePreviewShowUnselectedNoteTooltips,
-							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS"),
-							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.GamePreviewCommentHoldMeasures,
-							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES"),
-							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelinePlaybackCursorFollow,
-							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW"),
-							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineLoopPlayback,
-							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK"),
-							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC")),
-
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.TimelineAutoStepAfterNoteInput,
 							UI_Str("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT"),
 							UI_Str("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC")),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.TimelineGridStartsAtBar,
 							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR"),
 							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC")),
 
-						SettingsGui::SettingsEntry(
-							settings.General.EventShowSudden,
-							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN"),
-							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.EventShowJPOSScroll,
-							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL"),
-							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.EventShowScrollType,
-							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE"),
-							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.ScrollSpeedViewType,
-							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
-							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
-							SettingsGui::WidgetType::I32_ScrollSpeedViewType),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineScrollInvertMouseWheel,
-							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL"),
-							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL_DESC")),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineScrollDistancePerMouseWheelTick,
-							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY"),
-							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_DESC"),
-							SettingsGui::WidgetType::F32_TimelineScrollSensitivity),
-
-						SettingsGui::SettingsEntry(
-							settings.General.TimelineScrollDistancePerMouseWheelTickFast,
-							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT"),
-							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT_DESC"),
-							SettingsGui::WidgetType::F32_TimelineScrollSensitivity),
-
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.GridBarDivisions,
 							UI_Str("SETTINGS_GRID_DIVISIONS"),
 							UI_Str("SETTINGS_GRID_DIVISIONS_DESC"),
 							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[0]),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.GridBarDivisionsRough,
 							UI_Str("SETTINGS_GRID_DIVISIONS_ROUGH"),
 							UI_Str("SETTINGS_GRID_DIVISIONS_ROUGH_DESC"),
 							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[1]),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.GridBarDivisionsPrecise,
 							UI_Str("SETTINGS_GRID_DIVISIONS_PRECISE"),
 							UI_Str("SETTINGS_GRID_DIVISIONS_PRECISE_DESC"),
 							SettingsGui::WidgetType::Default, &inputState.GridDivisionTexts[2]),
 
-						SettingsGui::SettingsEntry(settings.Animation.EnableGuiScaleAnimation,
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_SCROLL"),
+							settings.General.TimelineScrollInvertMouseWheel,
+							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL"),
+							UI_Str("SETTINGS_TIMELINE_INVERT_SCROLL_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_SCROLL"),
+							settings.General.TimelineScrollDistancePerMouseWheelTick,
+							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY"),
+							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_DESC"),
+							SettingsGui::WidgetType::F32_TimelineScrollSensitivity),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_SCROLL"),
+							settings.General.TimelineScrollDistancePerMouseWheelTickFast,
+							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT"),
+							UI_Str("SETTINGS_TIMELINE_SCROLL_SENSITIVITY_SHIFT_DESC"),
+							SettingsGui::WidgetType::F32_TimelineScrollSensitivity),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_PLAYBACK"),
+							settings.General.TimelinePlaybackCursorFollow,
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW"),
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_PLAYBACK"),
+							settings.General.TimelineLoopPlayback,
+							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK"),
+							UI_Str("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_DISPLAY"),
+							settings.General.DisplayTimeInSongSpace,
+							UI_Str("SETTINGS_GENERAL_TIME_DISPLAY"),
+							UI_Str("SETTINGS_GENERAL_TIME_DISPLAY_DESC"),
+							SettingsGui::WidgetType::B8_ChartSongSpaceComboBox),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_DISPLAY"),
+							settings.General.TimelineShowBranchStartLines,
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES"),
+							UI_Str("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
+							settings.General.ShowChartTitleLocalized,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
+							settings.General.ShowChartSubtitleLocalized,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
+							settings.General.ShowChartOtherMetadata,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_CHART_METADATA_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
+							settings.General.ShowCourseOtherMetadata,
+							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA"),
+							UI_Str("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_EVENTS"),
+							settings.General.ShowForcedBranchButtons,
+							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS"),
+							UI_Str("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_EVENTS"),
+							settings.General.EventShowSudden,
+							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN"),
+							UI_Str("SETTINGS_EVENT_SHOW_SUDDEN_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_EVENTS"),
+							settings.General.EventShowJPOSScroll,
+							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL"),
+							UI_Str("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_EVENTS"),
+							settings.General.EventShowScrollType,
+							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE"),
+							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.ScrollSpeedViewType,
+							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
+							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
+							SettingsGui::WidgetType::I32_ScrollSpeedViewType),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewShowMeasureNumbers,
+							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
+							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewShowJPOSPosition,
+							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION"),
+							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewShowUnselectedNoteTooltips,
+							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS"),
+							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewCommentHoldMeasures,
+							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES"),
+							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_ANIMATION"), settings.Animation.EnableGuiScaleAnimation,
 							UI_Str("SETTINGS_ANIMATION_SMOOTH_ZOOM"),
 							UI_Str("SETTINGS_ANIMATION_SMOOTH_ZOOM_DESC")),
 
-						SettingsGui::SettingsEntry(settings.Animation.TimelineSmoothScrollSpeed,
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_ANIMATION"), settings.Animation.TimelineSmoothScrollSpeed,
 							UI_Str("SETTINGS_ANIMATION_SCROLL_SPEED"),
 							UI_Str("SETTINGS_ANIMATION_SCROLL_SPEED_DESC"),
 							SettingsGui::WidgetType::F32_ExponentialSpeed),
 
-						SettingsGui::SettingsEntry(settings.Animation.TimelineWorldSpaceCursorXSpeed,
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_ANIMATION"), settings.Animation.TimelineWorldSpaceCursorXSpeed,
 							UI_Str("SETTINGS_ANIMATION_CURSOR_SPEED"),
 							UI_Str("SETTINGS_ANIMATION_CURSOR_SPEED_DESC"),
 							SettingsGui::WidgetType::F32_ExponentialSpeed),
 
-						SettingsGui::SettingsEntry(settings.Animation.TimelineRangeSelectionExpansionSpeed,
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_ANIMATION"), settings.Animation.TimelineRangeSelectionExpansionSpeed,
 							UI_Str("SETTINGS_ANIMATION_RANGE_SPEED"),
 							UI_Str("SETTINGS_ANIMATION_RANGE_SPEED_DESC"),
 							SettingsGui::WidgetType::F32_ExponentialSpeed),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_PERFORMANCE"),
 							settings.General.VSyncOffFPSLimit,
 							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT"),
 							UI_Str("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC"),
 							SettingsGui::WidgetType::I32_VSyncOffFPSLimit),
 					};
 
-					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), &settingsFilterMain, lastActiveGroup);
+					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), selectedCategory == ChartSettingsCategory::Appearance ? nullptr : &settingsFilterMain, lastActiveGroup, selectedCategory);
 				}
 				Gui::PopStyleVar();
-				Gui::EndTabItem();
 			}
 
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_AUDIO")))
+			if (selectedCategory == ChartSettingsCategory::Audio)
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
 					SettingsGui::SettingsEntry settingsEntriesAudio[] =
 					{
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_VOLUME"),
 							settings.Audio.MasterVolume,
 							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME"),
 							UI_Str("SETTINGS_AUDIO_MASTER_VOLUME_DESC"),
 							SettingsGui::WidgetType::F32_AudioMasterVolume),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_VOLUME"),
 							settings.Audio.BalloonVolume,
 							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME"),
 							UI_Str("SETTINGS_AUDIO_BALLOON_VOLUME_DESC"),
 							SettingsGui::WidgetType::F32_AudioMasterVolume),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_VOLUME"),
 							settings.Audio.MetronomeVolume,
 							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME"),
 							UI_Str("SETTINGS_AUDIO_METRONOME_VOLUME_DESC"),
 							SettingsGui::WidgetType::F32_AudioMasterVolume),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_VOLUME"),
 							settings.General.DrumrollPreviewRollsPerSecond,
 							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW"),
 							UI_Str("SETTINGS_GENERAL_DRUMROLL_PREVIEW_DESC"),
 							SettingsGui::WidgetType::F32_DrumrollRollsPerSecond),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_DEVICE"),
 							settings.Audio.OpenDeviceOnStartup,
 							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP"),
 							UI_Str("SETTINGS_AUDIO_OPEN_STARTUP_DESC")),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_DEVICE"),
 							settings.Audio.CloseDeviceOnIdleFocusLoss,
 							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS"),
 							UI_Str("SETTINGS_AUDIO_CLOSE_FOCUS_LOSS_DESC")),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_DEVICE"),
 							settings.Audio.RequestExclusiveDeviceAccess,
 							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE"),
 							UI_Str("SETTINGS_AUDIO_EXCLUSIVE_MODE_DESC"),
 							SettingsGui::WidgetType::B8_ExclusiveAudioComboBox),
 
-						SettingsGui::SettingsEntry(
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Audio, UI_Str("SETTINGS_SECTION_DEVICE"),
 							settings.Audio.BufferFrameSize,
 							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE"),
 							UI_Str("SETTINGS_AUDIO_BUFFER_SIZE_DESC"),
@@ -1124,28 +1232,40 @@ namespace PeepoDrumKit
 					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup);
 				}
 				Gui::PopStyleVar();
-				Gui::EndTabItem();
 			}
 
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_TEST_PLAY")))
+			if (selectedCategory == ChartSettingsCategory::TestPlay)
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				SettingsGui::SettingsEntry settingsEntriesTestPlay[] =
 				{
-					SettingsGui::SettingsEntry(settings.TestPlay.JudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
-					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_PAUSED_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
-					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementFilter, UI_Str("SETTINGS_TEST_PLAY_PAUSED_FILTER"), "", SettingsGui::WidgetType::I32_TestPlayPausedJudgementFilter),
-					SettingsGui::SettingsEntry(settings.TestPlay.PausedJudgementThresholdMilliseconds, UI_Str("SETTINGS_TEST_PLAY_PAUSED_THRESHOLD"), ""),
-					SettingsGui::SettingsEntry(settings.TestPlay.LeadInMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LEAD_IN"), UI_Str("SETTINGS_TEST_PLAY_LEAD_IN_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.InputLatencyCompensationMilliseconds, UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET"), UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.GoodWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.OkWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.BadWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.TimingNeutralWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.JudgementDisplayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_DURATION"), ""),
-					SettingsGui::SettingsEntry(settings.TestPlay.LoopDelayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LOOP_DELAY"), ""),
-					SettingsGui::SettingsEntry(settings.TestPlay.PlaybackSpeedPercent, UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC")),
-					SettingsGui::SettingsEntry(settings.TestPlay.ShowStartButtonsInPreview, UI_Str("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS"), ""),
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.LeadInMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LEAD_IN"), UI_Str("SETTINGS_TEST_PLAY_LEAD_IN_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.LoopDelayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_LOOP_DELAY"), ""),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.PlaybackSpeedPercent, UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.ShowStartButtonsInPreview, UI_Str("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS"), ""),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.JudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.JudgementDisplayMilliseconds, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_DURATION"), ""),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.PausedJudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_PAUSED_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.PausedJudgementFilter, UI_Str("SETTINGS_TEST_PLAY_PAUSED_FILTER"), "", SettingsGui::WidgetType::I32_TestPlayPausedJudgementFilter),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.PausedJudgementThresholdMilliseconds, UI_Str("SETTINGS_TEST_PLAY_PAUSED_THRESHOLD"), ""),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.TimingNeutralWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_NEUTRAL_WINDOW_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_WINDOWS"), settings.TestPlay.GoodWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_GOOD_WINDOW_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_WINDOWS"), settings.TestPlay.OkWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_OK_WINDOW_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_WINDOWS"), settings.TestPlay.BadWindowMilliseconds, UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW"), UI_Str("SETTINGS_TEST_PLAY_BAD_WINDOW_DESC")),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_INPUT_COMPENSATION"), settings.TestPlay.InputLatencyCompensationMilliseconds, UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET"), UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET_DESC")),
 				};
 				changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesTestPlay, ArrayCount(settingsEntriesTestPlay), nullptr, lastActiveGroup);
 				const i32 pausedThreshold = Clamp(settings.TestPlay.PausedJudgementThresholdMilliseconds.Value, 0, 1000);
@@ -1175,7 +1295,8 @@ namespace PeepoDrumKit
 					settings.TestPlay.BadWindowMilliseconds.SetHasValueIfNotDefault();
 					changesWereMade = true;
 				}
-				Gui::TextUnformatted(UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_DESC"));
+				Gui::SeparatorText(UI_Str("SETTINGS_SECTION_CALIBRATION"));
+				Gui::TextWrapped("%s", UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_DESC"));
 				if (Gui::Button(testPlayCalibrationActive ? UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_STOP") : UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_START")))
 				{
 					testPlayCalibrationActive = !testPlayCalibrationActive;
@@ -1230,13 +1351,13 @@ namespace PeepoDrumKit
 					}
 				}
 				Gui::PopStyleVar();
-				Gui::EndTabItem();
 			}
 
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_APPEARANCE")))
+			if (selectedCategory == ChartSettingsCategory::Appearance)
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
+					Gui::SeparatorText(UI_Str("SETTINGS_SECTION_COLORS"));
 					static constexpr ImGuiColorEditFlags colorEditFlags = ImGuiColorEditFlags_AlphaPreviewHalf;
 					auto drawColorSetting = [&](cstr label, WithDefault<u32>& setting)
 					{
@@ -1265,10 +1386,9 @@ namespace PeepoDrumKit
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_COMMENT_OUTLINE_COLOR"), settings.Appearance.PreviewCommentOutlineColor);
 				}
 				Gui::PopStyleVar();
-				Gui::EndTabItem();
 			}
 
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_INPUT_BINDINGS")))
+			if (selectedCategory == ChartSettingsCategory::Keys)
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
@@ -1432,54 +1552,11 @@ namespace PeepoDrumKit
 					changesWereMade |= SettingsGui::DrawInputEntriesListTableGui(settingsEntriesInput, ArrayCount(settingsEntriesInput), &settingsFilterInput, inputState);
 				}
 				Gui::PopStyleVar();
-				Gui::EndTabItem();
 			}
 
-			if (Gui::BeginTabItem(UI_Str("SETTINGS_TAB_LANGUAGE")))
-			{
-				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
-				{
-					std::string selectedLanguageName = SelectedGuiLanguage;
-					for (const auto& it : i18n::LocaleEntries)
-					{
-						if (SelectedGuiLanguage == it.id)
-						{
-							selectedLanguageName = it.name + " (" + it.id + ")";
-							break;
-						}
-					}
-
-					Gui::AlignTextToFramePadding();
-					Gui::TextUnformatted(UI_Str("SETTINGS_GENERAL_LANGUAGE"));
-					Gui::SameLine();
-					Gui::SetNextItemWidth(-1.0f);
-					if (Gui::BeginCombo("##SettingsLanguage", selectedLanguageName.c_str(), ImGuiComboFlags_None))
-					{
-						for (const auto& it : i18n::LocaleEntries)
-						{
-							std::string languageName = it.name + " (" + it.id + ")";
-							const b8 isSelected = (SelectedGuiLanguage == it.id);
-							if (Gui::Selectable(languageName.c_str(), isSelected))
-							{
-								SelectedGuiLanguage = it.id;
-								SelectedGuiLanguageTJA = ASCII::IETFLangTagToTJALangTag(SelectedGuiLanguage);
-								i18n::ReloadLocaleFile(SelectedGuiLanguage.c_str());
-							}
-							if (isSelected) Gui::SetItemDefaultFocus();
-						}
-						Gui::EndCombo();
-					}
-					if (Gui::Button(UI_Str("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES"), { Gui::CalcItemWidth(), 0.0f }))
-						i18n::ExportBuiltinLocaleFiles();
-				}
-				Gui::PopStyleVar();
-				Gui::EndTabItem();
-			}
-
-			Gui::EndTabBar();
 		}
-		Gui::PopStyleColor(2);
-		Gui::PopStyleVar();
+		Gui::EndChild();
+		Gui::PopID();
 
 		return changesWereMade;
 	}
