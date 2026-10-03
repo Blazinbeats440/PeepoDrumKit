@@ -1020,7 +1020,7 @@ namespace PeepoDrumKit
 	}
 
 	template <typename T>
-	static b8 GuiPropertyRangeInterpolationEditWidget(std::string_view label, T inOutStartEnd[2], T step, T stepFast, b8 enableClamp, T minValue, T maxValue, cstr format, const cstr previewStrings[2], InterpolationEasing* outEasing, T outRandomStartEnd[2], i32* outRandomDecimalPlaces, b8* outApplyRandom)
+	static b8 GuiPropertyRangeInterpolationEditWidget(std::string_view label, T inOutStartEnd[2], T step, T stepFast, b8 enableClamp, T minValue, T maxValue, cstr format, const cstr previewStrings[2], InterpolationEasing* outEasing, T outRandomStartEnd[2], i32* outRandomDecimalPlaces, b8* outApplyRandom, b8 allowGeometric = true)
 	{
 		b8 wasValueChanged = false;
 		*outApplyRandom = false;
@@ -1030,9 +1030,24 @@ namespace PeepoDrumKit
 			const cstr interpolationEasingNames[] = { UI_Str("INTERPOLATION_EASING_LINEAR"), UI_Str("INTERPOLATION_EASING_EASE_IN"), UI_Str("INTERPOLATION_EASING_EASE_OUT"), UI_Str("INTERPOLATION_EASING_GEOMETRIC"), UI_Str("INTERPOLATION_EASING_RANDOM") };
 			i32& easingIndex = *Gui::GetStateStorage()->GetIntRef(Gui::GetID("Easing"), static_cast<i32>(InterpolationEasing::Linear));
 			InterpolationEasing easing = static_cast<InterpolationEasing>(Clamp(easingIndex, 0, EnumCountI32<InterpolationEasing> - 1));
+			if (!allowGeometric && easing == InterpolationEasing::Geometric)
+				easingIndex = static_cast<i32>(easing = InterpolationEasing::Linear);
 			f32& easingStrength = *Gui::GetStateStorage()->GetFloatRef(Gui::GetID("EasingStrength"), 0.0f);
 			Gui::SetNextItemWidth(-1.0f);
-			if (Gui::ComboEnum("##Easing", &easing, interpolationEasingNames))
+			b8 easingChanged = false;
+			if (allowGeometric)
+				easingChanged = Gui::ComboEnum("##Easing", &easing, interpolationEasingNames);
+			else if (Gui::BeginCombo("##Easing", interpolationEasingNames[static_cast<i32>(easing)]))
+			{
+				for (i32 index = 0; index < EnumCountI32<InterpolationEasing>; ++index)
+				{
+					if (index == static_cast<i32>(InterpolationEasing::Geometric)) continue;
+					if (Gui::Selectable(interpolationEasingNames[index], index == static_cast<i32>(easing)))
+					{ easing = static_cast<InterpolationEasing>(index); easingChanged = true; }
+				}
+				Gui::EndCombo();
+			}
+			if (easingChanged)
 			{
 				easingIndex = static_cast<i32>(easing);
 				if (easing == InterpolationEasing::Random)
@@ -2116,15 +2131,15 @@ namespace PeepoDrumKit
 		expect_type_t<std::invoke_result_t<EqualF, const TempChartItem&, T, i32>, b8> = true>
 	static b8 DrawInterpolationProperty(std::string_view label, T step, T stepFast, b8 enableClamp, T minValue, T maxValue, cstr format,
 		std::vector<TempChartItem>& SelectedItems, b8 areAllValueTheSame,
-		GetF&& getValue, SetF&& setValue, EqualF&& isEqualValues, i32 component = 0)
+		GetF&& getValue, SetF&& setValue, EqualF&& isEqualValues, i32 component = 0, b8 allowGeometric = true, b8 shortestAnglePath = false)
 	{
 		// TODO: Maybe option to switch between Beat/Time interpolation modes (?)
 		static constexpr auto getT = [](const TempChartItem& item) -> f64 { return item.MemberValues.BeatStart().Ticks; };
-		const auto getInterpolatedValue = [label](const TempChartItem& startItem, const TempChartItem& endItem, const TempChartItem& thisItem, const T& startValue, const T& endValue) -> T
+		const auto getInterpolatedValue = [label, allowGeometric](const TempChartItem& startItem, const TempChartItem& endItem, const TempChartItem& thisItem, const T& startValue, const T& endValue) -> T
 		{
 			const InterpolationEasing easing = GetInterpolationEasing(label);
 			const f32 easingStrength = GetInterpolationEasingStrength(label);
-			if (easing == InterpolationEasing::Linear)
+			if (easing == InterpolationEasing::Linear || (!allowGeometric && easing == InterpolationEasing::Geometric))
 				return ConvertRange(getT(startItem), getT(endItem), startValue, endValue, getT(thisItem));
 
 			const f32 t = static_cast<f32>(ConvertRange(getT(startItem), getT(endItem), 0.0, 1.0, getT(thisItem)));
@@ -2184,7 +2199,7 @@ namespace PeepoDrumKit
 			static_cast<T>(endItem ? getValue(*endItem, component) : std::nan("")),
 		};
 
-		const b8 isSelectionTooSmall = (SelectedItems.size() < 2);
+		const b8 isSelectionTooSmall = (SelectedItems.size() < 2 || (startItem && endItem && getT(*startItem) == getT(*endItem)));
 		b8 isSelectionAlreadyInterpolated = true;
 		if (!isSelectionTooSmall) {
 			for (const auto& thisItem : SelectedItems) {
@@ -2219,7 +2234,8 @@ namespace PeepoDrumKit
 		T randomStartEnd[2] = {};
 		i32 randomDecimalPlaces = 0;
 		b8 applyRandom = false;
-		const b8 interpolationSettingsChanged = GuiPropertyRangeInterpolationEditWidget(label, inOutStartEnd, step, stepFast, enableClamp, minValue, maxValue, format, previewStrings, &easing, randomStartEnd, &randomDecimalPlaces, &applyRandom);
+		const b8 interpolationSettingsChanged = GuiPropertyRangeInterpolationEditWidget(label, inOutStartEnd, step, stepFast, enableClamp, minValue, maxValue, format, previewStrings, &easing, randomStartEnd, &randomDecimalPlaces, &applyRandom, allowGeometric);
+		if (shortestAnglePath) inOutStartEnd[1] = ScrollInterpolationEndAngle(inOutStartEnd[0], inOutStartEnd[1], true);
 		if (easing == InterpolationEasing::Random)
 		{
 			if (applyRandom)
@@ -2254,6 +2270,123 @@ namespace PeepoDrumKit
 		GetF&& getValue, SetF&& setValue, i32 component = 0)
 	{
 		return DrawInterpolationProperty<HintT>(label, widgetIn, SelectedItems, getValue, setValue, getDefaultIsEqualValues(getValue), component);
+	}
+
+	static b8 DrawScrollPolarProperties(ChartInspectorWindow& inspector, ChartCourse& course, EScrollUnit unit)
+	{
+		auto& items = inspector.SelectedItems;
+		auto& edits = inspector.ScrollPolarEdits;
+		const i32 viewType = *Settings.General.ScrollSpeedViewType;
+		const b8 invertImaginary = (viewType == static_cast<i32>(EScrollSpeedViewType::Jiro2));
+		b8 reset = (inspector.ScrollPolarCourse != &course || inspector.ScrollPolarViewType != viewType || edits.size() != items.size());
+		if (!reset)
+		{
+			for (size_t index = 0; index < items.size(); ++index)
+			{
+				const auto& item = items[index];
+				const auto& edit = edits[index];
+				if (edit.List != item.List || edit.Index != item.Index || edit.BeatTime != item.MemberValues.BeatStart() || edit.ExpectedScroll != item.MemberValues.ScrollSpeed())
+					reset = true;
+			}
+		}
+		if (reset)
+		{
+			edits.clear();
+			for (const auto& item : items)
+				edits.push_back({ item.List, item.Index, item.MemberValues.BeatStart(), item.MemberValues.ScrollSpeed(), ScrollToPolar(item.MemberValues.ScrollSpeed().cpx, invertImaginary) });
+			inspector.ScrollPolarCourse = &course;
+			inspector.ScrollPolarViewType = viewType;
+		}
+		if (items.empty()) return false;
+
+		Gui::PushID("ScrollPolar");
+		const b8 hasZeroBPM = std::any_of(items.begin(), items.end(), [](const TempChartItem& item) { return item.BaseScrollTempo.BPM == 0.0f; });
+		const b8 hasStationaryScroll = std::any_of(edits.begin(), edits.end(), [](const auto& edit) { return edit.Value.Speed == 0.0f; });
+		const cstr labels[] = { UI_Str("INSPECTOR_SCROLL_ANGLE"), UI_Str("INSPECTOR_SCROLL_MAGNITUDE") };
+		MultiEditWidgetParam widgets[2] = {};
+		std::function<f32(const TempChartItem&, i32)> getters[2];
+		std::function<void(TempChartItem&, f32, i32)> setters[2];
+		b8 polarValueChanged = false;
+		for (i32 component = 0; component < 2; ++component)
+		{
+			getters[component] = [&, component](const TempChartItem& item, i32)
+			{
+				const auto& value = edits[&item - items.data()].Value;
+				return (component == 0) ? value.AngleDegrees : (unit == EScrollUnit::BPM ? ScrollMagnitudeToBPM(value.Speed, item.BaseScrollTempo.BPM) : value.Speed);
+			};
+			setters[component] = [&, component](TempChartItem& item, f32 input, i32)
+			{
+				if (!std::isfinite(input)) return;
+				auto& value = edits[&item - items.data()].Value;
+				if (component == 0) value.AngleDegrees = input;
+				else value.Speed = unit == EScrollUnit::BPM ? ScrollMagnitudeFromBPM(Max(0.0f, input), item.BaseScrollTempo.BPM) : Max(0.0f, input);
+			};
+			auto& widget = widgets[component];
+			widget.EnableStepButtons = true;
+			widget.ButtonStep.F32 = component == 0 ? 1.0f : scrollUnitStep[EnumToIndex(unit)];
+			widget.ButtonStepFast.F32 = component == 0 ? 15.0f : scrollUnitStepFast[EnumToIndex(unit)];
+			widget.DragLabelSpeed = component == 0 ? 0.1f : scrollUnitDragSpeed[EnumToIndex(unit)];
+			widget.EnableClamp = (component == 1);
+			widget.ValueClampMin.F32 = 0.0f;
+			widget.ValueClampMax.F32 = F32Max;
+			widget.FormatString = component == 0 ? UI_Str("INSPECTOR_SCROLL_ANGLE_FORMAT") : (unit == EScrollUnit::BPM ? "%g BPM" : "%gx");
+			widget.Value.F32 = widget.MixedValuesMin.F32 = widget.MixedValuesMax.F32 = getters[component](items.front(), 0);
+			for (const auto& item : items)
+			{
+				const f32 value = getters[component](item, 0);
+				widget.HasMixedValues |= !ApproxmiatelySame(widget.Value.F32, value);
+				widget.MixedValuesMin.F32 = Min(widget.MixedValuesMin.F32, value);
+				widget.MixedValuesMax.F32 = Max(widget.MixedValuesMax.F32, value);
+			}
+			Gui::BeginDisabled(component == 1 && unit == EScrollUnit::BPM && hasZeroBPM);
+			const auto result = GuiPropertyMultiSelectionEditWidget(labels[component], widget);
+			if (SetPropertyMultiSelection(items, widget, result, getters[component], setters[component])) polarValueChanged = true;
+			Gui::SetItemTooltip(component == 0 ? UI_Str("INSPECTOR_SCROLL_ANGLE_DESC") : UI_Str("INSPECTOR_SCROLL_MAGNITUDE_DESC"));
+			Gui::EndDisabled();
+		}
+		if (hasStationaryScroll)
+			Gui::Property::PropertyTextValueFunc(UI_Str("INSPECTOR_SCROLL_DIRECTION"), [] { Gui::TextWrapped("%s", UI_Str("INSPECTOR_SCROLL_STATIONARY_DESC")); });
+		if (unit == EScrollUnit::BPM && hasZeroBPM)
+			Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_SCROLL_SPEED_UNIT"), [] { Gui::TextWrapped("%s", UI_Str("INSPECTOR_SCROLL_ZERO_BPM")); });
+
+		Gui::Property::PropertyTextValueFunc(UI_Str("INSPECTOR_SCROLL_ANGLE_PATH"), [&]
+		{
+			const cstr paths[] = { UI_Str("INSPECTOR_SCROLL_PATH_SHORTEST"), UI_Str("INSPECTOR_SCROLL_PATH_DIRECT") };
+			i32 path = inspector.ScrollAngleUseShortestPath ? 0 : 1;
+			Gui::SetNextItemWidth(-1);
+			if (Gui::Combo("##AnglePath", &path, paths, ArrayCountI32(paths))) inspector.ScrollAngleUseShortestPath = (path == 0);
+			Gui::SetItemTooltip(UI_Str("INSPECTOR_SCROLL_ANGLE_PATH_DESC"));
+		});
+		const f32 startAngle = edits.front().Value.AngleDegrees;
+		const auto getInterpolationAngle = [&](const TempChartItem& item, i32)
+		{
+			const f32 angle = edits[&item - items.data()].Value.AngleDegrees;
+			return ScrollInterpolationEndAngle(startAngle, angle, inspector.ScrollAngleUseShortestPath);
+		};
+		const auto equalAngle = [&](const TempChartItem& item, f32 value, i32)
+		{ return std::abs(ScrollAngleDifference(edits[&item - items.data()].Value.AngleDegrees, value)) < 0.001f; };
+		char label[256];
+		sprintf_s(label, UI_Str("EVENT_PROP_INTERPOLATE_%s"), labels[0]);
+		if (DrawInterpolationProperty(label, 1.0f, 15.0f, false, -F32Max, F32Max, widgets[0].FormatString,
+			items, !widgets[0].HasMixedValues, getInterpolationAngle, setters[0], equalAngle, 0, false, inspector.ScrollAngleUseShortestPath)) polarValueChanged = true;
+		sprintf_s(label, UI_Str("EVENT_PROP_INTERPOLATE_%s"), labels[1]);
+		Gui::BeginDisabled(unit == EScrollUnit::BPM && hasZeroBPM);
+		if (DrawInterpolationProperty(label, widgets[1], items, getters[1], setters[1])) polarValueChanged = true;
+		Gui::EndDisabled();
+
+		b8 chartValueChanged = false;
+		if (polarValueChanged)
+		{
+			for (size_t index = 0; index < items.size(); ++index)
+			{
+				auto& edit = edits[index];
+				const Complex scroll(PolarToScroll(edit.Value, invertImaginary));
+				chartValueChanged |= (scroll != items[index].MemberValues.ScrollSpeed());
+				items[index].MemberValues.ScrollSpeed() = edit.ExpectedScroll = scroll;
+			}
+		}
+		Gui::PopID();
+		return chartValueChanged;
 	}
 
 	static std::map<std::tuple<SprID, u32, float, float, float, float>, ImImageQuad> sprImageQuadCache = {};
@@ -2377,6 +2510,7 @@ namespace PeepoDrumKit
 			}
 
 			// get value range statistics
+			if (!(commonAvailableMemberFlags & GenericMemberFlags_ScrollSpeed)) ScrollPolarEdits.clear();
 			GenericMemberFlags commonEqualMemberFlags = commonAvailableMemberFlags;
 			AllGenericMembersUnionArray sharedValues = {};
 			AllGenericMembersUnionArray mixedValuesMin = {};
@@ -2800,6 +2934,32 @@ namespace PeepoDrumKit
 						{
 							static EScrollUnit unit = EScrollUnit::Scroll;
 							size_t i_unit = EnumToIndex(unit);
+							auto drawScrollInputOptions = [&]
+							{
+								Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_SCROLL_SPEED_UNIT"), [&]
+								{
+									Gui::SetNextItemWidth(-1);
+									Gui::ComboEnum("##ScrollSpeedUnit", &unit, scrollUnitNames);
+								});
+								Gui::Property::PropertyTextValueFunc(UI_Str("INSPECTOR_SCROLL_INPUT_MODE"), [&]
+								{
+									const cstr modes[] = { UI_Str("INSPECTOR_SCROLL_CARTESIAN"), UI_Str("INSPECTOR_SCROLL_POLAR") };
+									i32 mode = Clamp(*Settings.General.InspectorScrollInputMode, 0, 1);
+									Gui::SetNextItemWidth(-1);
+									if (Gui::Combo("##ScrollInputMode", &mode, modes, ArrayCountI32(modes)))
+									{
+										Settings_Mutable.General.InspectorScrollInputMode.Value = mode;
+										Settings_Mutable.General.InspectorScrollInputMode.SetHasValueIfNotDefault();
+										ScrollPolarEdits.clear();
+									}
+								});
+							};
+							if (*Settings.General.InspectorScrollInputMode == 1)
+							{
+								valueWasChanged = DrawScrollPolarProperties(*this, course, unit);
+								drawScrollInputOptions();
+								break;
+							}
 
 							b8 areAllScrollSpeedsTheSame = (commonEqualMemberFlags & EnumToFlag(member));
 							b8 areAllScrollTemposTheSame = (mixedScrollTempoMin.BPM == mixedScrollTempoMax.BPM);
@@ -2876,11 +3036,7 @@ namespace PeepoDrumKit
 									valueWasChanged = true;
 							}
 
-							Gui::Property::PropertyTextValueFunc(UI_Str("EVENT_SCROLL_SPEED_UNIT"), [&]
-							{
-								Gui::SetNextItemWidth(-1);
-								Gui::ComboEnum("##ScrollSpeedUnit", &unit, scrollUnitNames);
-							});
+							drawScrollInputOptions();
 						} break;
 						case GenericMember::Time_Offset:
 						{

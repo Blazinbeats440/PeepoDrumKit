@@ -61,6 +61,21 @@ X("GAME_PREVIEW_SUDDEN_SHOW", "show") \
 X("GAME_PREVIEW_SUDDEN_MOVE", "move") \
 X("GAME_PREVIEW_SUDDEN_HIDE_ROLL", "hide roll") \
 X("GAME_PREVIEW_HITS_PER_SECOND_UNIT", "hits/s") \
+X("INSPECTOR_SCROLL_INPUT_MODE", "Scroll Input Mode") \
+X("INSPECTOR_SCROLL_CARTESIAN", "Real / Imaginary") \
+X("INSPECTOR_SCROLL_POLAR", "Angle / Combined Speed") \
+X("INSPECTOR_SCROLL_ANGLE", "Angle") \
+X("INSPECTOR_SCROLL_ANGLE_FORMAT", "%g deg") \
+X("INSPECTOR_SCROLL_MAGNITUDE", "Combined Scroll Speed") \
+X("INSPECTOR_SCROLL_ANGLE_DESC", "SCROLL direction at positive BPM: right = 0, up = +90. Follows the scroll display orientation; when scroll display is disabled, uses the default orientation. Changing angle preserves speed.") \
+X("INSPECTOR_SCROLL_MAGNITUDE_DESC", "Magnitude of the real and imaginary components. Changing speed preserves direction. BPM units use the absolute BPM at each SCROLL event.") \
+X("INSPECTOR_SCROLL_DIRECTION", "Direction") \
+X("INSPECTOR_SCROLL_STATIONARY_DESC", "Stationary SCROLL has no direction. Its entered angle is kept while selected and used when speed is increased.") \
+X("INSPECTOR_SCROLL_ZERO_BPM", "BPM input is unavailable for a selection containing BPM 0. Select x to edit speed.") \
+X("INSPECTOR_SCROLL_ANGLE_PATH", "Angle Interpolation Path") \
+X("INSPECTOR_SCROLL_PATH_SHORTEST", "Shortest Path") \
+X("INSPECTOR_SCROLL_PATH_DIRECT", "As Entered") \
+X("INSPECTOR_SCROLL_ANGLE_PATH_DESC", "Shortest Path crosses the 360-degree boundary by the shortest route. As Entered keeps full turns: 0 to 360 is one turn; 0 to -360 is a reverse turn. Turn counts are editor state, not saved to TJA.") \
 X("COMMENTS_SHOW_IN_PREVIEW", "Show comments in preview") \
 X("TAB_TEMPO_CALCULATOR",							"Tempo Calculator") \
 X("TAB_UNDO_HISTORY",								"Undo History") \

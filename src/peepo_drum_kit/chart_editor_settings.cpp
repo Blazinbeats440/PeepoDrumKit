@@ -518,6 +518,7 @@ namespace PeepoDrumKit
 		out.Audio.BalloonVolume.Value = Clamp(out.Audio.BalloonVolume.Value, 0.0f, 1.0f);
 		out.Audio.MetronomeVolume.Value = Clamp(out.Audio.MetronomeVolume.Value, 0.0f, 1.0f);
 		out.General.TJAFileSaveFormat.Value = Clamp(out.General.TJAFileSaveFormat.Value, 0, 1);
+		out.General.InspectorScrollInputMode.Value = Clamp(out.General.InspectorScrollInputMode.Value, 0, 1);
 
 		return parser.Result;
 	}
@@ -610,6 +611,7 @@ namespace PeepoDrumKit
 			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
 			X(General.EventShowScrollType, "event_show_scroll_type");
 			X(General.ScrollSpeedViewType, "scroll_speed_view_type");
+			X(General.InspectorScrollInputMode, "inspector_scroll_input_mode");
 			X(General.TimelineScrollInvertMouseWheel, "timeline_scroll_invert_mouse_wheel");
 			X(General.TimelineScrollDistancePerMouseWheelTick, "timeline_scroll_distance_per_mouse_wheel_tick");
 			X(General.TimelineScrollDistancePerMouseWheelTickFast, "timeline_scroll_distance_per_mouse_wheel_tick_fast");

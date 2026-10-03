@@ -5,6 +5,7 @@
 #include "chart_editor_timeline.h"
 #include "chart_editor_context.h"
 #include "chart_editor_test_play_rules.h"
+#include "chart_editor_scroll_polar.h"
 #include "chart_editor_video_export.h"
 #include "chart_editor_theme.h"
 #include "imgui/imgui_include.h"
@@ -152,6 +153,18 @@ namespace PeepoDrumKit
 			}
 		};
 		std::vector<TempChartItem> SelectedItems;
+		struct ScrollPolarEditState
+		{
+			GenericList List;
+			size_t Index;
+			Beat BeatTime;
+			Complex ExpectedScroll;
+			ScrollPolarValue Value;
+		};
+		std::vector<ScrollPolarEditState> ScrollPolarEdits;
+		const ChartCourse* ScrollPolarCourse = nullptr;
+		i32 ScrollPolarViewType = -1;
+		b8 ScrollAngleUseShortestPath = false;
 
 		void DrawGui(ChartContext& context, ChartTimeline& timeline);
 	};
