@@ -44,6 +44,23 @@ X("COMMENTS_SONG",									"Song comments") \
 X("COMMENTS_COURSE",								"Course comments") \
 X("COMMENTS_AT_CURSOR",							"Comment at cursor") \
 X("COMMENTS_PREVIEW_FONT_SIZE",					"Preview text size") \
+X("GAME_PREVIEW_SCROLL_SPEED", "Combined scroll speed (preview)") \
+X("GAME_PREVIEW_SCROLL_ANGLE", "Incoming angle (right = 0, up = +90)") \
+X("GAME_PREVIEW_SCROLL_ANGLE_UNDEFINED", "Undefined (stationary)") \
+X("GAME_PREVIEW_NOTE_POSITION", "Position") \
+X("GAME_PREVIEW_POSITION_UNIT", "px @ 720p") \
+X("GAME_PREVIEW_NOTE_TIME", "Time") \
+X("GAME_PREVIEW_INTERNAL_BEAT", "Internal Beat") \
+X("GAME_PREVIEW_HBSCROLL_BEAT", "HBScroll Beat") \
+X("GAME_PREVIEW_BEAT_UNIT", "beats") \
+X("GAME_PREVIEW_NOTE_SCROLL", "Scroll") \
+X("GAME_PREVIEW_ANGLE_UNIT", "deg") \
+X("GAME_PREVIEW_NOTE_SUDDEN", "Sudden") \
+X("GAME_PREVIEW_SECONDS_UNIT", "s") \
+X("GAME_PREVIEW_SUDDEN_SHOW", "show") \
+X("GAME_PREVIEW_SUDDEN_MOVE", "move") \
+X("GAME_PREVIEW_SUDDEN_HIDE_ROLL", "hide roll") \
+X("GAME_PREVIEW_HITS_PER_SECOND_UNIT", "hits/s") \
 X("COMMENTS_SHOW_IN_PREVIEW", "Show comments in preview") \
 X("TAB_TEMPO_CALCULATOR",							"Tempo Calculator") \
 X("TAB_UNDO_HISTORY",								"Undo History") \
@@ -302,6 +319,8 @@ X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC", "Display the current JPOS coordinates beside the hit circle in the game preview and exported video.") \
+X("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS", "Game Preview: Show Tooltips for Unselected Notes") \
+X("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS_DESC", "Show note details on hover regardless of selection. When disabled, only selected notes show details.") \
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES", "Game Preview: Comment hold measures") \
 X("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC", "Keep comments at the hit position for this many measures. Set to 0 to keep scrolling.") \
 X("SETTINGS_TIMELINE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Follow Cursor During Playback") \

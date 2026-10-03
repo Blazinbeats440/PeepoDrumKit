@@ -163,6 +163,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
+			WithDefault<b8> GamePreviewShowUnselectedNoteTooltips = false;
 			WithDefault<i32> GamePreviewCommentFontSize = 28;
 			WithDefault<i32> GamePreviewCommentHoldMeasures = 0;
 			WithDefault<b8> GamePreviewShowComments = true;

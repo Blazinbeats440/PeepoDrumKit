@@ -951,6 +951,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC")),
 
 						SettingsGui::SettingsEntry(
+							settings.General.GamePreviewShowUnselectedNoteTooltips,
+							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS"),
+							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS_DESC")),
+
+						SettingsGui::SettingsEntry(
 							settings.General.GamePreviewCommentHoldMeasures,
 							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES"),
 							UI_Str("SETTINGS_PREVIEW_COMMENT_HOLD_MEASURES_DESC")),
