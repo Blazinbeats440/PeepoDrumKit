@@ -178,6 +178,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> EventShowJPOSScroll = true;
 			WithDefault<b8> EventShowScrollType = true;
 			WithDefault<i32> ScrollSpeedViewType = 0;
+			WithDefault<i32> InspectorScrollInputMode = 0;
 			WithDefault<b8> TimelineScrollInvertMouseWheel = false;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTick = 100.0f;
 			WithDefault<f32> TimelineScrollDistancePerMouseWheelTickFast = 250.0f;
