@@ -65,6 +65,7 @@ namespace PeepoDrumKit
 		videoExport.Resolution = Clamp(videoSettings.Resolution, 0, ArrayCountI32(VideoResolutionPresets) - 1);
 		videoExport.FramesPerSecond = videoSettings.FramesPerSecond == 15 || videoSettings.FramesPerSecond == 30 ||
 			videoSettings.FramesPerSecond == 60 || videoSettings.FramesPerSecond == 120 ? videoSettings.FramesPerSecond : 60;
+		videoExport.AudioBitRate = IsValidVideoAudioBitRate(videoSettings.AudioBitRate) ? videoSettings.AudioBitRate : 192000;
 		videoExport.BackgroundSource = Clamp(videoSettings.BackgroundSource, -1, 3);
 		videoExport.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(Clamp(videoSettings.BackgroundImageFit, 0, 4));
 		videoExport.BackgroundColor = videoSettings.BackgroundColor;
@@ -127,6 +128,7 @@ namespace PeepoDrumKit
 		videoSettings.Layout = static_cast<i32>(videoExport.Layout);
 		videoSettings.Resolution = videoExport.Resolution;
 		videoSettings.FramesPerSecond = videoExport.FramesPerSecond;
+		videoSettings.AudioBitRate = videoExport.AudioBitRate;
 		videoSettings.BackgroundSource = videoExport.BackgroundSource;
 		videoSettings.BackgroundImageFit = static_cast<i32>(videoExport.BackgroundImageFit);
 		videoSettings.BackgroundColor = videoExport.BackgroundColor;
@@ -1266,7 +1268,7 @@ namespace PeepoDrumKit
 		const std::string extractionRoot = Directory::GetExecutableDirectory() + "/Extracted zip";
 		droppedPathFuture = std::async(std::launch::async, [pathCopy = droppedFolderPath, isDirectory, searchDepth, extractionRoot]
 		{
-			return isDirectory ? FileDrop::ReadFolder(pathCopy, searchDepth) : FileDrop::ExtractZip(pathCopy, extractionRoot, searchDepth);
+			return isDirectory ? FileDrop::ReadFolder(pathCopy, searchDepth) : FileDrop::ExtractArchive(pathCopy, extractionRoot, searchDepth);
 		});
 		Gui::OpenPopup(UI_WindowName("FOLDER_DROP_TITLE"));
 	}
@@ -1357,7 +1359,7 @@ namespace PeepoDrumKit
 			if (Gui::GetCurrentContext()->OpenPopupStack.Size > 0 || saveConfirmationPopup.OpenOnNextFrame || droppedPathFuture.valid()) break;
 			std::error_code directoryError;
 			const b8 isDirectory = std::filesystem::is_directory(std::filesystem::u8path(droppedFilePath), directoryError);
-			if (isDirectory || Path::HasExtension(droppedFilePath, ".zip"))
+			if (isDirectory || FileDrop::IsArchivePath(droppedFilePath))
 			{
 				StartAsyncReadingDroppedPath(droppedFilePath, isDirectory);
 				break;
@@ -1379,6 +1381,9 @@ namespace PeepoDrumKit
 				{
 				case FileDrop::Error::InvalidZip: errorMessage = UI_Str("ZIP_DROP_INVALID"); break;
 				case FileDrop::Error::UnsupportedZip: errorMessage = UI_Str("ZIP_DROP_UNSUPPORTED"); break;
+				case FileDrop::Error::InvalidArchive: errorMessage = UI_Str("ARCHIVE_DROP_INVALID"); break;
+				case FileDrop::Error::UnsupportedArchive: errorMessage = UI_Str("ARCHIVE_DROP_UNSUPPORTED"); break;
+				case FileDrop::Error::PasswordProtected: errorMessage = UI_Str("ARCHIVE_DROP_PASSWORD_PROTECTED"); break;
 				case FileDrop::Error::UnsafePath: errorMessage = UI_Str("ZIP_DROP_UNSAFE_PATH"); break;
 				case FileDrop::Error::SizeLimit: errorMessage = UI_Str("ZIP_DROP_SIZE_LIMIT"); break;
 				case FileDrop::Error::ExtractionFailed: errorMessage = UI_Str("ZIP_DROP_EXTRACTION_FAILED"); break;

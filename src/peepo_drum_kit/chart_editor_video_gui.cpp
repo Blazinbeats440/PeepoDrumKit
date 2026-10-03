@@ -394,6 +394,15 @@ namespace PeepoDrumKit
 			if (exportData.FramesPerSecond == frameRates[index]) frameRateIndex = index;
 		if (Gui::Combo(UI_Str("VIDEO_EXPORT_FPS"), &frameRateIndex, frameRateNames, ArrayCountI32(frameRateNames)))
 			exportData.FramesPerSecond = frameRates[frameRateIndex];
+		const char* audioBitRateNames[ArrayCountI32(VideoAudioBitRatePresets)];
+		i32 audioBitRateIndex = 0;
+		for (i32 index = 0; index < ArrayCountI32(VideoAudioBitRatePresets); ++index)
+		{
+			audioBitRateNames[index] = VideoAudioBitRatePresets[index].Name;
+			if (exportData.AudioBitRate == VideoAudioBitRatePresets[index].BitRate) audioBitRateIndex = index;
+		}
+		if (Gui::Combo(UI_Str("VIDEO_EXPORT_AUDIO_BIT_RATE"), &audioBitRateIndex, audioBitRateNames, ArrayCountI32(audioBitRateNames)))
+			exportData.AudioBitRate = VideoAudioBitRatePresets[audioBitRateIndex].BitRate;
 		const char* backgroundNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), UI_Str("VIDEO_EXPORT_BACKGROUND_ASSET"),
 			UI_Str("VIDEO_EXPORT_BACKGROUND_CUSTOM"), UI_Str("VIDEO_EXPORT_BACKGROUND_JACKET") };
 		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND"), &exportData.BackgroundSource, backgroundNames, ArrayCountI32(backgroundNames)) &&
@@ -629,7 +638,7 @@ namespace PeepoDrumKit
 			}
 			const auto& resolution = VideoResolutionPresets[exportData.Resolution];
 			const u32 bitrate = resolution.Bitrate * std::max(exportData.FramesPerSecond, 30) / 60;
-			if (!exportData.Writer.Start(exportData.TemporaryPath, resolution.Width, resolution.Height, exportData.FramesPerSecond, bitrate))
+			if (!exportData.Writer.Start(exportData.TemporaryPath, resolution.Width, resolution.Height, exportData.FramesPerSecond, bitrate, exportData.AudioBitRate))
 			{
 				exportData.ErrorDetails = std::string(exportData.Writer.GetError());
 				if (!DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath))

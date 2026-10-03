@@ -204,10 +204,10 @@ jobs:
         shell: cmd
         run: |
           cd build/bin/x64-Release && (
-            7z a ../../../PeepoDrumKit.Win.x64.zip *.*
+            7z a ../../../PeepoDrumKit.Win.x64.zip *.* license_txt
             cd ../../..
           )
-          7z u PeepoDrumKit.Win.x64.zip "assets" "locales" "*.md"
+          7z u PeepoDrumKit.Win.x64.zip "assets" "locales" "license_txt" "*.md"
 
       - name: Check if tag exists
         uses: mukunku/tag-exists-action@v1.6.0

@@ -88,6 +88,7 @@ namespace PeepoDrumKit
 		{
 			i32 Layout = 0;
 			i32 Resolution = 3, FramesPerSecond = 60;
+			i32 AudioBitRate = 192000;
 			i32 BackgroundSource = -1, BackgroundImageFit = 2;
 			u32 BackgroundColor = 0;
 			std::string BackgroundImagePath;

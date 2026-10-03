@@ -41,11 +41,11 @@ namespace PeepoDrumKit
 		impl->Shutdown();
 	}
 
-	b8 VideoExportWriter::Start(std::string_view filePathUTF8, u32 width, u32 height, u32 framesPerSecond, u32 videoBitRate)
+	b8 VideoExportWriter::Start(std::string_view filePathUTF8, u32 width, u32 height, u32 framesPerSecond, u32 videoBitRate, u32 audioBitRate)
 	{
 		impl->Shutdown();
 		impl->Error.clear();
-		if (filePathUTF8.empty() || width == 0 || height == 0 || framesPerSecond == 0 || videoBitRate == 0 ||
+		if (filePathUTF8.empty() || width == 0 || height == 0 || framesPerSecond == 0 || videoBitRate == 0 || !IsValidVideoAudioBitRate(audioBitRate) ||
 			width % 2 != 0 || height % 2 != 0 || width > 8192 || height > 8192 || filePathUTF8.size() > INT_MAX)
 		{
 			impl->Error = "Invalid video export settings";
@@ -95,7 +95,7 @@ namespace PeepoDrumKit
 			!impl->Check(outputAudio->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, audioSampleRate), "Set audio sample rate") ||
 			!impl->Check(outputAudio->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, audioChannels), "Set audio channel count") ||
 			!impl->Check(outputAudio->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, audioBitsPerSample), "Set audio bit depth") ||
-			!impl->Check(outputAudio->SetUINT32(MF_MT_AVG_BITRATE, 160000), "Set AAC bit rate") ||
+			!impl->Check(outputAudio->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, audioBitRate / 8), "Set AAC byte rate") ||
 			!impl->Check(impl->Writer->AddStream(outputAudio.Get(), &impl->AudioStream), "Add audio stream")) return false;
 
 		if (!impl->Check(MFCreateMediaType(inputAudio.GetAddressOf()), "MFCreateMediaType(audio input)")) return false;

@@ -4,6 +4,13 @@
 #include "chart_editor_settings.h"
 #include "chart_editor_i18n.h"
 #include "core_log.h"
+#include <Windows.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mferror.h>
+#include <mfreadwrite.h>
+#include <mftransform.h>
+#include <wrl/client.h>
 
 namespace PeepoDrumKit
 {
@@ -107,6 +114,49 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-aac-capabilities")
+			{
+				if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 1;
+				defer { CoUninitialize(); };
+				if (FAILED(MFStartup(MF_VERSION))) return 1;
+				defer { MFShutdown(); };
+				MFT_REGISTER_TYPE_INFO outputFilter { MFMediaType_Audio, MFAudioFormat_AAC };
+				IMFActivate** encoders = nullptr;
+				UINT32 count = 0;
+				if (FAILED(MFTEnumEx(MFT_CATEGORY_AUDIO_ENCODER, MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER,
+					nullptr, &outputFilter, &encoders, &count))) return 1;
+				defer { for (UINT32 index = 0; index < count; ++index) encoders[index]->Release(); CoTaskMemFree(encoders); };
+				if (count == 0) return 1;
+				Microsoft::WRL::ComPtr<IMFTransform> encoder;
+				if (FAILED(encoders[0]->ActivateObject(IID_PPV_ARGS(encoder.GetAddressOf())))) return 1;
+				for (DWORD index = 0;; ++index)
+				{
+					Microsoft::WRL::ComPtr<IMFMediaType> type;
+					const HRESULT result = encoder->GetOutputAvailableType(0, index, type.GetAddressOf());
+					if (result == MF_E_NO_MORE_TYPES) break;
+					if (FAILED(result)) return 1;
+					UINT32 sampleRate = 0, channels = 0, bytesPerSecond = 0;
+					if (FAILED(type->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &sampleRate)) ||
+						FAILED(type->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels)) ||
+						FAILED(type->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &bytesPerSecond))) return 1;
+					if (channels == 2 && (sampleRate == 44100 || sampleRate == 48000))
+						Log::Write("AAC supported stereo format: %u Hz, %u kbps", sampleRate, bytesPerSecond * 8 / 1000);
+				}
+				for (UINT32 bitRate : { 256000u, 320000u })
+				{
+					Microsoft::WRL::ComPtr<IMFMediaType> type;
+					if (FAILED(MFCreateMediaType(type.GetAddressOf())) ||
+						FAILED(type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio)) ||
+						FAILED(type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC)) ||
+						FAILED(type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, 44100)) ||
+						FAILED(type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 2)) ||
+						FAILED(type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16)) ||
+						FAILED(type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitRate / 8))) return 1;
+					const HRESULT result = encoder->SetOutputType(0, type.Get(), MFT_SET_TYPE_TEST_ONLY);
+					Log::Write("AAC stereo %u kbps probe: HRESULT 0x%08X", bitRate / 1000, static_cast<u32>(result));
+				}
+				return 0;
+			}
 			if (argv[i] == "--test-video-branches")
 			{
 				std::string error;
@@ -171,35 +221,72 @@ namespace PeepoDrumKit
 				fadeSources.FadeInSeconds = fadeSources.FadeOutSeconds = 0.0f;
 				RenderVideoExportAudio(fadeSources, {}, fadeSources.SongOffset, 0, 1, mixedSamples);
 				if (mixedSamples[0] != 1000 || mixedSamples[1] != 1000) return 1;
-				VideoExportWriter writer;
-				if (!writer.Start("build/video-writer-self-test.mp4", 640, 360, 30, 2000000))
-				{
-					Log::Write("Video writer self-test setup failed: %s", writer.GetError().data());
-					return 1;
-				}
 				std::vector<u8> pixels(640 * 360 * 4, 0);
 				std::vector<i16> samples(1470 * 2, 0);
-				for (i32 frame = 0; frame < 30; ++frame)
+				for (const auto& preset : VideoAudioBitRatePresets)
 				{
-					for (size_t pixel = 0; pixel < pixels.size(); pixel += 4)
+					PersistentAppData settings, restored;
+					settings.VideoExport.AudioBitRate = preset.BitRate;
+					std::string ini;
+					SettingsToIni(settings, ini);
+					if (ParseSettingsIni(ini, restored).HasError || restored.VideoExport.AudioBitRate != preset.BitRate) return 1;
+					VideoExportWriter writer;
+					const std::string outputPath = "build/video-writer-self-test-" + std::to_string(preset.BitRate / 1000) + ".mp4";
+					if (!writer.Start(outputPath, 640, 360, 30, 2000000, preset.BitRate))
 					{
-						pixels[pixel + 0] = static_cast<u8>(frame * 8);
-						pixels[pixel + 1] = 64;
-						pixels[pixel + 2] = 128;
-						pixels[pixel + 3] = 255;
-					}
-					if (!writer.WriteVideoFrame(pixels.data(), 640 * 4, frame) ||
-						!writer.WriteAudioSamples(samples.data(), 1470, frame * 1470))
-					{
-						Log::Write("Video writer self-test frame failed: %s", writer.GetError().data());
+						Log::Write("Video writer self-test setup failed at %u bps: %s", preset.BitRate, writer.GetError().data());
 						return 1;
 					}
+					for (i32 frame = 0; frame < 30; ++frame)
+					{
+						for (size_t pixel = 0; pixel < pixels.size(); pixel += 4)
+						{
+							pixels[pixel + 0] = static_cast<u8>(frame * 8);
+							pixels[pixel + 1] = 64;
+							pixels[pixel + 2] = 128;
+							pixels[pixel + 3] = 255;
+						}
+						for (i32 sample = 0; sample < 1470; ++sample)
+						{
+							const i16 value = static_cast<i16>(10000.0 * std::sin(2.0 * 3.141592653589793 * 440.0 * (frame * 1470 + sample) / 44100.0));
+							samples[sample * 2] = samples[sample * 2 + 1] = value;
+						}
+						if (!writer.WriteVideoFrame(pixels.data(), 640 * 4, frame) ||
+							!writer.WriteAudioSamples(samples.data(), 1470, frame * 1470))
+						{
+							Log::Write("Video writer self-test frame failed: %s", writer.GetError().data());
+							return 1;
+						}
+					}
+					if (!writer.Finish())
+					{
+						Log::Write("Video writer self-test finalize failed: %s", writer.GetError().data());
+						return 1;
+					}
+					if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 1;
+					defer { CoUninitialize(); };
+					if (FAILED(MFStartup(MF_VERSION))) return 1;
+					defer { MFShutdown(); };
+					Microsoft::WRL::ComPtr<IMFSourceReader> reader;
+					Microsoft::WRL::ComPtr<IMFMediaType> audioType;
+					if (FAILED(MFCreateSourceReaderFromURL(UTF8::WideArg(outputPath).c_str(), nullptr, reader.GetAddressOf())) ||
+						FAILED(reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, audioType.GetAddressOf()))) return 1;
+					UINT32 bytesPerSecond = 0, sampleRate = 0, channels = 0;
+					GUID subtype = {};
+					if (FAILED(audioType->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &bytesPerSecond)) || bytesPerSecond * 8 != preset.BitRate ||
+						FAILED(audioType->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &sampleRate)) || sampleRate != 44100 ||
+						FAILED(audioType->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels)) || channels != 2 ||
+						FAILED(audioType->GetGUID(MF_MT_SUBTYPE, &subtype)) || subtype != MFAudioFormat_AAC)
+					{
+						Log::Write("Video writer self-test audio format mismatch: requested %u, got %u bps", preset.BitRate, bytesPerSecond * 8);
+						return 1;
+					}
+					Log::Write("Video writer self-test verified %u kbps AAC stereo at 44100 Hz", preset.BitRate / 1000);
 				}
-				if (!writer.Finish())
-				{
-					Log::Write("Video writer self-test finalize failed: %s", writer.GetError().data());
-					return 1;
-				}
+				PersistentAppData legacySettings;
+				if (ParseSettingsIni("[video_export]\nframes_per_second = 60\n", legacySettings).HasError || legacySettings.VideoExport.AudioBitRate != 192000) return 1;
+				VideoExportWriter invalidWriter;
+				if (invalidWriter.Start("build/video-writer-invalid.mp4", 640, 360, 30, 2000000, 0) || invalidWriter.GetError().empty()) return 1;
 				Log::Write("Video writer self-test passed");
 				return 0;
 			}

@@ -320,6 +320,7 @@ namespace PeepoDrumKit
 				if (it.Key == "layout") { if (!ASCII::TryParse(in, settings.Layout)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "resolution") { if (!ASCII::TryParse(in, settings.Resolution)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "frames_per_second") { if (!ASCII::TryParse(in, settings.FramesPerSecond)) return parser.Error_InvalidInt(); }
+				else if (it.Key == "audio_bit_rate") { if (!ASCII::TryParse(in, settings.AudioBitRate)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "background_source") { if (!ASCII::TryParse(in, settings.BackgroundSource)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "background_image_fit") { if (!ASCII::TryParse(in, settings.BackgroundImageFit)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "background_color") { if (!ASCII::TryParse(in, settings.BackgroundColor)) return parser.Error_InvalidInt(); }
@@ -398,6 +399,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_I32("layout", video.Layout);
 		writer.LineKeyValue_I32("resolution", video.Resolution);
 		writer.LineKeyValue_I32("frames_per_second", video.FramesPerSecond);
+		writer.LineKeyValue_I32("audio_bit_rate", video.AudioBitRate);
 		writer.LineKeyValue_I32("background_source", video.BackgroundSource);
 		writer.LineKeyValue_I32("background_image_fit", video.BackgroundImageFit);
 		writer.LineKeyValue_Str("background_color", std::to_string(video.BackgroundColor));

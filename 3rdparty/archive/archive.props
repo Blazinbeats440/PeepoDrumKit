@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ArchiveRoot>$(MSBuildThisFileDirectory)</ArchiveRoot>
+    <ArchiveBuild>$(ArchiveRoot)..\..\build\archive-$(Platform)-$(Configuration)</ArchiveBuild>
+    <ArchiveCMake Condition="'$(ArchiveCMake)' == ''">$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</ArchiveCMake>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ArchiveBuild)\stage\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>LIBARCHIVE_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ArchiveBuild)\stage\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>archive.lib;lzma.lib;bz2.lib;zs$(ArchiveZlibDebugSuffix).lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <ArchiveZlibDebugSuffix>d</ArchiveZlibDebugSuffix>
+  </PropertyGroup>
+  <Target Name="BuildArchiveDependencies" BeforeTargets="ClCompile">
+    <Error Condition="!Exists('$(ArchiveCMake)')" Text="CMake is required. Install the Visual Studio C++ CMake tools component or set ArchiveCMake to cmake.exe." />
+    <Exec Command="&quot;$(ArchiveCMake)&quot; -S &quot;$(ArchiveRoot).&quot; -B &quot;$(ArchiveBuild)&quot; -G &quot;Visual Studio 17 2022&quot; -A $(Platform) -DARCHIVE_CONFIGURATION=$(Configuration) -DCMAKE_GENERATOR_INSTANCE=" />
+    <Exec Command="&quot;$(ArchiveCMake)&quot; --build &quot;$(ArchiveBuild)&quot; --config $(Configuration) --parallel" />
+  </Target>
+  <ItemGroup>
+    <ArchiveLicense Include="$(ArchiveRoot)..\..\license_txt\libarchive.txt;$(ArchiveRoot)..\..\license_txt\xz.txt;$(ArchiveRoot)..\..\license_txt\xz-0BSD.txt;$(ArchiveRoot)..\..\license_txt\zlib.txt;$(ArchiveRoot)..\..\license_txt\bzip2.txt;$(ArchiveBuild)\stage\libarchive-notices.txt" />
+  </ItemGroup>
+  <Target Name="CopyArchiveLicenses" AfterTargets="Build">
+    <Copy SourceFiles="@(ArchiveLicense)" DestinationFolder="$(OutDir)license_txt" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
