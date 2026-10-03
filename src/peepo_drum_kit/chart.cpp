@@ -281,11 +281,20 @@ namespace PeepoDrumKit
 				importNotes(inCourse.Measures_Expert, outCourse.Notes_Expert, balloonExpert);
 				importNotes(inCourse.Measures_Master, outCourse.Notes_Master, balloonMaster);
 			}
-			auto importScrollChanges = [](const std::vector<TJA::ConvertedMeasure>& measures, SortedScrollChangesList& outScrollChanges)
+			auto importScrollChanges = [&](const std::vector<TJA::ConvertedMeasure>& measures, SortedScrollChangesList& outScrollChanges)
 			{
 				for (const TJA::ConvertedMeasure& measure : measures)
 					for (const TJA::ConvertedScrollChange& scrollChange : measure.ScrollChanges)
-						outScrollChanges.Sorted.push_back(ScrollChange { measure.StartTime + scrollChange.TimeWithinMeasure, scrollChange.ScrollSpeed });
+					{
+						ScrollChange change { measure.StartTime + scrollChange.TimeWithinMeasure, scrollChange.ScrollSpeed };
+						change.SourceCommandOrder = scrollChange.CommandOrder;
+						change.SourceBeat = change.BeatTime;
+						change.SourceScrollSpeed = change.ScrollSpeed;
+						change.SourceIsCommon = scrollChange.BranchIndex < 0;
+						if (scrollChange.BranchIndex >= 0 && static_cast<size_t>(scrollChange.BranchIndex) < inCourse.Branches.size())
+							change.SourceBranchStart = inCourse.Branches[scrollChange.BranchIndex].StartTime;
+						outScrollChanges.Sorted.push_back(change);
+					}
 			};
 			importScrollChanges(inCourse.Measures, outCourse.ScrollChanges_Normal);
 			if (!inCourse.Branches.empty())

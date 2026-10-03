@@ -47,6 +47,7 @@
 #ifndef IMGUI_DISABLE
 #include "imgui/backend/imgui_custom_draw.h"
 #include "imgui/backend/imgui_impl_d3d11.h"
+#include "core_log.h"
 #include <vector>
 
 // DirectX
@@ -551,10 +552,12 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
             desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
             desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             desc.MiscFlags = 0;
-            bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->pVertexConstantBuffer);
+            if (FAILED(bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->pVertexConstantBuffer)))
+                return false;
 
             desc.ByteWidth = sizeof(WAVEFORM_CONSTANT_BUFFER);
-            bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->WaveformConstantBuffer);
+            if (FAILED(bd->pd3dDevice->CreateBuffer(&desc, nullptr, &bd->WaveformConstantBuffer)))
+                return false;
         }
     }
 
@@ -607,7 +610,8 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
         desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
         desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-        bd->pd3dDevice->CreateBlendState(&desc, &bd->pBlendState);
+        if (FAILED(bd->pd3dDevice->CreateBlendState(&desc, &bd->pBlendState)))
+            return false;
     }
 
     // Create the rasterizer state
@@ -618,7 +622,8 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.CullMode = D3D11_CULL_NONE;
         desc.ScissorEnable = true;
         desc.DepthClipEnable = true;
-        bd->pd3dDevice->CreateRasterizerState(&desc, &bd->pRasterizerState);
+        if (FAILED(bd->pd3dDevice->CreateRasterizerState(&desc, &bd->pRasterizerState)))
+            return false;
     }
 
     // Create depth-stencil State
@@ -632,7 +637,8 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.FrontFace.StencilFailOp = desc.FrontFace.StencilDepthFailOp = desc.FrontFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
         desc.FrontFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
         desc.BackFace = desc.FrontFace;
-        bd->pd3dDevice->CreateDepthStencilState(&desc, &bd->pDepthStencilState);
+        if (FAILED(bd->pd3dDevice->CreateDepthStencilState(&desc, &bd->pDepthStencilState)))
+            return false;
     }
 
     // Create texture sampler
@@ -648,7 +654,8 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
         desc.MinLOD = 0.f;
         desc.MaxLOD = 0.f;
-        bd->pd3dDevice->CreateSamplerState(&desc, &bd->pFontSampler);
+        if (FAILED(bd->pd3dDevice->CreateSamplerState(&desc, &bd->pFontSampler)))
+            return false;
     }
 
     return true;
@@ -926,6 +933,8 @@ namespace CustomDraw
 	{
 		ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
 		assert(ResolveHandle(Handle) == nullptr);
+		if (bd == nullptr || bd->pd3dDevice == nullptr)
+			return;
 
 		DX11GPUTextureData* slot = nullptr;
 		for (auto& it : LoadedTextureSlots) { if (it.GenerationID == 0) { slot = &it; break; } }
@@ -946,10 +955,21 @@ namespace CustomDraw
 			PtrArg(D3D11_SUBRESOURCE_DATA{ desc.InitialPixels, static_cast<UINT>(desc.Size.x * 4), 0u }),
 			//(desc.InitialPixels != nullptr) ? PtrArg(D3D11_SUBRESOURCE_DATA { desc.InitialPixels, static_cast<UINT>(desc.Size.x * 4), 0u }) : nullptr,
 			&slot->Texture2D);
-		assert(SUCCEEDED(result));
+		if (FAILED(result))
+		{
+			Log::WriteHRESULT("GPUTexture::Load CreateTexture2D", result);
+			*slot = DX11GPUTextureData {};
+			return;
+		}
 
 		result = bd->pd3dDevice->CreateShaderResourceView(slot->Texture2D, nullptr, &slot->ResourceView);
-		assert(SUCCEEDED(result));
+		if (FAILED(result))
+		{
+			Log::WriteHRESULT("GPUTexture::Load CreateShaderResourceView", result);
+			slot->Texture2D->Release();
+			*slot = DX11GPUTextureData {};
+			return;
+		}
 
 		Handle = GPUTextureHandle { static_cast<u32>(ArrayItToIndex(slot, &LoadedTextureSlots[0])), slot->GenerationID };
 	}
@@ -1099,6 +1119,8 @@ namespace CustomDraw
 				memcpy(&data->Amplitudes, &customCommand.WaveformChunk.PerPixelAmplitude, sizeof(data->Amplitudes));
 				ctx->Unmap(bd->WaveformConstantBuffer, 0);
 			}
+			else
+				return;
 
 			// HACK: Duplicated from regular render command loop
 			ImVec2 clip_off = ThisFrameImDrawData->DisplayPos;

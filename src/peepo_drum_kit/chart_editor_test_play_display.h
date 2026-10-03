@@ -17,7 +17,13 @@ namespace PeepoDrumKit
 	inline TestPlayJudgementDisplay FormatTestPlayJudgement(i32 judgement, i32 timingError, b8 wasHit, i32 mode, i32 neutralWindow, b8 showMsUnit = true)
 	{
 		const char* label = judgement == 1 ? UI_Str("TEST_PLAY_GOOD") : judgement == 2 ? UI_Str("TEST_PLAY_OK") : UI_Str("TEST_PLAY_MISS");
-		const u32 timingColor = mode == 0 || !wasHit || Absolute(timingError) <= neutralWindow ? 0xFFFFFFFF : timingError < 0 ? 0xFFFFB060 : 0xFF6060FF;
+		u32 timingColor = 0xFFFFFFFF;
+		if (mode != 0 && wasHit && Absolute(timingError) > neutralWindow)
+		{
+			if (judgement == 1) timingColor = timingError < 0 ? 0xFFFFC890 : 0xFF9090FF;
+			else if (judgement == 3) timingColor = timingError < 0 ? 0xFFB37B43 : 0xFF4343B3;
+			else timingColor = timingError < 0 ? 0xFFFFB060 : 0xFF6060FF;
+		}
 		if (!wasHit || mode == 0) return { "", label, timingColor };
 		const char* direction = timingError < 0 ? UI_Str("TEST_PLAY_FAST") : UI_Str("TEST_PLAY_SLOW");
 		const std::string signedMs = (timingError >= 0 ? "+" : "") + std::to_string(timingError) + (showMsUnit ? " ms" : "");

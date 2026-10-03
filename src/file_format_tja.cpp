@@ -1784,7 +1784,8 @@ namespace TJA
 				}
 				else if (command.Type == ParsedChartCommandType::ChangeScrollSpeed)
 				{
-					currentMeasure->ScrollChanges.push_back(ConvertedScrollChange { currentTimeWithinMeasure, command.Param.ChangeScrollSpeed.Value });
+					currentMeasure->ScrollChanges.push_back(ConvertedScrollChange { currentTimeWithinMeasure, command.Param.ChangeScrollSpeed.Value,
+						command.Param.ChangeScrollSpeed.BranchIndex, command.Param.ChangeScrollSpeed.CommandOrder });
 				}
 				else if (command.Type == ParsedChartCommandType::GoGoStart)
 				{
@@ -1878,6 +1879,7 @@ namespace TJA
 		ConvertedBranchPath selectedBranch = ConvertedBranchPath::Count;
 		size_t normalMeasureCount = 0;
 		std::array<size_t, 3> branchMeasureCounts {};
+		i32 scrollCommandOrder = 0;
 
 		for (const ParsedChartCommand& command : inCourse.ChartCommands)
 		{
@@ -1922,12 +1924,26 @@ namespace TJA
 			if (!isInsideBranch || selectedBranch == ConvertedBranchPath::Count)
 			{
 				for (auto& branchCommands : commandsByBranch)
+				{
 					branchCommands.push_back(command);
+					if (command.Type == ParsedChartCommandType::ChangeScrollSpeed)
+					{
+						branchCommands.back().Param.ChangeScrollSpeed.BranchIndex = -1;
+						branchCommands.back().Param.ChangeScrollSpeed.CommandOrder = scrollCommandOrder;
+					}
+				}
 			}
 			else
 			{
-				commandsByBranch[EnumToIndex(selectedBranch)].push_back(command);
+				auto& branchCommands = commandsByBranch[EnumToIndex(selectedBranch)];
+				branchCommands.push_back(command);
+				if (command.Type == ParsedChartCommandType::ChangeScrollSpeed)
+				{
+					branchCommands.back().Param.ChangeScrollSpeed.BranchIndex = static_cast<i32>(branchMeasureRanges.size() - 1);
+					branchCommands.back().Param.ChangeScrollSpeed.CommandOrder = scrollCommandOrder;
+				}
 			}
+			if (command.Type == ParsedChartCommandType::ChangeScrollSpeed) ++scrollCommandOrder;
 
 			if (command.Type == ParsedChartCommandType::MeasureEnd)
 			{

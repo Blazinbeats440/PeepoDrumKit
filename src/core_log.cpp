@@ -61,6 +61,33 @@ namespace
 			sprintf_s(message, "REGISTERS: rax=%016llX rbx=%016llX rcx=%016llX rdx=%016llX r14=%016llX rip=%016llX",
 				context.Rax, context.Rbx, context.Rcx, context.Rdx, context.R14, context.Rip);
 			WriteLine(message);
+			CONTEXT stackContext = context;
+			for (u32 frame = 0; frame < 24 && stackContext.Rip != 0; ++frame)
+			{
+				HMODULE frameModule = nullptr;
+				::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+					reinterpret_cast<LPCWSTR>(stackContext.Rip), &frameModule);
+				wchar_t framePath[MAX_PATH] = {};
+				::GetModuleFileNameW(frameModule, framePath, static_cast<DWORD>(std::size(framePath)));
+				char framePathUtf8[MAX_PATH * 3] = {};
+				::WideCharToMultiByte(CP_UTF8, 0, framePath, -1, framePathUtf8, static_cast<int>(std::size(framePathUtf8)), nullptr, nullptr);
+				Log::Write("STACK %u: address=%p rva=0x%llX module=%s", frame, reinterpret_cast<void*>(stackContext.Rip),
+					frameModule ? stackContext.Rip - reinterpret_cast<DWORD64>(frameModule) : 0, framePathUtf8);
+				DWORD64 imageBase = 0;
+				if (PRUNTIME_FUNCTION function = ::RtlLookupFunctionEntry(stackContext.Rip, &imageBase, nullptr))
+				{
+					PVOID handlerData = nullptr;
+					DWORD64 establisherFrame = 0;
+					::RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, stackContext.Rip, function, &stackContext,
+						&handlerData, &establisherFrame, nullptr);
+				}
+				else
+				{
+					if (!::ReadProcessMemory(::GetCurrentProcess(), reinterpret_cast<void*>(stackContext.Rsp),
+						&stackContext.Rip, sizeof(stackContext.Rip), nullptr)) break;
+					stackContext.Rsp += sizeof(stackContext.Rip);
+				}
+			}
 		}
 #endif
 		return EXCEPTION_EXECUTE_HANDLER;

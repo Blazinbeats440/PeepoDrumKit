@@ -494,7 +494,7 @@ namespace ApplicationHost
 					, fullFontFilePath.c_str(), Directory::GetWorkingDirectory().c_str(), Directory::GetExecutableDirectory().c_str());
 
 				const Shell::MessageBoxResult result = Shell::ShowMessageBox(
-					std::string_view(messageBuffer, messageLength), "Peepo Drum Kit - Startup Error",
+					std::string_view(messageBuffer, messageLength), "PeepoDrumKit Ver.B - Startup Error",
 					Shell::MessageBoxButtons::AbortRetryIgnore, Shell::MessageBoxIcon::Error, GlobalState.NativeWindowHandle);
 
 				if (result == Shell::MessageBoxResult::Abort) { ::ExitProcess(-1); }
@@ -888,8 +888,8 @@ namespace ApplicationHost
 		GlobalState.FontFileContent = nullptr;
 		GlobalState.FontFileContentSize = 0;
 
-		ImGui_ImplDX11_Shutdown();
-		ImGui_ImplWin32_Shutdown();
+		if (io.BackendRendererUserData) ImGui_ImplDX11_Shutdown();
+		if (io.BackendPlatformUserData) ImGui_ImplWin32_Shutdown();
 		ImGui::DestroyContext();
 
 		CleanupGlobalD3D11();
@@ -1017,7 +1017,74 @@ namespace ApplicationHost
 		const HICON windowIcon = ::LoadIconW(::GetModuleHandleW(nullptr), MAKEINTRESOURCEW(PEEPO_DRUM_KIT_ICON));
 		ImGui_ImplWin32_Init(hWnd, windowIcon);
 		ImGui_ImplDX11_Init(GlobalD3D11Device, GlobalD3D11DeviceContext);
+		if (!ImGui_ImplDX11_CreateDeviceObjects())
+		{
+			Log::Write("D3D11 device recovery failed creating renderer resources");
+			return false;
+		}
 		Log::Write("D3D11 device recovery complete");
+		return true;
+	}
+
+	b8 RunD3D11DeviceRecoverySelfTest()
+	{
+		const HWND hwnd = ::CreateWindowExW(0, L"STATIC", L"D3D11 recovery test", WS_OVERLAPPEDWINDOW,
+			0, 0, 640, 360, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+		if (hwnd == nullptr) return false;
+		defer { ::DestroyWindow(hwnd); };
+		StartupParam startupParam;
+		if (!CreateGlobalD3D11(startupParam, hwnd)) return false;
+		defer { CleanupGlobalD3D11(); };
+		ImGui::CreateContext();
+		defer { ImGui::DestroyContext(); };
+		ImGui::GetIO().IniFilename = nullptr;
+		ImGui::GetIO().LogFilename = nullptr;
+		ImGui_ImplWin32_Init(hwnd, nullptr);
+		ImGui_ImplDX11_Init(GlobalD3D11Device, GlobalD3D11DeviceContext);
+		defer {
+			if (ImGui::GetIO().BackendRendererUserData) ImGui_ImplDX11_Shutdown();
+			if (ImGui::GetIO().BackendPlatformUserData) ImGui_ImplWin32_Shutdown();
+		};
+		ImFont* font = ImGui::GetIO().Fonts->AddFontDefault();
+		CustomDraw::GPUTexture texture;
+		defer { texture.Unload(); };
+		const u32 pixel = IM_COL32(255, 0, 0, 255);
+		for (i32 frame = 0; frame < 8; ++frame)
+		{
+			const CustomDraw::GPUTexture previousTexture = texture;
+			const b8 recovering = frame > 0 && (frame % 2) == 0;
+			if (recovering)
+			{
+				if (!RecoverGlobalD3D11(startupParam, hwnd) || previousTexture.IsValid()) return false;
+			}
+			Log::Write("D3D11 recovery self-test frame %d begin", frame);
+			ImGui::PushFont(font, 16.0f);
+			ImGui_ImplDX11_NewFrame();
+			ImGui_ImplWin32_NewFrame();
+			ImGui::NewFrame();
+			if (!texture.IsValid())
+				texture.Load({ CustomDraw::GPUPixelFormat::RGBA, CustomDraw::GPUAccessType::Static, ivec2(1, 1), &pixel });
+			if (!texture.IsValid() || (recovering && previousTexture.IsValid())) return false;
+			ImDrawList* drawList = ImGui::GetForegroundDrawList();
+			drawList->AddText(ImVec2(10, 10), IM_COL32_WHITE, "Device recovery test");
+			drawList->AddImage(texture.GetTexID(), ImVec2(20, 40), ImVec2(60, 80));
+			CustomDraw::WaveformChunk waveform = {};
+			for (f32& amplitude : waveform.PerPixelAmplitude) amplitude = 0.5f;
+			CustomDraw::DrawWaveformChunk(drawList, Rect { vec2(80, 40), vec2(160, 80) }, IM_COL32_WHITE, waveform);
+			ImGui::Render();
+			GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
+			GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
+			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			ImGui::PopFont();
+			u32 width = 0, height = 0;
+			std::vector<u8> pixels;
+			if (!CaptureWindowToBGRA(width, height, pixels) || width <= 30 || height <= 50) return false;
+			const size_t offset = (static_cast<size_t>(50) * width + 30) * 4;
+			if (pixels[offset] != 0 || pixels[offset + 1] != 0 || pixels[offset + 2] != 255) return false;
+			if (FAILED(GlobalSwapChain->Present(0, 0))) return false;
+			Log::Write("D3D11 recovery self-test frame %d complete", frame);
+		}
+		Log::Write("D3D11 recovery self-test passed");
 		return true;
 	}
 

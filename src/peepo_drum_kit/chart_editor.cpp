@@ -839,6 +839,7 @@ namespace PeepoDrumKit
 			if (Gui::BeginMenu(UI_Str("MENU_HELP")))
 			{
 				Gui::MenuItem(UI_Str("INFO_HELP_COPYRIGHT_YEAR"), "Samyuu", false, false);
+				Gui::MenuItem(UI_Str("INFO_HELP_MODIFIED_BY"), "Blazinbeats440", false, false);
 				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_TIME"), BuildInfo::CompilationTime(), false, false);
 				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_DATE"), BuildInfo::CompilationDate(), false, false);
 				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_CONFIGURATION"), UI_Str(BuildInfo::BuildConfiguration()), false, false);
@@ -2292,7 +2293,7 @@ namespace PeepoDrumKit
 				printf("Failed to decode image file '%.*s'\n", FmtStrViewArgs(result.JacketFilePath));
 				return result;
 			}
-			Rasterize(rasterizer, result.JacketTexture);
+			result.JacketBitmap = rasterizer.Rasterize();
 
 			return result;
 		});
@@ -2509,8 +2510,14 @@ namespace PeepoDrumKit
 			AsyncLoadJacketResult loadResult = loadJacketFuture.get();
 
 			context.SongJacketFilePath = std::move(loadResult.JacketFilePath);
-			context.JacketTexture = std::move(loadResult.JacketTexture);
+			context.JacketTexture.Unload();
+			const RasterizedBitmap& bitmap = loadResult.JacketBitmap;
+			if (bitmap.Resolution.x > 0 && bitmap.Resolution.y > 0)
+				context.JacketTexture.Load({ CustomDraw::GPUPixelFormat::BGRA, CustomDraw::GPUAccessType::Static, bitmap.Resolution, bitmap.BGRA.get() });
 			context.SongJacketFadeAnimationTarget = !context.JacketTexture.IsValid() ? 0.0f : 1.0f;
 		}
+		if (!loadJacketFuture.valid() && !context.JacketTexture.IsValid() &&
+			context.SongJacketFadeAnimationTarget > 0.0f && !context.SongJacketFilePath.empty())
+			StartAsyncLoadingSongJacketFile(context.SongJacketFilePath);
 	}
 }

@@ -501,6 +501,7 @@ namespace PeepoDrumKit
 			}
 			else exportData.Route = BuildFixedVideoBranchRoute(course, static_cast<BranchType>(exportData.Branch));
 			preview.VideoExportCombos.Rebuild(course, exportData.Route);
+			preview.VideoScrollDecisionCount = SIZE_MAX;
 		}
 		preview.VideoExportRoute = &exportData.Route;
 		preview.VideoRollsPerSecond = exportData.RouteRollSpeed;
@@ -650,6 +651,7 @@ namespace PeepoDrumKit
 			exportData.LastFrameElapsedSeconds = exportData.SecondsPerFrame = 0.0;
 			exportData.ExportStopwatch.Restart();
 			exportData.Preview.VideoExportCombos.Rebuild(*exportData.Course, exportData.Route);
+			exportData.Preview.VideoScrollDecisionCount = SIZE_MAX;
 			exportData.Sounds.Rebuild(*exportData.Course, exportData.Route, exportData.RouteRollSpeed);
 			exportData.Exporting = true;
 			exportData.Status.clear();

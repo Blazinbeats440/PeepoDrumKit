@@ -373,6 +373,9 @@ namespace PeepoDrumKit
 		const VideoBranchRoute* VideoExportRoute = nullptr;
 		f32 VideoRollsPerSecond = 0.0f;
 		VideoExportComboTimeline VideoExportCombos;
+		std::array<PlaybackScrollTimeline, EnumCount<BranchType>> VideoExportScrolls, VideoExportTransitionScrolls;
+		size_t VideoScrollDecisionCount = SIZE_MAX;
+		void UpdateVideoScrolls(const ChartCourse& course, Time time);
 		b8 VideoShowTitle = true, VideoShowSubtitle = false, VideoShowDifficulty = true, VideoShowMaxCombo = true, VideoShowCurrentCombo = true;
 		f32 VideoTitleScale = 1.0f, VideoTitlePaddingScale = 1.0f;
 		i32 VideoTitleAlignment = 0, VideoTitleVerticalPosition = 0;
@@ -402,6 +405,8 @@ namespace PeepoDrumKit
 		Time TestPlayBranchTransitionDuration = Time::Zero();
 		std::vector<std::pair<size_t, BranchType>> TestPlayBranchDecisions;
 		std::vector<Beat> TestPlayBranchCutoffs;
+		std::array<PlaybackScrollTimeline, EnumCount<BranchType>> TestPlayScrolls, TestPlayTransitionScrolls;
+		void RebuildTestPlayScrolls();
 		std::vector<BranchLevelHold> TestPlayOrderedLevelHolds;
 		BranchType GetTestPlayNoteBranch(Beat beat) const;
 		b8 IsTestPlayNoteActive(const Note* note, BranchType branch) const;

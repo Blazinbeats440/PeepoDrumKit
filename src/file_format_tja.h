@@ -413,7 +413,7 @@ namespace TJA
 			struct { TimeSignature Value; } ChangeTimeSignature;
 			struct { Tempo Value; } ChangeTempo;
 			struct { Time Value; } ChangeDelay;
-			struct { Complex Value; } ChangeScrollSpeed;
+			struct { Complex Value; i32 BranchIndex = -1, CommandOrder = -1; } ChangeScrollSpeed;
 			struct { i8 Method;  } ChangeScrollType;
 			struct { Time Duration; Complex Move; } ChangeJPOSScroll;
 			struct { b8 Visible; } ChangeBarLine;
@@ -537,6 +537,7 @@ namespace TJA
 	{
 		Beat TimeWithinMeasure;
 		Complex ScrollSpeed;
+		i32 BranchIndex = -1, CommandOrder = -1;
 	};
 
 	struct ConvertedBarLineChange

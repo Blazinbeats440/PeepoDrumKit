@@ -1650,7 +1650,7 @@ namespace PeepoDrumKit
 			{
 				Gui::PushStyleColor(ImGuiCol_Text, colors.GreenDark);
 				Gui::PushFont(FontMain, GuiScaleI32_AtTarget(FontBaseSizes::Large));
-				Gui::TextUnformatted("Welcome to Peepo Drum Kit (OpenTaiko team version)");
+				Gui::TextUnformatted("Welcome to PeepoDrumKit Ver.B");
 				Gui::PopFont();
 				Gui::PopStyleColor();
 

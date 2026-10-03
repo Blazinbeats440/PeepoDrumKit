@@ -16,7 +16,7 @@ cbuffer WaveformConstantBuffer : register(b1)
 float4 PS_main(VS_OUTPUT input) : SV_Target
 {
     // NOTE: Unpack tighly packed floats and sample as a point-clamp 1D "texture"
-    uint sliceIndex = uint(input.TexCoord.x * WAVEFORM_PIXELS_PER_CHUNK);
+    uint sliceIndex = min(uint(saturate(input.TexCoord.x) * WAVEFORM_PIXELS_PER_CHUNK), WAVEFORM_PIXELS_PER_CHUNK - 1);
     float amplitude = CB_Amplitudes[sliceIndex >> 2][sliceIndex & 3];
     
     // NOTE: In normalized (1.0f <-> 0.0f) range

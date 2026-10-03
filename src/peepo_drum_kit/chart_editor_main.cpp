@@ -99,7 +99,7 @@ namespace PeepoDrumKit
 			, iniFilePath, !parseResult.ErrorMessage.empty() ? parseResult.ErrorMessage.c_str() : "Unknown", parseResult.ErrorLineIndex + 1);
 
 		const Shell::MessageBoxResult result = Shell::ShowMessageBox(
-			std::string_view(messageBuffer, messageLength), "Peepo Drum Kit - Syntax Error",
+			std::string_view(messageBuffer, messageLength), "PeepoDrumKit Ver.B - Syntax Error",
 			Shell::MessageBoxButtons::AbortRetryIgnore, Shell::MessageBoxIcon::Warning, nullptr);
 
 		if (result == Shell::MessageBoxResult::Abort) return LoadSettingsResponse::ErrorAbort;
@@ -114,6 +114,8 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-d3d11-recovery")
+				return ApplicationHost::RunD3D11DeviceRecoverySelfTest() ? 0 : 1;
 			if (argv[i] == "--test-aac-capabilities")
 			{
 				if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return 1;

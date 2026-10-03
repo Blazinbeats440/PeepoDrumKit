@@ -306,6 +306,11 @@ namespace PeepoDrumKit
 		Beat BeatTime;
 		Complex ScrollSpeed;
 		b8 IsSelected;
+		// Imported scope/order distinguishes common commands at branch boundaries; edits can invalidate that scope.
+		i32 SourceCommandOrder = -1;
+		Beat SourceBeat = {}, SourceBranchStart = {};
+		Complex SourceScrollSpeed = {};
+		b8 SourceIsCommon = false;
 	};
 	template <> constexpr std::string_view DisplayNameOfChartEvent<ScrollChange> = "Scroll Changes";
 
