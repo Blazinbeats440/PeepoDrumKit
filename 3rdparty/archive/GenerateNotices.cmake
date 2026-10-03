@@ -1,0 +1,12 @@
+# Preserve the individual source notices alongside the distribution-wide license.
+file(GLOB sources "${SOURCE_DIR}/*.c" "${SOURCE_DIR}/*.h")
+set(notices "libarchive source copyright and license notices\n\n")
+foreach(source IN LISTS sources)
+    file(READ "${source}" content)
+    string(REGEX MATCH "^[ \t\r\n]*/\\*([^*]|\\*+[^*/])*\\*+/" notice "${content}")
+    if(NOT notice STREQUAL "")
+        get_filename_component(name "${source}" NAME)
+        string(APPEND notices "${name}\n${notice}\n\n")
+    endif()
+endforeach()
+file(WRITE "${OUTPUT_FILE}" "${notices}")

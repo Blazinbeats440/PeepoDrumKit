@@ -64,16 +64,19 @@ X("TEXT_EDITOR_ERROR_BODY_ONLY",				"The text must contain only one #START to #E
 X("TEMPLATE_SAVE_SECTION",						"Save") \
 X("TEMPLATE_RECALL_SECTION",					"Recall") \
 X("TEMPLATE_CATEGORY",							"Category") \
-X("FOLDER_DROP_TITLE", "Open Chart from Folder or ZIP") \
+X("FOLDER_DROP_TITLE", "Open Chart from Folder or Archive") \
 X("FOLDER_DROP_SELECT_CHART", "Select a TJA file to open.") \
 X("FOLDER_DROP_NO_CHARTS", "No TJA files were found within the configured search depth.") \
-X("FOLDER_DROP_READ_FAILED", "The folder could not be read.") \
-X("FOLDER_DROP_LOADING", "Searching for charts / extracting ZIP...") \
+X("FOLDER_DROP_READ_FAILED", "The folder or archive could not be read.") \
+X("FOLDER_DROP_LOADING", "Searching for charts / extracting archive...") \
 X("ZIP_DROP_INVALID", "The ZIP file is damaged or invalid.") \
-X("ZIP_DROP_UNSUPPORTED", "Encrypted, ZIP64, split archives, and compression methods other than Store/Deflate are not supported.") \
-X("ZIP_DROP_UNSAFE_PATH", "The ZIP contains an unsafe file path or unsupported link.") \
-X("ZIP_DROP_SIZE_LIMIT", "ZIP size limit exceeded (archive: 1 GiB, each file: 256 MiB, total extracted: 2 GiB).") \
-X("ZIP_DROP_EXTRACTION_FAILED", "ZIP extraction failed. Check write access and free space. Files already extracted are kept.") \
+X("ZIP_DROP_UNSUPPORTED", "ZIP64, split ZIP archives, and compression methods other than Store/Deflate are not supported.") \
+X("ARCHIVE_DROP_INVALID", "The archive is damaged or invalid.") \
+X("ARCHIVE_DROP_UNSUPPORTED", "This archive format or compression method is not supported.") \
+X("ARCHIVE_DROP_PASSWORD_PROTECTED", "This archive cannot be opened because it is password protected.") \
+X("ZIP_DROP_UNSAFE_PATH", "The archive contains an unsafe file path or unsupported link.") \
+X("ZIP_DROP_SIZE_LIMIT", "Archive size limit exceeded (archive: 1 GiB, each file: 256 MiB, total extracted: 2 GiB).") \
+X("ZIP_DROP_EXTRACTION_FAILED", "Archive extraction failed. Check write access and free space. Files already extracted are kept.") \
 X("TEMPLATE_CATEGORY_HINT",					"Enter a category") \
 X("TEMPLATE_NO_CATEGORY",					"No category") \
 X("TEMPLATE_REGISTER_CATEGORY",				"Register category") \
@@ -423,6 +426,7 @@ X("VIDEO_EXPORT_LAYOUT_ORIGINAL", "Original") \
 X("VIDEO_EXPORT_LAYOUT_TAIKO", "Taiko") \
 X("VIDEO_EXPORT_RESOLUTION", "Resolution") \
 X("VIDEO_EXPORT_FPS", "Frame rate") \
+X("VIDEO_EXPORT_AUDIO_BIT_RATE", "Audio bit rate") \
 X("VIDEO_EXPORT_BACKGROUND", "Background") \
 X("VIDEO_EXPORT_BACKGROUND_COLOR", "Background color") \
 X("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY", "Lane background transparency") \

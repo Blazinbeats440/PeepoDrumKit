@@ -5,6 +5,8 @@
 #include <fstream>
 #include <array>
 #define NOMINMAX
+#include <archive.h>
+#include <archive_entry.h>
 #include <Windows.h>
 
 namespace PeepoDrumKit::FileDrop
@@ -125,7 +127,8 @@ namespace PeepoDrumKit::FileDrop
 		{
 			if (!HasBytes(data, offset, 46) || Read32(data, offset) != 0x02014B50) return Error::InvalidZip;
 			const u16 flags = Read16(data, offset + 8), method = Read16(data, offset + 10);
-			if ((flags & (1 | 32 | 64 | 8192)) != 0 || (method != 0 && method != 8) || Read16(data, offset + 34) != 0) return Error::UnsupportedZip;
+			if ((flags & (1 | 64 | 8192)) != 0) return Error::PasswordProtected;
+			if ((flags & 32) != 0 || (method != 0 && method != 8) || Read16(data, offset + 34) != 0) return Error::UnsupportedZip;
 			const size_t nameSize = Read16(data, offset + 28), extraSize = Read16(data, offset + 30), commentSize = Read16(data, offset + 32);
 			const size_t recordSize = 46 + nameSize + extraSize + commentSize;
 			if (!HasBytes(data, offset, recordSize) || recordSize > endOffset - offset) return Error::InvalidZip;
@@ -199,6 +202,22 @@ namespace PeepoDrumKit::FileDrop
 		return success && closed;
 	}
 
+	static Error CreateDestination(std::string_view archivePath, std::string_view extractionRoot, fs::path& destination)
+	{
+		const fs::path root = fs::u8path(extractionRoot);
+		std::error_code error;
+		fs::create_directories(root, error);
+		if (error || IsReparsePoint(root)) return Error::ExtractionFailed;
+		const std::string stem = fs::u8path(archivePath).stem().u8string();
+		if (!IsSafeRelativeName(stem)) return Error::UnsafePath;
+		for (i32 suffix = 0; ; suffix++)
+		{
+			destination = root / fs::u8path(stem + (suffix == 0 ? "" : " (" + std::to_string(suffix) + ")"));
+			if (fs::create_directory(destination, error)) return Error::None;
+			if (error || suffix == 10000) return Error::ExtractionFailed;
+		}
+	}
+
 	Result ExtractZip(std::string_view zipPath, std::string_view extractionRoot, i32 searchDepth)
 	{
 		Result result;
@@ -214,19 +233,9 @@ namespace PeepoDrumKit::FileDrop
 		result.Failure = ParseZip(data, entries);
 		if (result.Failure != Error::None) return result;
 
-		const fs::path root = fs::u8path(extractionRoot);
-		std::error_code error;
-		fs::create_directories(root, error);
-		if (error || IsReparsePoint(root)) { result.Failure = Error::ExtractionFailed; return result; }
-		const std::string stem = fs::u8path(zipPath).stem().u8string();
-		if (!IsSafeRelativeName(stem)) { result.Failure = Error::UnsafePath; return result; }
 		fs::path destination;
-		for (i32 suffix = 0; ; suffix++)
-		{
-			destination = root / fs::u8path(stem + (suffix == 0 ? "" : " (" + std::to_string(suffix) + ")"));
-			if (fs::create_directory(destination, error)) break;
-			if (error || suffix == 10000) { result.Failure = Error::ExtractionFailed; return result; }
-		}
+		result.Failure = CreateDestination(zipPath, extractionRoot, destination);
+		if (result.Failure != Error::None) return result;
 		result.DirectoryPath = destination.u8string();
 		for (const ZipEntry& entry : entries)
 		{
@@ -249,6 +258,117 @@ namespace PeepoDrumKit::FileDrop
 			}
 			if (CRC32(decoded) != entry.CRC) { result.Failure = Error::InvalidZip; return result; }
 			if (!entry.IsDirectory && !WriteNewFile(destination / relative, decoded)) { result.Failure = Error::ExtractionFailed; return result; }
+		}
+		return ReadFolder(result.DirectoryPath, searchDepth);
+	}
+
+	b8 IsArchivePath(std::string_view path)
+	{
+		const std::string extension = fs::u8path(path).extension().u8string();
+		return ASCII::MatchesInsensitive(extension, ".zip") || ASCII::MatchesInsensitive(extension, ".7z")
+			|| ASCII::MatchesInsensitive(extension, ".rar") || ASCII::MatchesInsensitive(extension, ".lzh");
+	}
+
+	struct ArchiveReader
+	{
+		archive* Handle = archive_read_new();
+		~ArchiveReader() { if (Handle != nullptr) archive_read_free(Handle); }
+	};
+	static Error ArchiveFailure(archive* reader)
+	{
+		if (archive_format(reader) != 0 && archive_read_has_encrypted_entries(reader) > 0) return Error::PasswordProtected;
+		const char* message = archive_error_string(reader);
+		if (message != nullptr)
+		{
+			std::string lower = message;
+			for (char& character : lower) if (character >= 'A' && character <= 'Z') character += 'a' - 'A';
+			// Some encrypted headers fail before the library can set the encryption flag.
+			if (lower.find("encrypt") != std::string::npos || lower.find("passphrase") != std::string::npos || lower.find("password") != std::string::npos)
+				return Error::PasswordProtected;
+			if (lower.find("unsupported") != std::string::npos || lower.find("not supported") != std::string::npos)
+				return Error::UnsupportedArchive;
+		}
+		return Error::InvalidArchive;
+	}
+
+	Result ExtractArchive(std::string_view archivePath, std::string_view extractionRoot, i32 searchDepth)
+	{
+		if (ASCII::MatchesInsensitive(fs::u8path(archivePath).extension().u8string(), ".zip"))
+			return ExtractZip(archivePath, extractionRoot, searchDepth);
+		Result result;
+		result.DirectoryPath = archivePath;
+		if (!IsArchivePath(archivePath)) { result.Failure = Error::UnsupportedArchive; return result; }
+		std::ifstream input(fs::u8path(archivePath), std::ios::binary | std::ios::ate);
+		if (!input || input.tellg() < 0) { result.Failure = Error::ReadFailed; return result; }
+		const u64 size = static_cast<u64>(input.tellg());
+		if (size > MaxZipBytes) { result.Failure = Error::SizeLimit; return result; }
+		std::string data(static_cast<size_t>(size), '\0');
+		input.seekg(0);
+		if (!input.read(data.data(), static_cast<std::streamsize>(size))) { result.Failure = Error::ReadFailed; return result; }
+		ArchiveReader reader;
+		if (reader.Handle == nullptr) { result.Failure = Error::ExtractionFailed; return result; }
+		archive_read_support_filter_none(reader.Handle);
+		archive_read_support_format_7zip(reader.Handle);
+		archive_read_support_format_rar(reader.Handle);
+		archive_read_support_format_rar5(reader.Handle);
+		archive_read_support_format_lha(reader.Handle);
+		archive_read_set_format_option(reader.Handle, "lha", "hdrcharset", "CP932");
+		archive_read_set_format_option(reader.Handle, "rar", "hdrcharset", "CP932");
+		if (archive_read_open_memory(reader.Handle, data.data(), data.size()) != ARCHIVE_OK)
+			{ result.Failure = ArchiveFailure(reader.Handle); return result; }
+		fs::path destination;
+		u64 totalSize = 0;
+		archive_entry* entry = nullptr;
+		for (;;)
+		{
+			const int status = archive_read_next_header(reader.Handle, &entry);
+			if ((archive_format(reader.Handle) != 0 && archive_read_has_encrypted_entries(reader.Handle) > 0) || (entry != nullptr && archive_entry_is_encrypted(entry) > 0))
+				{ result.Failure = Error::PasswordProtected; return result; }
+			if (status == ARCHIVE_EOF) break;
+			if (status != ARCHIVE_OK) { result.Failure = ArchiveFailure(reader.Handle); return result; }
+			const char* rawName = archive_entry_pathname_utf8(entry);
+			if (rawName == nullptr || !IsUTF8(rawName)) { result.Failure = Error::InvalidArchive; return result; }
+			std::string name = rawName;
+			std::replace(name.begin(), name.end(), '\\', '/');
+			const bool isDirectory = archive_entry_filetype(entry) == AE_IFDIR;
+			if (!IsSafeRelativeName(name) || archive_entry_symlink(entry) != nullptr || archive_entry_hardlink(entry) != nullptr
+				|| (!isDirectory && archive_entry_filetype(entry) != AE_IFREG))
+				{ result.Failure = Error::UnsafePath; return result; }
+			const la_int64_t declaredSize = archive_entry_size(entry);
+			if (declaredSize < 0 || (!isDirectory && !archive_entry_size_is_set(entry)) || (isDirectory && declaredSize != 0))
+				{ result.Failure = Error::InvalidArchive; return result; }
+			if (static_cast<u64>(declaredSize) > MaxEntryBytes || static_cast<u64>(declaredSize) > MaxExtractedBytes - totalSize)
+				{ result.Failure = Error::SizeLimit; return result; }
+			std::string decoded;
+			std::array<char, 65536> buffer;
+			for (;;)
+			{
+				const la_ssize_t count = archive_read_data(reader.Handle, buffer.data(), buffer.size());
+				if (count < 0) { result.Failure = ArchiveFailure(reader.Handle); return result; }
+				if (count == 0) break;
+				if (decoded.size() + static_cast<u64>(count) > MaxEntryBytes || totalSize + static_cast<u64>(count) > MaxExtractedBytes)
+					{ result.Failure = Error::SizeLimit; return result; }
+				decoded.append(buffer.data(), static_cast<size_t>(count));
+				totalSize += static_cast<u64>(count);
+			}
+			if (decoded.size() != static_cast<u64>(declaredSize)) { result.Failure = Error::InvalidArchive; return result; }
+			if (destination.empty())
+			{
+				result.Failure = CreateDestination(archivePath, extractionRoot, destination);
+				if (result.Failure != Error::None) return result;
+				result.DirectoryPath = destination.u8string();
+			}
+			const fs::path relative = fs::u8path(name);
+			if (!EnsureSafeDirectories(destination, isDirectory ? relative : relative.parent_path())
+				|| (!isDirectory && !WriteNewFile(destination / relative, decoded)))
+				{ result.Failure = Error::ExtractionFailed; return result; }
+		}
+		if (archive_read_close(reader.Handle) != ARCHIVE_OK) { result.Failure = ArchiveFailure(reader.Handle); return result; }
+		if (destination.empty())
+		{
+			result.Failure = CreateDestination(archivePath, extractionRoot, destination);
+			if (result.Failure != Error::None) return result;
+			result.DirectoryPath = destination.u8string();
 		}
 		return ReadFolder(result.DirectoryPath, searchDepth);
 	}

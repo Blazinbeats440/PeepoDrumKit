@@ -122,6 +122,7 @@ namespace PeepoDrumKit
 			i32 TitleAlignment = 0, TitleVerticalPosition = 0;
 			u32 TitleColor = 0xFFFFFFFF, TitleBandColor = 0xB0000000;
 			i32 Resolution = 3, FramesPerSecond = 60;
+			i32 AudioBitRate = 192000;
 			i32 BackgroundSource = 0;
 			u32 BackgroundColor = 0xFF1F1F1F;
 			b8 BackgroundInitialized = false;
