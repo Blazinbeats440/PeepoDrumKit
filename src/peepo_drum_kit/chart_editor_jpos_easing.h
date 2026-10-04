@@ -157,9 +157,29 @@ namespace PeepoDrumKit
 		int RequiredDivisions = 0;
 	};
 
+	inline std::vector<int32_t> GetJPOSIntervalBoundaries(int32_t startTicks, int32_t endTicks, int divisionCount,
+		const std::vector<int32_t>* gridBoundaries)
+	{
+		std::vector<int32_t> boundaries;
+		if (gridBoundaries != nullptr)
+		{
+			const auto begin = std::upper_bound(gridBoundaries->begin(), gridBoundaries->end(), startTicks);
+			const auto end = std::lower_bound(begin, gridBoundaries->end(), endTicks);
+			boundaries.assign(begin, end);
+			boundaries.push_back(endTicks);
+		}
+		else
+		{
+			const int64_t duration = static_cast<int64_t>(endTicks) - startTicks;
+			for (int division = 1; division <= divisionCount; ++division)
+				boundaries.push_back(static_cast<int32_t>(startTicks + (duration * division + divisionCount / 2) / divisionCount));
+		}
+		return boundaries;
+	}
+
 	template <typename BeatToSeconds>
 	JPOSEasingResult GenerateJPOSEasing(int32_t startTicks, int32_t endTicks, std::complex<float> totalMove,
-		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength = 1.0)
+		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength = 1.0, const std::vector<int32_t>* gridBoundaries = nullptr)
 	{
 		JPOSEasingResult result;
 		const auto fail = [&](JPOSEasingError error)
@@ -183,14 +203,15 @@ namespace PeepoDrumKit
 		if (!std::isfinite(startSeconds) || !std::isfinite(endSeconds) || !std::isfinite(durationSeconds) || durationSeconds <= 0.0)
 			return fail(JPOSEasingError::InvalidTime);
 
-		result.Segments.reserve(divisionCount);
+		const auto boundaries = GetJPOSIntervalBoundaries(startTicks, endTicks, divisionCount, gridBoundaries);
+		if (boundaries.size() > MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid);
+		result.Segments.reserve(boundaries.size());
 		int32_t previousTicks = startTicks;
 		double previousSeconds = startSeconds;
 		std::complex<double> accumulatedMove = {};
-		for (int division = 1; division <= divisionCount; ++division)
+		for (const int32_t nextTicks : boundaries)
 		{
-			const int32_t nextTicks = static_cast<int32_t>(startTicks + (tickDuration * division + divisionCount / 2) / divisionCount);
-			const double nextSeconds = (division == divisionCount) ? endSeconds : beatToSeconds(nextTicks);
+			const double nextSeconds = (nextTicks == endTicks) ? endSeconds : beatToSeconds(nextTicks);
 			const double intervalSeconds = nextSeconds - previousSeconds;
 			if (!std::isfinite(nextSeconds) || nextSeconds > endSeconds || intervalSeconds <= 0.0)
 				return fail(JPOSEasingError::InvalidTime);
@@ -216,7 +237,7 @@ namespace PeepoDrumKit
 
 	template <typename BeatToSeconds>
 	JPOSEasingResult GenerateJPOSCurvedMotion(int32_t startTicks, int32_t endTicks, std::complex<float> move,
-		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion)
+		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, const std::vector<int32_t>* gridBoundaries = nullptr)
 	{
 		JPOSEasingResult result;
 		const auto fail = [&](JPOSEasingError error)
@@ -308,7 +329,7 @@ namespace PeepoDrumKit
 		}
 		phaseCount = static_cast<int>(phases.size()) - 1;
 		result.RequiredDivisions = phaseCount;
-		if (divisionCount < phaseCount) return fail(JPOSEasingError::InvalidMotionGrid);
+		if (gridBoundaries == nullptr && divisionCount < phaseCount) return fail(JPOSEasingError::InvalidMotionGrid);
 		for (int phase = 1; phase <= phaseCount; ++phase)
 		{
 			const double progress = phases[phase];
@@ -339,20 +360,24 @@ namespace PeepoDrumKit
 		for (int phase = 0; phase < phaseCount; ++phase)
 		{
 			const int32_t phaseStart = boundaries[phase], phaseEnd = boundaries[phase + 1];
-			const int remaining = divisionCount - assignedDivisions;
-			const int64_t minCount = std::max<int64_t>(1, remaining - (static_cast<int64_t>(endTicks) - phaseEnd));
-			const int64_t maxCount = std::min<int64_t>(static_cast<int64_t>(phaseEnd) - phaseStart, remaining - (phaseCount - phase - 1));
-			if (minCount > maxCount) return fail(JPOSEasingError::InvalidMotionTiming);
-			const int64_t idealEndCount = ((static_cast<int64_t>(phaseEnd) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
-			const int count = static_cast<int>(std::clamp<int64_t>(idealEndCount - assignedDivisions, minCount, maxCount));
+			int count = 1;
+			if (gridBoundaries == nullptr)
+			{
+				const int remaining = divisionCount - assignedDivisions;
+				const int64_t minCount = std::max<int64_t>(1, remaining - (static_cast<int64_t>(endTicks) - phaseEnd));
+				const int64_t maxCount = std::min<int64_t>(static_cast<int64_t>(phaseEnd) - phaseStart, remaining - (phaseCount - phase - 1));
+				if (minCount > maxCount) return fail(JPOSEasingError::InvalidMotionTiming);
+				const int64_t idealEndCount = ((static_cast<int64_t>(phaseEnd) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
+				count = static_cast<int>(std::clamp<int64_t>(idealEndCount - assignedDivisions, minCount, maxCount));
+			}
+			const auto samples = GetJPOSIntervalBoundaries(phaseStart, phaseEnd, count, gridBoundaries);
 			const double phaseStartTime = beatToSeconds(phaseStart), phaseEndTime = beatToSeconds(phaseEnd);
 			if (!std::isfinite(phaseStartTime) || !std::isfinite(phaseEndTime) || phaseEndTime <= phaseStartTime) return fail(JPOSEasingError::InvalidTime);
 			const double rawStart = phaseAtTime(phaseStartTime), rawEnd = phaseAtTime(phaseEndTime);
 			int32_t previousTicks = phaseStart;
 			double previousSeconds = phaseStartTime;
-			for (int division = 1; division <= count; ++division)
+			for (const int32_t nextTicks : samples)
 			{
-				const int32_t nextTicks = static_cast<int32_t>(phaseStart + ((static_cast<int64_t>(phaseEnd) - phaseStart) * division + count / 2) / count);
 				const double nextSeconds = beatToSeconds(nextTicks), intervalSeconds = nextSeconds - previousSeconds;
 				if (!std::isfinite(nextSeconds) || nextSeconds > endSeconds || intervalSeconds <= 0.0) return fail(JPOSEasingError::InvalidTime);
 				const double milliseconds = std::floor(intervalSeconds * 1000.0);
@@ -363,10 +388,11 @@ namespace PeepoDrumKit
 				// Preserve exact geometric landmarks after rounding their times to beat ticks.
 				const double fraction = rawEnd > rawStart ? std::clamp((phaseAtTime(nextSeconds) - rawStart) / (rawEnd - rawStart), 0.0, 1.0) :
 					(nextSeconds - phaseStartTime) / (phaseEndTime - phaseStartTime);
-				const double progress = division == count ? phases[phase + 1] : phases[phase] + (phases[phase + 1] - phases[phase]) * fraction;
+				const double progress = nextTicks == phaseEnd ? phases[phase + 1] : phases[phase] + (phases[phase + 1] - phases[phase]) * fraction;
 				const std::complex<double> target = EvaluateJPOSCurvePosition(motion, move, progress);
 				const auto segmentMove = static_cast<std::complex<float>>(target - accumulatedMove);
 				if (!std::isfinite(segmentMove.real()) || !std::isfinite(segmentMove.imag())) return fail(JPOSEasingError::InvalidMove);
+				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid);
 				result.Segments.push_back({ previousTicks, segmentMove, duration });
 				accumulatedMove += std::complex<double>(segmentMove);
 				previousTicks = nextTicks; previousSeconds = nextSeconds;
@@ -378,7 +404,7 @@ namespace PeepoDrumKit
 
 	template <typename BeatToSeconds>
 	JPOSEasingResult GenerateJPOSWaypointMotion(int32_t startTicks, int32_t endTicks, int divisionCount,
-		JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion)
+		JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, const std::vector<int32_t>* gridBoundaries = nullptr)
 	{
 		JPOSEasingResult result;
 		const auto fail = [&](JPOSEasingError error, int interval = 0)
@@ -393,7 +419,7 @@ namespace PeepoDrumKit
 			points.front().Position != std::complex<float>{} || points.back().ArrivalPercent != 100.0f) return fail(JPOSEasingError::InvalidWaypoints);
 		const int intervalCount = static_cast<int>(points.size()) - 1;
 		result.RequiredDivisions = intervalCount;
-		if (divisionCount < intervalCount) return fail(JPOSEasingError::InvalidMotionGrid);
+		if (gridBoundaries == nullptr && divisionCount < intervalCount) return fail(JPOSEasingError::InvalidMotionGrid);
 		std::vector<int32_t> boundaries;
 		for (size_t index = 0; index < points.size(); ++index)
 		{
@@ -411,16 +437,20 @@ namespace PeepoDrumKit
 		for (int interval = 0; interval < intervalCount; ++interval)
 		{
 			const int32_t begin = boundaries[interval], end = boundaries[interval + 1];
-			const int remaining = divisionCount - assignedDivisions;
-			const int64_t minimum = std::max<int64_t>(1, remaining - (static_cast<int64_t>(endTicks) - end));
-			const int64_t maximum = std::min<int64_t>(static_cast<int64_t>(end) - begin, remaining - (intervalCount - interval - 1));
-			if (minimum > maximum) return fail(JPOSEasingError::InvalidMotionTiming, interval + 1);
-			const int64_t ideal = ((static_cast<int64_t>(end) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
-			const int count = static_cast<int>(std::clamp<int64_t>(ideal - assignedDivisions, minimum, maximum));
+			int count = 1;
+			if (gridBoundaries == nullptr)
+			{
+				const int remaining = divisionCount - assignedDivisions;
+				const int64_t minimum = std::max<int64_t>(1, remaining - (static_cast<int64_t>(endTicks) - end));
+				const int64_t maximum = std::min<int64_t>(static_cast<int64_t>(end) - begin, remaining - (intervalCount - interval - 1));
+				if (minimum > maximum) return fail(JPOSEasingError::InvalidMotionTiming, interval + 1);
+				const int64_t ideal = ((static_cast<int64_t>(end) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
+				count = static_cast<int>(std::clamp<int64_t>(ideal - assignedDivisions, minimum, maximum));
+			}
 			const auto& destination = points[interval + 1];
 			const auto delta = static_cast<std::complex<float>>(std::complex<double>(destination.Position) - std::complex<double>(points[interval].Position));
 			auto leg = GenerateJPOSEasing(begin, end, delta, count, motion.WaypointSameEasing ? easing : destination.Easing,
-				beatToSeconds, motion.WaypointSameEasing ? strength : destination.Strength);
+				beatToSeconds, motion.WaypointSameEasing ? strength : destination.Strength, gridBoundaries);
 			if (leg.Error != JPOSEasingError::None) return fail(leg.Error, interval + 1);
 			// Anchor every arrival to its absolute relative position, including after float rounding.
 			std::complex<double> local = std::complex<double>(points[interval].Position);
@@ -432,6 +462,7 @@ namespace PeepoDrumKit
 				segment.Move = static_cast<std::complex<float>>(target - accumulated);
 				if (!std::isfinite(segment.Move.real()) || !std::isfinite(segment.Move.imag())) return fail(JPOSEasingError::InvalidMove, interval + 1);
 				accumulated += std::complex<double>(segment.Move);
+				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid, interval + 1);
 				result.Segments.push_back(segment);
 			}
 			assignedDivisions += count;
@@ -441,15 +472,15 @@ namespace PeepoDrumKit
 
 	template <typename BeatToSeconds>
 	JPOSEasingResult GenerateJPOSMotion(int32_t startTicks, int32_t endTicks, std::complex<float> move,
-		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion)
+		int divisionCount, JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, const std::vector<int32_t>* gridBoundaries = nullptr)
 	{
 		if (motion.Type == JPOSMotionType::OneWay)
-			return GenerateJPOSEasing(startTicks, endTicks, move, divisionCount, easing, beatToSeconds, strength);
+			return GenerateJPOSEasing(startTicks, endTicks, move, divisionCount, easing, beatToSeconds, strength, gridBoundaries);
 		if (motion.Type == JPOSMotionType::Waypoints)
-			return GenerateJPOSWaypointMotion(startTicks, endTicks, divisionCount, easing, beatToSeconds, strength, motion);
+			return GenerateJPOSWaypointMotion(startTicks, endTicks, divisionCount, easing, beatToSeconds, strength, motion, gridBoundaries);
 		if (motion.Type == JPOSMotionType::Shake || motion.Type == JPOSMotionType::Ellipse || motion.Type == JPOSMotionType::Bounce ||
 			motion.Type == JPOSMotionType::Zigzag || motion.Type == JPOSMotionType::Polygon)
-			return GenerateJPOSCurvedMotion(startTicks, endTicks, move, divisionCount, easing, beatToSeconds, strength, motion);
+			return GenerateJPOSCurvedMotion(startTicks, endTicks, move, divisionCount, easing, beatToSeconds, strength, motion, gridBoundaries);
 		JPOSEasingResult result;
 		const auto fail = [&](JPOSEasingError error)
 		{
@@ -465,7 +496,7 @@ namespace PeepoDrumKit
 			!std::isfinite(motion.OutboundRatio) || motion.OutboundRatio <= 0.0f || motion.OutboundRatio >= 1.0f)
 			return fail(JPOSEasingError::InvalidMotion);
 		const int legCount = motion.RoundTrips * 2;
-		if (divisionCount < legCount) return fail(JPOSEasingError::InvalidMotionGrid);
+		if (gridBoundaries == nullptr && divisionCount < legCount) return fail(JPOSEasingError::InvalidMotionGrid);
 		result.Segments.reserve(divisionCount);
 		int assignedDivisions = 0;
 		std::complex<double> accumulatedMove = {};
@@ -478,16 +509,20 @@ namespace PeepoDrumKit
 			if (turn <= cycleStart || turn >= cycleEnd) return fail(JPOSEasingError::InvalidMotionTiming);
 			const bool outbound = (leg % 2 == 0);
 			const int32_t legStart = outbound ? cycleStart : turn, legEnd = outbound ? turn : cycleEnd;
-			const int remainingDivisions = divisionCount - assignedDivisions;
-			const int remainingLegs = legCount - leg - 1;
-			const int64_t minCount = std::max<int64_t>(1, remainingDivisions - (static_cast<int64_t>(endTicks) - legEnd));
-			const int64_t maxCount = std::min<int64_t>(static_cast<int64_t>(legEnd) - legStart, remainingDivisions - remainingLegs);
-			if (minCount > maxCount) return fail(JPOSEasingError::InvalidMotionTiming);
-			const int64_t idealEndCount = ((static_cast<int64_t>(legEnd) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
-			const int count = static_cast<int>(std::clamp<int64_t>(idealEndCount - assignedDivisions, minCount, maxCount));
+			int count = 1;
+			if (gridBoundaries == nullptr)
+			{
+				const int remainingDivisions = divisionCount - assignedDivisions;
+				const int remainingLegs = legCount - leg - 1;
+				const int64_t minCount = std::max<int64_t>(1, remainingDivisions - (static_cast<int64_t>(endTicks) - legEnd));
+				const int64_t maxCount = std::min<int64_t>(static_cast<int64_t>(legEnd) - legStart, remainingDivisions - remainingLegs);
+				if (minCount > maxCount) return fail(JPOSEasingError::InvalidMotionTiming);
+				const int64_t idealEndCount = ((static_cast<int64_t>(legEnd) - startTicks) * divisionCount + tickDuration / 2) / tickDuration;
+				count = static_cast<int>(std::clamp<int64_t>(idealEndCount - assignedDivisions, minCount, maxCount));
+			}
 			const auto legResult = GenerateJPOSEasing(legStart, legEnd, outbound ? move : -move, count,
 				(outbound || motion.UseSameEasing) ? easing : motion.ReturnEasing, beatToSeconds,
-				(outbound || motion.UseSameEasing) ? strength : motion.ReturnStrength);
+				(outbound || motion.UseSameEasing) ? strength : motion.ReturnStrength, gridBoundaries);
 			if (legResult.Error != JPOSEasingError::None) return fail(legResult.Error);
 			for (size_t index = 0; index < legResult.Segments.size(); ++index)
 			{
@@ -496,10 +531,27 @@ namespace PeepoDrumKit
 				if (index + 1 == legResult.Segments.size())
 					segment.Move = static_cast<std::complex<float>>((outbound ? std::complex<double>(move) : std::complex<double>{}) - accumulatedMove);
 				accumulatedMove += std::complex<double>(segment.Move);
+				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid);
 				result.Segments.push_back(segment);
 			}
 			assignedDivisions += count;
 		}
 		return result;
+	}
+
+	template <typename BeatToSeconds, typename NextGridTick>
+	JPOSEasingResult GenerateJPOSMotionOnGrid(int32_t startTicks, int32_t endTicks, std::complex<float> move,
+		JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, NextGridTick nextGridTick)
+	{
+		if (startTicks < 0 || endTicks <= startTicks) return { JPOSEasingError::InvalidRange, {} };
+		std::vector<int32_t> grid = { startTicks };
+		while (grid.back() < endTicks)
+		{
+			const int32_t next = nextGridTick(grid.back());
+			if (next <= grid.back() || grid.size() > MaxJPOSEasingGrid) return { JPOSEasingError::InvalidGrid, {} };
+			grid.push_back(std::min(next, endTicks));
+		}
+		return GenerateJPOSMotion(startTicks, endTicks, move, static_cast<int>(grid.size()) - 1,
+			easing, beatToSeconds, strength, motion, &grid);
 	}
 }

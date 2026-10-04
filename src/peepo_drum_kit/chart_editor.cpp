@@ -1601,7 +1601,7 @@ namespace PeepoDrumKit
 		{
 			Gui::SetNextWindowSize({ 460.0f, 520.0f }, ImGuiCond_FirstUseEver);
 			if (Gui::Begin(UI_WindowName("TAB_UTILITIES"), &PersistentApp.LastSession.ShowWindow_Utilities, ImGuiWindowFlags_None))
-				utilitiesWindow.DrawGui(context);
+				utilitiesWindow.DrawGui(context, timeline);
 			if (focusUtilitiesWindowNextFrame) { focusUtilitiesWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();
 		}

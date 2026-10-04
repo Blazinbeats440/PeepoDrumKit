@@ -1,5 +1,6 @@
 #include "chart_editor_utilities.h"
 #include "chart_editor_context.h"
+#include "chart_editor_timeline.h"
 #include "chart_editor_undo.h"
 #include "imgui/imgui_include.h"
 #include <cstdio>
@@ -137,7 +138,7 @@ namespace PeepoDrumKit
 		}
 	}
 
-	void ChartUtilitiesWindow::DrawGui(ChartContext& context)
+	void ChartUtilitiesWindow::DrawGui(ChartContext& context, const ChartTimeline& timeline)
 	{
 		if (Gui::BeginCombo(UI_Str("UTILITY_FUNCTION"), UI_Str("UTILITY_JPOS_MOTION")))
 		{
@@ -145,10 +146,10 @@ namespace PeepoDrumKit
 			Gui::EndCombo();
 		}
 		Gui::Separator();
-		JPOSMotionGenerator.DrawGui(context);
+		JPOSMotionGenerator.DrawGui(context, timeline);
 	}
 
-	void JPOSMotionUtility::DrawGui(ChartContext& context)
+	void JPOSMotionUtility::DrawGui(ChartContext& context, const ChartTimeline& timeline)
 	{
 		Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_MOTION_DESC"));
 		const cstr types[] = { UI_Str("UTILITY_JPOS_ONE_WAY"), UI_Str("UTILITY_JPOS_ROUND_TRIP"), UI_Str("UTILITY_JPOS_SHAKE"),
@@ -250,8 +251,8 @@ namespace PeepoDrumKit
 			DrawJPOSEasingSettings(roundTrip ? UI_Str("UTILITY_JPOS_OUTBOUND_EASING") : UI_Str("UTILITY_JPOS_EASING_TYPE"), Easing, EasingStrength);
 		if (roundTrip && !Motion.UseSameEasing)
 			DrawJPOSEasingSettings(UI_Str("UTILITY_JPOS_RETURN_EASING"), Motion.ReturnEasing, Motion.ReturnStrength);
-		Gui::InputInt(UI_Str("UTILITY_JPOS_DIVISION_GRID"), &DivisionGrid);
-		Gui::TextWrapped("%s", waypoints ? UI_Str("UTILITY_JPOS_WAYPOINT_GRID_DESC") : curved ? UI_Str("UTILITY_JPOS_CURVE_GRID_DESC") : roundTrip ? UI_Str("UTILITY_JPOS_MOTION_GRID_DESC") : UI_Str("UTILITY_JPOS_GRID_DESC"));
+		Gui::Text(UI_Str("UTILITY_JPOS_TIMELINE_GRID"), timeline.CurrentGridBarDivision);
+		Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_TIMELINE_GRID_DESC"));
 
 		ChartCourse* course = context.ChartSelectedCourse;
 		const b8 hasRange = course != nullptr && context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero();
@@ -263,7 +264,12 @@ namespace PeepoDrumKit
 			const Time startTime = context.BeatToTime(start), endTime = context.BeatToTime(end);
 			Gui::Text(UI_Str("UTILITY_JPOS_RANGE"), start.BeatsFraction(), end.BeatsFraction(), (endTime - startTime).ToSec());
 			const auto beatToSeconds = [&](int32_t ticks) { return context.BeatToTime(Beat::FromTicks(ticks)).ToSec(); };
-			generated = GenerateJPOSMotion(start.Ticks, end.Ticks, { MoveX, MoveY }, DivisionGrid, Easing, beatToSeconds, EasingStrength, Motion);
+			if (timeline.CurrentGridBarDivision > 0 && GetGridBeatSnap(timeline.CurrentGridBarDivision).Ticks > 0)
+			{
+				const auto nextGridTick = [&](int32_t ticks) { return timeline.CeilBeatToCurrentGrid(context, Beat::FromTicks(ticks + 1)).Ticks; };
+				generated = GenerateJPOSMotionOnGrid(start.Ticks, end.Ticks, { MoveX, MoveY }, Easing, beatToSeconds, EasingStrength, Motion, nextGridTick);
+			}
+			else generated.Error = JPOSEasingError::InvalidGrid;
 			const JPOSScrollChange* preceding = nullptr;
 			for (const JPOSScrollChange& event : course->JPOSScrollChanges)
 			{
@@ -293,9 +299,7 @@ namespace PeepoDrumKit
 				if (generated.Error == JPOSEasingError::InvalidCurveMotion) error = UI_Str("UTILITY_JPOS_INVALID_CURVE_MOTION");
 				if (generated.Error == JPOSEasingError::InvalidWaypoints) error = UI_Str("UTILITY_JPOS_INVALID_WAYPOINTS");
 				if (waypoints && generated.ErrorInterval > 0) Gui::Text(UI_Str("UTILITY_JPOS_WAYPOINT_INTERVAL"), generated.ErrorInterval - 1, generated.ErrorInterval);
-				if (generated.Error == JPOSEasingError::InvalidMotionGrid && (curved || waypoints))
-					Gui::TextWrapped(UI_Str("UTILITY_JPOS_INVALID_CURVE_GRID"), generated.RequiredDivisions);
-				else Gui::TextWrapped("%s", error);
+				Gui::TextWrapped("%s", error);
 			}
 		}
 		else Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_SELECT_RANGE"));
