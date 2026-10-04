@@ -37,6 +37,81 @@ int main()
 	tempo.RebuildAccelerationStructure();
 	const auto beatToSeconds = [&](int32_t ticks) { return tempo.BeatToTime(Beat::FromTicks(ticks)).ToSec(); };
 	const int endTicks = Beat::FromBars(1).Ticks;
+	const auto nextGrid16 = [](int32_t ticks) { const int step = GetGridBeatSnap(16).Ticks; return (ticks / step + 1) * step; };
+	JPOSMotionSettings gridMotion; gridMotion.Type = JPOSMotionType::OneWay;
+	const auto oneBarGrid = GenerateJPOSMotionOnGrid(0, endTicks, { 400, -200 }, JPOSEasing::EaseOut, beatToSeconds, 1.0, gridMotion, nextGrid16);
+	const auto twoBarGrid = GenerateJPOSMotionOnGrid(0, endTicks * 2, { 400, -200 }, JPOSEasing::EaseOut, beatToSeconds, 1.0, gridMotion, nextGrid16);
+	check(oneBarGrid.Error == JPOSEasingError::None && oneBarGrid.Segments.size() == 16 && twoBarGrid.Segments.size() == 32,
+		"Timeline 1/16 grid produces sixteen divisions per standard bar");
+	const auto nextGrid32 = [](int32_t ticks) { const int step = GetGridBeatSnap(32).Ticks; return (ticks / step + 1) * step; };
+	const auto finerGrid = GenerateJPOSMotionOnGrid(0, endTicks * 2, { 400, -200 }, JPOSEasing::EaseOut, beatToSeconds, 1.0, gridMotion, nextGrid32);
+	check(finerGrid.Segments.size() == 64 && std::abs(sumMoves(finerGrid) - std::complex<double>(400, -200)) < 0.001,
+		"Changing the timeline grid updates event count without changing displacement");
+	const auto gridSeconds = [](int32_t ticks) { return ticks * 0.01; };
+	const auto nextGrid100 = [](int32_t ticks) { return (ticks / 100 + 1) * 100; };
+	const auto partialGrid = GenerateJPOSMotionOnGrid(30, 270, { 240, 0 }, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion, nextGrid100);
+	check(partialGrid.Segments.size() == 3 && partialGrid.Segments[0].BeatTicks == 30 && partialGrid.Segments[1].BeatTicks == 100 &&
+		partialGrid.Segments[2].BeatTicks == 200 && close(partialGrid.Segments[0].Move.real(), 70) && close(partialGrid.Segments[2].Move.real(), 70),
+		"Off-grid range endpoints preserve actual timeline grid positions and partial intervals");
+	const auto nextBarGrid = [](int32_t ticks)
+	{
+		if (ticks < 250) return std::min((ticks / 100 + 1) * 100, 250);
+		return 250 + ((ticks - 250) / 100 + 1) * 100;
+	};
+	const auto barGrid = GenerateJPOSMotionOnGrid(30, 470, { 440, 0 }, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion, nextBarGrid);
+	const int barGridStarts[] = { 30, 100, 200, 250, 350, 450 };
+	check(barGrid.Error == JPOSEasingError::None && barGrid.Segments.size() == 6, "Grid stepping supports resetting the grid at a short bar boundary");
+	for (size_t index = 0; index < barGrid.Segments.size() && index < 6; ++index)
+		check(barGrid.Segments[index].BeatTicks == barGridStarts[index], "Generation retains each supplied bar-relative timeline grid line");
+	for (const auto type : { JPOSMotionType::OneWay, JPOSMotionType::RoundTrip, JPOSMotionType::Shake, JPOSMotionType::Ellipse,
+		JPOSMotionType::Bounce, JPOSMotionType::Zigzag, JPOSMotionType::Polygon, JPOSMotionType::Waypoints })
+	{
+		gridMotion = {}; gridMotion.Type = type; gridMotion.Repetitions = 2; gridMotion.RoundTrips = 2; gridMotion.OutboundRatio = 0.35f;
+		gridMotion.Waypoints = { { 0, {} }, { 30, { 100, -40 } }, { 60, { 100, -40 } }, { 100, { 240, -30 } } };
+		for (const auto easing : { JPOSEasing::Linear, JPOSEasing::EaseOut, JPOSEasing::EaseInOut })
+		{
+			const auto generated = GenerateJPOSMotionOnGrid(0, 400, { 240, -30 }, easing, gridSeconds, 1.0, gridMotion, nextGrid100);
+			check(generated.Error == JPOSEasingError::None, "Every motion generates on the timeline grid");
+			for (const int ticks : { 0, 100, 200, 300 })
+				check(std::any_of(generated.Segments.begin(), generated.Segments.end(), [&](const JPOSEasingSegment& segment) { return segment.BeatTicks == ticks; }),
+					"Every motion preserves all interior timeline grid lines");
+			const bool returnsToStart = type == JPOSMotionType::RoundTrip || type == JPOSMotionType::Shake || type == JPOSMotionType::Ellipse || type == JPOSMotionType::Polygon;
+			const auto destination = returnsToStart ? std::complex<double>{} : std::complex<double>(240, -30);
+			check(std::abs(sumMoves(generated) - destination) < 0.001, "Timeline grid preserves the motion destination");
+			for (size_t index = 0; index < generated.Segments.size(); ++index)
+			{
+				const int next = index + 1 == generated.Segments.size() ? 400 : generated.Segments[index + 1].BeatTicks;
+				check(next > generated.Segments[index].BeatTicks && generated.Segments[index].DurationSeconds > 0 &&
+					generated.Segments[index].DurationSeconds <= gridSeconds(next) - gridSeconds(generated.Segments[index].BeatTicks),
+					"Merging grid lines and landmarks creates unique beats and non-overlapping movement");
+			}
+		}
+		const auto coarse = GenerateJPOSMotionOnGrid(0, 400, { 240, -30 }, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion,
+			[](int32_t ticks) { return (ticks / 1000 + 1) * 1000; });
+		check(coarse.Error == JPOSEasingError::None && !coarse.Segments.empty(), "Coarse grids automatically add mandatory landmarks for every motion");
+		if (type == JPOSMotionType::RoundTrip) check(coarse.Segments.size() == 4 && coarse.Segments[1].BeatTicks == 70, "Coarse grid retains round-trip turns");
+		if (type == JPOSMotionType::Waypoints)
+			check(coarse.Segments.size() == 3 && coarse.Segments[1].BeatTicks == 120 && coarse.Segments[2].BeatTicks == 240 && coarse.Segments[1].Move == std::complex<float>{},
+				"Coarse grid retains off-grid waypoint arrivals and holds");
+	}
+	gridMotion = {}; gridMotion.Type = JPOSMotionType::OneWay;
+	const auto maxGrid = GenerateJPOSMotionOnGrid(0, MaxJPOSEasingGrid, { 100, 0 }, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion,
+		[](int32_t ticks) { return ticks + 1; });
+	check(maxGrid.Error == JPOSEasingError::None && maxGrid.Segments.size() == MaxJPOSEasingGrid, "The maximum supported grid count is accepted");
+	const auto excessiveGrid = GenerateJPOSMotionOnGrid(0, MaxJPOSEasingGrid + 1, { 100, 0 }, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion,
+		[](int32_t ticks) { return ticks + 1; });
+	check(excessiveGrid.Error == JPOSEasingError::InvalidGrid && excessiveGrid.Segments.empty(), "Excessive grid counts fail without partial commands");
+	gridMotion.Type = JPOSMotionType::Waypoints;
+	gridMotion.Waypoints = { { 0, {} }, { 30.02f, { 50, 0 } }, { 100, { 100, 0 } } };
+	const auto excessiveMergedGrid = GenerateJPOSMotionOnGrid(0, MaxJPOSEasingGrid * 2, {}, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion,
+		[](int32_t ticks) { return (ticks / 2 + 1) * 2; });
+	check(excessiveMergedGrid.Error == JPOSEasingError::InvalidGrid && excessiveMergedGrid.Segments.empty(), "Additional waypoint landmarks respect the total command limit");
+	gridMotion.Type = JPOSMotionType::OneWay;
+	check(GenerateJPOSMotionOnGrid(0, 400, {}, JPOSEasing::Linear, gridSeconds, 1.0, gridMotion,
+		[](int32_t ticks) { return ticks; }).Error == JPOSEasingError::InvalidGrid, "Non-advancing grid providers are rejected");
+	check(GenerateJPOSMotionOnGrid(0, 400, {}, JPOSEasing::Linear, [](int32_t ticks) { return ticks * 0.000001; }, 1.0, gridMotion,
+		nextGrid100).Error == JPOSEasingError::IntervalTooShort, "Timeline grids retain the minimum movement duration check");
+
 	for (const auto easing : { JPOSEasing::Linear, JPOSEasing::EaseIn, JPOSEasing::EaseOut, JPOSEasing::EaseInOut, JPOSEasing::EaseOutIn })
 	{
 		const auto result = GenerateJPOSEasing(0, endTicks, { 400, -200 }, 16, easing, beatToSeconds);
@@ -651,8 +726,8 @@ int main()
 		curve.Waypoints = { { 0, {} }, { 25, { 80, -30 } }, { 50, { 80, -30 } }, { 100, { 160, -30 } } };
 		curve.Damped = true; curve.DampingStrength = 2; curve.EasingPerCycle = true;
 		curve.JumpDamped = true; curve.JumpDampingStrength = 2;
-		const auto generated = GenerateJPOSMotion(0, endTicks, { 160, -30 }, 24, JPOSEasing::EaseOut, beatToSeconds, 2.5, curve);
-		check(generated.Error == JPOSEasingError::None && generated.Segments.size() == 24, "Curved TJA fixture generates all commands");
+		const auto generated = GenerateJPOSMotionOnGrid(0, endTicks, { 160, -30 }, JPOSEasing::EaseOut, beatToSeconds, 2.5, curve, nextGrid16);
+		check(generated.Error == JPOSEasingError::None && !generated.Segments.empty(), "Timeline-grid TJA fixture generates all commands");
 		converted.Measures[0].JPOSScrollChanges.clear();
 		for (const auto& segment : generated.Segments)
 			converted.Measures[0].JPOSScrollChanges.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move.real(), segment.Move.imag()), segment.DurationSeconds });
@@ -686,11 +761,11 @@ int main()
 			curveChartEvents.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move.real(), segment.Move.imag()), segment.DurationSeconds, false });
 		Undo::UndoHistory curveUndo;
 		curveUndo.Execute<Commands::AddMultipleChartEvents<JPOSScrollChange>>(&curveCourse, &curveCourse.JPOSScrollChanges, std::move(curveChartEvents));
-		check(curveCourse.JPOSScrollChanges.size() == 25 && curveUndo.UndoStack.size() == 1, "Each curved motion creates one undo entry");
+		check(curveCourse.JPOSScrollChanges.size() == generated.Segments.size() + 1 && curveUndo.UndoStack.size() == 1, "Each curved motion creates one undo entry");
 		curveUndo.Undo();
 		check(curveCourse.JPOSScrollChanges.size() == 1 && curveCourse.JPOSScrollChanges[0].BeatTime == outside.BeatTime, "Curved motion undo preserves unrelated events");
 		curveUndo.Redo();
-		check(curveCourse.JPOSScrollChanges.size() == 25, "Curved motion redo restores every segment");
+		check(curveCourse.JPOSScrollChanges.size() == generated.Segments.size() + 1, "Curved motion redo restores every segment");
 	}
 
 	std::cout << (failures ? "JPOS easing tests failed\n" : "JPOS easing tests passed\n");
