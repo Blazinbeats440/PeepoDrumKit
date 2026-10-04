@@ -1136,6 +1136,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC")),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewUseBackgroundMovie,
+							UI_Str("SETTINGS_PREVIEW_USE_BACKGROUND_MOVIE"),
+							UI_Str("SETTINGS_USE_BACKGROUND_MOVIE_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.GamePreviewShowUnselectedNoteTooltips,
 							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS"),
 							UI_Str("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS_DESC")),
@@ -1246,6 +1251,8 @@ namespace PeepoDrumKit
 					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.PlaybackSpeedPercent, UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC")),
 
 					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.ShowStartButtonsInPreview, UI_Str("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS"), ""),
+
+					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_PLAYBACK"), settings.TestPlay.UseBackgroundMovie, UI_Str("SETTINGS_TEST_PLAY_USE_BACKGROUND_MOVIE"), UI_Str("SETTINGS_USE_BACKGROUND_MOVIE_DESC")),
 
 					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_JUDGEMENT_DISPLAY"), settings.TestPlay.JudgementDisplayMode, UI_Str("SETTINGS_TEST_PLAY_DISPLAY_MODE"), "", SettingsGui::WidgetType::I32_TestPlayJudgementDisplayMode),
 
@@ -1409,6 +1416,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Editor_OpenChartStats, "Editor: Open Chart Stats", },
 						{ &settings.Input.Editor_OpenLyrics, "Editor: Open Chart Lyrics", },
 						{ &settings.Input.Editor_OpenTextEditor, "Editor: Open Text Editor", },
+						{ &settings.Input.Editor_OpenUtilities, UI_Str("SHORTCUT_OPEN_UTILITIES"), },
 						{ &settings.Input.Editor_OpenSettings, "Editor: Open Settings", },
 						{ &settings.Input.Editor_OpenTemplate, "Editor: Open Templates", },
 						{ &settings.Input.Editor_OpenChartBranches, "Editor: Open Chart Branches", },
@@ -1424,6 +1432,10 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_PlaceNoteKa, "Timeline: Place Note Ka", },
 						{ &settings.Input.Timeline_PlaceNoteBalloon, "Timeline: Place Note Balloon", },
 						{ &settings.Input.Timeline_PlaceNoteDrumroll, "Timeline: Place Note Drumroll", },
+						{ &settings.Input.Timeline_PlaceNoteAdlib, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_ADLIB"), },
+						{ &settings.Input.Timeline_PlaceNoteKaDon, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_KADON"), },
+						{ &settings.Input.Timeline_PlaceNoteBomb, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_BOMB"), },
+						{ &settings.Input.Timeline_PlaceNoteFuse, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_FUSE"), },
 						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
 						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
 						{ &settings.Input.Editor_TogglePreviewComments, "Editor: Toggle Preview Comments", },

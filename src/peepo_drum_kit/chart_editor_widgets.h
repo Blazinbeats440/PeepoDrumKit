@@ -7,6 +7,7 @@
 #include "chart_editor_test_play_rules.h"
 #include "chart_editor_scroll_polar.h"
 #include "chart_editor_video_export.h"
+#include "chart_editor_background_movie.h"
 #include "chart_editor_theme.h"
 #include "imgui/imgui_include.h"
 #include "imgui/backend/imgui_custom_draw.h"
@@ -356,6 +357,15 @@ namespace PeepoDrumKit
 
 	struct ChartGamePreview
 	{
+		~ChartGamePreview();
+		void UpdateBackgroundMovie(ChartContext& context, Time chartTime, b8 enabled);
+		BackgroundMovieReader BackgroundMovie;
+		BackgroundMovieFrame MovieFrame;
+		CustomDraw::GPUTexture MovieTexture = {};
+		std::string MoviePath, MovieError;
+		u64 MovieTextureSequence = 0;
+		BackgroundMovieStatus MovieStatus = BackgroundMovieStatus::Inactive;
+		b8 MovieVisible = false, VideoUseBackgroundMovie = false;
 		enum class VideoBackgroundFit { Stretch, Contain, ContainWithWidth, Width, Height };
 		enum class VideoLayout { Original, Taiko };
 		GameCamera Camera = {};

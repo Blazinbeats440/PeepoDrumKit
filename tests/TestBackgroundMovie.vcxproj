@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{AE3706F9-42DD-4F26-92E1-28D04CC3FBB0}</ProjectGuid>
+    <RootNamespace>TestBackgroundMovie</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\build\bin\$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\bin-int\$(ProjectName)-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel><LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>PEEPO_DEBUG=1;PEEPO_RELEASE=0;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link><AdditionalDependencies>mfreadwrite.lib;mfplat.lib;mfuuid.lib;ole32.lib;Shlwapi.lib;d3d11.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <FxCompile>
+      <ShaderModel>4.0</ShaderModel><VariableName>%(Filename)_bytecode</VariableName>
+      <HeaderFileOutput>$(IntDir)%(Filename).h</HeaderFileOutput><ObjectFileOutput></ObjectFileOutput>
+    </FxCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="test_background_movie.cpp" />
+    <ClCompile Include="..\src\peepo_drum_kit\chart_editor_background_movie.cpp" />
+    <ClCompile Include="..\src\peepo_drum_kit\chart_editor_video_writer.cpp" />
+    <ClCompile Include="..\src\peepo_drum_kit\chart_editor_settings.cpp" />
+    <ClCompile Include="..\src\core_io.cpp" />
+    <ClCompile Include="..\src\core_log.cpp" />
+    <ClCompile Include="..\src\imgui\backend\imgui_impl_d3d11.cpp" />
+    <ClCompile Include="..\src\imgui\extension\imgui_input_binding.cpp" />
+    <ClCompile Include="..\src\imgui\3rdparty\imgui.cpp" />
+    <ClCompile Include="..\src\imgui\3rdparty\imgui_draw.cpp" />
+    <ClCompile Include="..\src\imgui\3rdparty\imgui_tables.cpp" />
+    <ClCompile Include="..\src\imgui\3rdparty\imgui_widgets.cpp" />
+    <ClCompile Include="..\src\core_string.cpp" />
+    <ClCompile Include="..\src\core_types.cpp" />
+    <ClCompile Include="..\src\file_format_tja.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\src\imgui\backend\shader_imgui_default_ps.hlsl"><ShaderType>Pixel</ShaderType><EntryPointName>PS_main</EntryPointName></FxCompile>
+    <FxCompile Include="..\src\imgui\backend\shader_imgui_default_vs.hlsl"><ShaderType>Vertex</ShaderType><EntryPointName>VS_main</EntryPointName></FxCompile>
+    <FxCompile Include="..\src\imgui\backend\shader_imgui_waveform_ps.hlsl"><ShaderType>Pixel</ShaderType><EntryPointName>PS_main</EntryPointName></FxCompile>
+    <FxCompile Include="..\src\imgui\backend\shader_imgui_waveform_vs.hlsl"><ShaderType>Vertex</ShaderType><EntryPointName>VS_main</EntryPointName></FxCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

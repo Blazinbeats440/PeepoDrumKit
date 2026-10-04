@@ -1,5 +1,6 @@
 #include "chart_editor_widgets.h"
 #include "chart_editor_test_play_display.h"
+#include "core_io.h"
 #define STBI_ONLY_PNG
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -1179,6 +1180,71 @@ namespace PeepoDrumKit
 		}
 	}
 
+	ChartGamePreview::~ChartGamePreview()
+	{
+		MovieTexture.Unload();
+	}
+
+	void ChartGamePreview::UpdateBackgroundMovie(ChartContext& context, Time chartTime, b8 enabled)
+	{
+		MovieVisible = false;
+		MovieError.clear();
+		MovieStatus = BackgroundMovieStatus::Inactive;
+		const auto definition = ReadBackgroundMovieDefinition(context.Chart.OtherMetadata);
+		if (!enabled || definition.FileName.empty())
+		{
+			if (!MoviePath.empty())
+			{
+				BackgroundMovie.Close(); MovieTexture.Unload(); MovieFrame = {};
+				MoviePath.clear(); MovieTextureSequence = 0;
+			}
+			return;
+		}
+		if (!definition.Error.empty())
+		{
+			MovieStatus = BackgroundMovieStatus::Failed;
+			MovieError = definition.Error;
+			return;
+		}
+		const std::string path = Path::TryMakeAbsolute(definition.FileName, context.ChartFilePath);
+		if (path.empty())
+		{
+			MovieStatus = BackgroundMovieStatus::Failed;
+			MovieError = "Could not resolve BGMOVIE path";
+			return;
+		}
+		if (MoviePath != path)
+		{
+			MovieTexture.Unload(); MovieFrame = {}; MovieTextureSequence = 0;
+			MoviePath = path;
+		}
+		const Time time = GetBackgroundMovieTime(chartTime, context.Chart.SongOffset, definition.Offset);
+		BackgroundMovie.Request(path, time);
+		MovieStatus = BackgroundMovie.Poll(MovieFrame);
+		if (MovieStatus == BackgroundMovieStatus::Failed) MovieError = BackgroundMovie.GetError();
+		if (MovieStatus == BackgroundMovieStatus::Ready)
+		{
+			if (!MovieTexture.IsValid() || MovieTexture.GetSize() != MovieFrame.Size)
+			{
+				MovieTexture.Unload();
+				MovieTexture.Load({ CustomDraw::GPUPixelFormat::BGRA, CustomDraw::GPUAccessType::Dynamic, MovieFrame.Size, MovieFrame.Pixels.data() });
+				MovieTextureSequence = MovieFrame.Sequence;
+			}
+			else if (MovieTextureSequence != MovieFrame.Sequence)
+			{
+				MovieTexture.UpdateDynamic(MovieFrame.Size, MovieFrame.Pixels.data());
+				MovieTextureSequence = MovieFrame.Sequence;
+			}
+			if (!MovieTexture.IsValid())
+			{
+				MovieStatus = BackgroundMovieStatus::Failed;
+				MovieError = "Could not create background video texture";
+			}
+		}
+		MovieVisible = MovieTexture.IsValid() && (MovieStatus == BackgroundMovieStatus::Ready ||
+			(MovieStatus == BackgroundMovieStatus::Pending && time >= MovieFrame.Start && time < MovieFrame.End + Time::FromSec(0.25)));
+	}
+
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
 	{
 		const b8 isVideoExport = VideoExportTime.has_value();
@@ -1483,13 +1549,28 @@ namespace PeepoDrumKit
 		const Rect windowClipRect = { drawList->GetClipRectMin(), drawList->GetClipRectMax() };
 		drawList->PushClipRect(Camera.ScreenSpaceViewportRect.TL, Camera.ScreenSpaceViewportRect.BR, true);
 		// jacket or video background
+		const b8 useBackgroundMovie = isVideoExport ? VideoUseBackgroundMovie
+			: IsTestPlaying ? *Settings.TestPlay.UseBackgroundMovie : *Settings.General.GamePreviewUseBackgroundMovie;
+		const Time movieChartTime = isVideoExport ? *VideoExportTime
+			: context.GetIsPlayback() || (IsTestPlaying && !context.TestPlaySmoothCursor) ? context.GetCursorTime() : animatedCursorTime;
+		UpdateBackgroundMovie(context, movieChartTime, useBackgroundMovie);
+		if (!isVideoExport && !MovieError.empty())
+		{
+			const vec2 errorPosition = Camera.ScreenSpaceViewportRect.TL + vec2(8.0f);
+			drawList->ChannelsSetCurrent(4);
+			drawList->AddText(errorPosition, 0xFF8080FF, UI_Str("BACKGROUND_MOVIE_FAILED"));
+			if (Gui::IsMouseHoveringRect(errorPosition, errorPosition + Gui::CalcTextSize(UI_Str("BACKGROUND_MOVIE_FAILED"))))
+				Gui::SetTooltip("%s", MovieError.c_str());
+			drawList->ChannelsSetCurrent(0);
+		}
 		if (isVideoExport)
 		{
 			const Rect viewport = Camera.ScreenSpaceViewportRect;
 			drawList->AddRectFilled(viewport.TL, viewport.BR, VideoBackgroundColor);
-			if (VideoBackgroundTexture != nullptr && VideoBackgroundTexture->IsValid())
+			const auto* backgroundTexture = VideoUseBackgroundMovie && MovieVisible ? &MovieTexture : VideoBackgroundTexture;
+			if (backgroundTexture != nullptr && backgroundTexture->IsValid())
 			{
-				const vec2 imageSize = VideoBackgroundTexture->GetSizeF32();
+				const vec2 imageSize = backgroundTexture->GetSizeF32();
 				const vec2 viewportSize = viewport.GetSize();
 				if (imageSize.x > 0.0f && imageSize.y > 0.0f)
 				{
@@ -1497,7 +1578,7 @@ namespace PeepoDrumKit
 					{
 						const vec2 backgroundSize = imageSize * (viewportSize.x / imageSize.x);
 						const vec2 backgroundTopLeft = viewport.TL + (viewportSize - backgroundSize) * 0.5f;
-						drawList->AddImage(VideoBackgroundTexture->GetTexID(), backgroundTopLeft, backgroundTopLeft + backgroundSize,
+						drawList->AddImage(backgroundTexture->GetTexID(), backgroundTopLeft, backgroundTopLeft + backgroundSize,
 							vec2(0.0f), vec2(1.0f), Gui::ColorConvertFloat4ToU32(ImVec4(0.35f, 0.35f, 0.35f, 1.0f)));
 					}
 					vec2 drawnSize = viewportSize;
@@ -1511,9 +1592,16 @@ namespace PeepoDrumKit
 						drawnSize = imageSize * scale;
 					}
 					const vec2 drawnTopLeft = viewport.TL + (viewportSize - drawnSize) * 0.5f;
-					drawList->AddImage(VideoBackgroundTexture->GetTexID(), drawnTopLeft, drawnTopLeft + drawnSize);
+					drawList->AddImage(backgroundTexture->GetTexID(), drawnTopLeft, drawnTopLeft + drawnSize);
 				}
 			}
+		}
+		else if (MovieVisible)
+		{
+			const vec2 size = MovieTexture.GetSizeF32();
+			const Rect fitted = FitInside(size, Rect::FromTLSize({}, size), Camera.ScreenSpaceViewportRect, EFitInside::Contain).first;
+			drawList->AddRectFilled(Camera.ScreenSpaceViewportRect.TL, Camera.ScreenSpaceViewportRect.BR, Gui::GetColorU32(ImGuiCol_WindowBg));
+			drawList->AddImage(MovieTexture.GetTexID(), fitted.TL, fitted.BR);
 		}
 		else if (context.JacketTexture.IsValid())
 		{
@@ -2321,7 +2409,9 @@ namespace PeepoDrumKit
 								{ return ASCII::ToString(attr.Tempo.BPM) + " BPM"; }));
 								ImGui::TextUnformatted(std::string(UI_Str("GAME_PREVIEW_NOTE_SCROLL")) + ": " + fmt([&](const NoteAttr& attr, const vec2& pos)
 								{ return attr.ScrollSpeed.toStringCompat("x") + "x (" + ScrollSpeedToBPM(attr.ScrollSpeed, attr.Tempo).toStringCompat(" BPM") + " BPM)"; }));
-								if (!it->ScrollSpeed.IsReal() || (isLong && !it->Tail.ScrollSpeed.IsReal()))
+								const auto containsComplexScroll = [](const SortedScrollChangesList& changes)
+								{ return std::any_of(changes.Sorted.begin(), changes.Sorted.end(), [](const ScrollChange& change) { return !change.ScrollSpeed.IsReal(); }); };
+								if (containsComplexScroll(course->ScrollChanges_Normal) || containsComplexScroll(course->ScrollChanges_Expert) || containsComplexScroll(course->ScrollChanges_Master))
 								{
 									auto previewScroll = [](const NoteAttr& attr)
 									{ return (attr.ScrollType == ScrollMethod::BMSCROLL) ? Complex(1.0f, 0.0f) : attr.ScrollSpeedView; };

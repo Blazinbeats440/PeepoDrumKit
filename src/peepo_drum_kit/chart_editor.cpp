@@ -66,7 +66,7 @@ namespace PeepoDrumKit
 		videoExport.FramesPerSecond = videoSettings.FramesPerSecond == 15 || videoSettings.FramesPerSecond == 30 ||
 			videoSettings.FramesPerSecond == 60 || videoSettings.FramesPerSecond == 120 ? videoSettings.FramesPerSecond : 60;
 		videoExport.AudioBitRate = IsValidVideoAudioBitRate(videoSettings.AudioBitRate) ? videoSettings.AudioBitRate : 192000;
-		videoExport.BackgroundSource = Clamp(videoSettings.BackgroundSource, -1, 3);
+		videoExport.BackgroundSource = Clamp(videoSettings.BackgroundSource, -1, 4);
 		videoExport.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(Clamp(videoSettings.BackgroundImageFit, 0, 4));
 		videoExport.BackgroundColor = videoSettings.BackgroundColor;
 		videoExport.LaneBackgroundTransparency = std::isfinite(videoSettings.LaneBackgroundTransparency)
@@ -801,6 +801,8 @@ namespace PeepoDrumKit
 				Gui::MenuItem(UI_Str("TAB_COMMENTS"), nullptr, &PersistentApp.LastSession.ShowWindow_Comments);
 				if (Gui::MenuItem(UI_Str("TAB_TEXT_EDITOR"), ToShortcutString(*Settings.Input.Editor_OpenTextEditor).Data, &PersistentApp.LastSession.ShowWindow_TextEditor))
 					focusTextEditorWindowNextFrame = true;
+				if (Gui::MenuItem(UI_Str("TAB_UTILITIES"), ToShortcutString(*Settings.Input.Editor_OpenUtilities).Data, &PersistentApp.LastSession.ShowWindow_Utilities))
+					focusUtilitiesWindowNextFrame = true;
 				if (Gui::MenuItem(UI_Str("TAB_CHART_STATS"), ToShortcutString(*Settings.Input.Editor_OpenChartStats).Data)) { PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true; }
 				if (Gui::MenuItem(UI_Str("TAB_SETTINGS"), ToShortcutString(*Settings.Input.Editor_OpenSettings).Data)) { PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true; }
 
@@ -1455,6 +1457,7 @@ namespace PeepoDrumKit
 			if (Gui::IsAnyPressed(*Settings.Input.Editor_ScreenshotPreview, false) && context.ChartSelectedCourse != nullptr &&
 				!videoExport.Exporting && !videoExport.Preparing) screenshotPreviewRequested = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTextEditor, true)) PersistentApp.LastSession.ShowWindow_TextEditor = focusTextEditorWindowNextFrame = true;
+				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenUtilities, true)) PersistentApp.LastSession.ShowWindow_Utilities = focusUtilitiesWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenSettings, true)) PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenTemplate, false)) PersistentApp.LastSession.ShowWindow_Template = true;
 				if (Gui::IsAnyPressed(*Settings.Input.Editor_OpenChartBranches, false)) PersistentApp.LastSession.ShowWindow_ChartBranches = true;
@@ -1591,6 +1594,15 @@ namespace PeepoDrumKit
 				if (context.TestPlayActive) Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
 				else DrawTextEditorWindow();
 			if (focusTextEditorWindowNextFrame) { focusTextEditorWindowNextFrame = false; Gui::SetWindowFocus(); }
+			Gui::End();
+		}
+
+		if (PersistentApp.LastSession.ShowWindow_Utilities)
+		{
+			Gui::SetNextWindowSize({ 460.0f, 520.0f }, ImGuiCond_FirstUseEver);
+			if (Gui::Begin(UI_WindowName("TAB_UTILITIES"), &PersistentApp.LastSession.ShowWindow_Utilities, ImGuiWindowFlags_None))
+				utilitiesWindow.DrawGui(context);
+			if (focusUtilitiesWindowNextFrame) { focusUtilitiesWindowNextFrame = false; Gui::SetWindowFocus(); }
 			Gui::End();
 		}
 
@@ -2147,6 +2159,10 @@ namespace PeepoDrumKit
 					context.Chart.SongFileName = Path::NormalizeInPlace(path);
 				if (auto path = Path::TryRemakeRelative(context.Chart.SongJacket, context.ChartFilePath, filePath); !path.empty())
 					context.Chart.SongJacket = Path::NormalizeInPlace(path);
+				for (auto& [key, value] : context.Chart.OtherMetadata)
+					if (ASCII::MatchesInsensitive(key, "BGMOVIE"))
+						if (auto path = Path::TryRemakeRelative(ASCII::Trim(value), context.ChartFilePath, filePath); !path.empty())
+							value = Path::NormalizeInPlace(path);
 			}
 
 			TJA::ParsedTJA tja;

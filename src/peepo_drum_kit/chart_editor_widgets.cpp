@@ -2389,33 +2389,15 @@ namespace PeepoDrumKit
 		return chartValueChanged;
 	}
 
-	static std::map<std::tuple<SprID, u32, float, float, float, float>, ImImageQuad> sprImageQuadCache = {};
-	// [{sprite_id, tint_col, uv0.x, uv0.y, uv1.x, uv1.y}] = quad;
-	// Cannot use std::unordered_map because std::hash<std::tuple<...>> is not defined.
-	static f32 sprImageGuiScaleCache = GuiScaleFactorCurrent;
-
 	static bool SpriteButton(const char* tooltip_key, const ChartContext& context, SprID sprite_id, const ImVec2& button_size,
 		const ImVec2& uv0 = ImVec2(0, 0), const ImVec2& uv1 = ImVec2(1, 1),
 		const ImVec4& bg_col = ImVec4(0, 0, 0, 0), const ImVec4& tint_col = ImVec4(1, 1, 1, 1))
 	{
-		if (GuiScaleFactorCurrent != sprImageGuiScaleCache) {
-			sprImageQuadCache.clear(); // remove invalidated textures
-			sprImageGuiScaleCache = GuiScaleFactorCurrent;
-		}
-
 		u32 u32_tint_col = Gui::ColorConvertFloat4ToU32(tint_col);
-		ImImageQuad& quad = sprImageQuadCache[{sprite_id, u32_tint_col, uv0.x, uv0.y, uv1.x, uv1.y}];
-		ImTextureID tex_id = quad.TexID;
-		if (tex_id == 0) {
-			SprUV quadUV = SprUV::FromRect(uv0, uv1);
-			if (context.Gfx.GetImageQuad(quad, sprite_id, { {0, 0}, {0, 0}, {1, 1,}, 0 }, u32_tint_col, quadUV)) {
-				tex_id = quad.TexID;
-			}
-			else {
-				sprImageQuadCache.erase({ sprite_id, u32_tint_col, uv0.x, uv0.y, uv1.x, uv1.y });
-				tex_id = 0;
-			}
-		}
+		ImImageQuad quad = {};
+		SprUV quadUV = SprUV::FromRect(uv0, uv1);
+		ImTextureID tex_id = context.Gfx.GetImageQuad(quad, sprite_id, { {0, 0}, {0, 0}, {1, 1,}, 0 }, u32_tint_col, quadUV)
+			? quad.TexID : 0;
 
 		bool res;
 		if (tex_id == 0) {

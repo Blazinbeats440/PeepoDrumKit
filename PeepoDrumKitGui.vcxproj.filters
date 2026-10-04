@@ -60,6 +60,9 @@
     <ClCompile Include="src\peepo_drum_kit\chart_editor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_background_movie.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\peepo_drum_kit\chart_editor_file_drop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -88,6 +91,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\peepo_drum_kit\chart_editor_widgets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_utilities.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\peepo_drum_kit\chart_editor_settings_gui.cpp">
@@ -191,6 +197,9 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_background_movie.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_file_drop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -228,6 +237,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_widgets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_utilities.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_jpos_easing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_settings_gui.h">

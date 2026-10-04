@@ -998,26 +998,16 @@ namespace CustomDraw
 		if (D3D11_MAPPED_SUBRESOURCE mapped; SUCCEEDED(bd->pd3dDeviceContext->Map(data->Texture2D, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
 		{
 			const size_t outStride = mapped.RowPitch;
-			const size_t outByteSize = mapped.DepthPitch;
 			u8* outData = static_cast<u8*>(mapped.pData);
 			assert(outData != nullptr);
 
 			assert(data->Desc.Format == GPUPixelFormat::RGBA || data->Desc.Format == GPUPixelFormat::BGRA);
 			static constexpr u32 rgbaBitsPerPixel = (sizeof(u32) * BitsPerByte);
 			const size_t inStride = (size.x * rgbaBitsPerPixel) / BitsPerByte;
-			const size_t inByteSize = (size.y * inStride);
 			const u8* inData = static_cast<const u8*>(newPixels);
-
-			if (outByteSize == inByteSize)
-			{
-				memcpy(outData, inData, inByteSize);
-			}
-			else
-			{
-				assert(outByteSize == (outStride * size.x));
-				for (size_t y = 0; y < size.y; y++)
-					memcpy(&outData[outStride * y], &inData[inStride * y], inStride);
-			}
+			assert(outStride >= inStride);
+			for (size_t y = 0; y < size.y; y++)
+				memcpy(&outData[outStride * y], &inData[inStride * y], inStride);
 
 			bd->pd3dDeviceContext->Unmap(data->Texture2D, 0);
 		}
