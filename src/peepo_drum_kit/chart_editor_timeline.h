@@ -311,6 +311,7 @@ namespace PeepoDrumKit
 		} LongNotePlacement = {};
 		b8 PlaceBalloonBindingDownThisFrame = false, PlaceBalloonBindingDownLastFrame = false;
 		b8 PlaceDrumrollBindingDownThisFrame = false, PlaceDrumrollBindingDownLastFrame = false;
+		b8 PlaceFuseBindingDownThisFrame = false, PlaceFuseBindingDownLastFrame = false;
 
 		enum class BoxSelectionAction : u8 { Clear, Add, Sub, XOR };
 		static constexpr BoxSelectionAction GetBoxSelectionAction(const ImGuiIO& io)

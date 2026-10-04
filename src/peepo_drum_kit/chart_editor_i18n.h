@@ -87,6 +87,99 @@ X("TAB_CHART_STATS",								"Stats") \
 X("TAB_TEMPLATE",								"Templates") \
 X("TAB_TEXT_EDITOR",							"Text Editor") \
 X("TEXT_EDITOR_WRITE",							"Write") \
+X("TAB_UTILITIES", "Utilities") \
+X("SHORTCUT_OPEN_UTILITIES", "Editor: Open Utilities") \
+X("UTILITY_FUNCTION", "Function") \
+X("UTILITY_JPOS_MOVE_X", "X movement") \
+X("UTILITY_JPOS_MOVE_Y", "Y movement") \
+X("UTILITY_JPOS_EASING_TYPE", "Easing") \
+X("UTILITY_JPOS_EASE_IN_OUT", "Ease In Out") \
+X("UTILITY_JPOS_EASE_OUT_IN", "Ease Out In") \
+X("UTILITY_JPOS_MOTION", "JPOS Motion Generator") \
+X("UTILITY_JPOS_MOTION_DESC", "Generate movement in the current range. All positions are relative to the position at the start of the range.") \
+X("UTILITY_JPOS_MOTION_TYPE", "Motion") \
+X("UTILITY_JPOS_ONE_WAY", "One way") \
+X("UTILITY_JPOS_ROUND_TRIP", "Round trip") \
+X("UTILITY_JPOS_SHAKE", "Shake") \
+X("UTILITY_JPOS_ELLIPSE", "Circle / ellipse") \
+X("UTILITY_JPOS_BOUNCE", "Move with jumps") \
+X("UTILITY_JPOS_AMPLITUDE_X", "X amplitude") \
+X("UTILITY_JPOS_AMPLITUDE_Y", "Y amplitude") \
+X("UTILITY_JPOS_SHAKE_COUNT", "Shake cycles") \
+X("UTILITY_JPOS_ORBIT_COUNT", "Orbits") \
+X("UTILITY_JPOS_BOUNCE_COUNT", "Jumps") \
+X("UTILITY_JPOS_DAMPED", "Gradually reduce the amplitude") \
+X("UTILITY_JPOS_DAMPING_STRENGTH", "Damping strength") \
+X("UTILITY_JPOS_RADIUS_X", "Horizontal radius") \
+X("UTILITY_JPOS_RADIUS_Y", "Vertical radius") \
+X("UTILITY_JPOS_START_ANGLE", "Starting angle (degrees)") \
+X("UTILITY_JPOS_ELLIPSE_DESC", "The current position is the starting point on the ellipse. 0 degrees is right and 90 degrees is down. Equal radii make a circle.") \
+X("UTILITY_JPOS_CLOCKWISE", "Clockwise") \
+X("UTILITY_JPOS_COUNTERCLOCKWISE", "Counterclockwise") \
+X("UTILITY_JPOS_ROTATION_DIRECTION", "Rotation direction") \
+X("UTILITY_JPOS_EASING_PER_CYCLE", "Apply easing separately to each orbit") \
+X("UTILITY_JPOS_JUMP_HEIGHT", "Jump height") \
+X("UTILITY_JPOS_JUMP_DAMPED", "Gradually reduce the jump height") \
+X("UTILITY_JPOS_ZIGZAG", "Zigzag movement") \
+X("UTILITY_JPOS_POLYGON", "Polygon orbits") \
+X("UTILITY_JPOS_WAYPOINTS", "Waypoint movement") \
+X("UTILITY_JPOS_ZIGZAG_COUNT", "Zigzag cycles") \
+X("UTILITY_JPOS_LATERAL_AMPLITUDE", "Lateral amplitude") \
+X("UTILITY_JPOS_ANGULAR", "Angular") \
+X("UTILITY_JPOS_SMOOTH", "Smooth") \
+X("UTILITY_JPOS_PATH_SHAPE", "Path shape") \
+X("UTILITY_JPOS_LEFT", "Left") \
+X("UTILITY_JPOS_RIGHT", "Right") \
+X("UTILITY_JPOS_FIRST_SIDE", "First side") \
+X("UTILITY_JPOS_REFERENCE_ANGLE", "Reference direction angle") \
+X("UTILITY_JPOS_ZIGZAG_DAMPED", "Gradually reduce lateral amplitude") \
+X("UTILITY_JPOS_ZIGZAG_DESC", "Lateral amplitude is the distance to each side of the travel direction. Each cycle passes center, first side, center, opposite side, and center. Reference angles: right is 0 degrees, down is 90 degrees.") \
+X("UTILITY_JPOS_RECTANGLE", "Rectangle") \
+X("UTILITY_JPOS_TRIANGLE", "Isosceles triangle") \
+X("UTILITY_JPOS_POLYGON_SHAPE", "Orbit shape") \
+X("UTILITY_JPOS_WIDTH", "Width") \
+X("UTILITY_JPOS_HEIGHT", "Height") \
+X("UTILITY_JPOS_ROTATION_ANGLE", "Rotation angle") \
+X("UTILITY_JPOS_POLYGON_DESC", "The starting position is a vertex. At 0 degrees, clockwise travel begins to the right and then passes below. Linear easing assigns time in proportion to edge length.") \
+X("UTILITY_JPOS_WAYPOINT_DESC", "Arrival percentages refer to beats in the selected range. X and Y are relative to the starting position. Repeated coordinates create a hold. Use + to insert before the next point and - to remove.") \
+X("UTILITY_JPOS_WAYPOINT_SAME_EASING", "Use the same easing for all intervals") \
+X("UTILITY_JPOS_ARRIVAL_PERCENT", "Arrival (%)") \
+X("UTILITY_JPOS_WAYPOINT_ACTIONS", "Add / remove") \
+X("UTILITY_JPOS_WAYPOINT_INTERVAL", "Interval %d -> %d") \
+X("UTILITY_JPOS_INVALID_WAYPOINTS", "Arrival percentages must increase strictly from 0 to 100. The first point must be 0% at (0, 0), and the last 100%. Coordinates must be finite.") \
+X("UTILITY_JPOS_CURVE_GRID_DESC", "The total division count includes turns, polygon vertices, center crossings, jump peaks and landings. Curved paths are approximated by straight segments.") \
+X("UTILITY_JPOS_WAYPOINT_GRID_DESC", "The total division count is shared across intervals and always includes every waypoint.") \
+X("UTILITY_JPOS_INVALID_CURVE_GRID", "This motion requires at least %d divisions. Increase the division grid or reduce the cycle count.") \
+X("UTILITY_JPOS_INVALID_CURVE_MOTION", "Check cycle count (up to 1024, 1365 for triangles, or 2048 for jumps). Radii, amplitudes and height must be finite and nonnegative; polygon width and height positive; angles finite; damping strength between 0 and 4.") \
+X("UTILITY_JPOS_TURN_X", "Turning point X") \
+X("UTILITY_JPOS_TURN_Y", "Turning point Y") \
+X("UTILITY_JPOS_ROUND_TRIPS", "Round trips") \
+X("UTILITY_JPOS_OUTBOUND_RATIO", "Outbound share") \
+X("UTILITY_JPOS_OUTBOUND_DESC", "The share is measured in beats within each round trip. Easing uses elapsed time within each leg.") \
+X("UTILITY_JPOS_SAME_EASING", "Use the same easing for both legs") \
+X("UTILITY_JPOS_OUTBOUND_EASING", "Outbound easing") \
+X("UTILITY_JPOS_RETURN_EASING", "Return easing") \
+X("UTILITY_JPOS_MOTION_GRID_DESC", "Divide the entire range into this many segments, always including each turn and return (1-4096).") \
+X("UTILITY_JPOS_POSITION_X", "X position (time)") \
+X("UTILITY_JPOS_POSITION_Y", "Y position (time)") \
+X("UTILITY_JPOS_TRAJECTORY", "XY path (white dot: starting position)") \
+X("UTILITY_JPOS_INVALID_MOTION", "Enter 1-2048 round trips and an outbound share between 0 and 100 percent.") \
+X("UTILITY_JPOS_INVALID_MOTION_GRID", "At least two divisions per round trip are required. Increase the division grid or reduce the round trips.") \
+X("UTILITY_JPOS_INVALID_MOTION_TIMING", "The beat resolution cannot represent the motion boundaries. Widen the range or adjust the motion settings.") \
+X("UTILITY_JPOS_INVALID_STRENGTH", "Enter an easing strength from 0 to 4.") \
+X("UTILITY_JPOS_DIVISION_GRID", "Division grid") \
+X("UTILITY_JPOS_GRID_DESC", "Divide the entire selected range into this many segments (1-4096).") \
+X("UTILITY_JPOS_RANGE", "Selected range: %.3f - %.3f beats (%.3f s)") \
+X("UTILITY_JPOS_SELECT_RANGE", "Select a range with a start and end on the timeline.") \
+X("UTILITY_JPOS_EVENT_COUNT", "Commands to generate: %d") \
+X("UTILITY_JPOS_INTERRUPTS_PREVIOUS", "Generation will stop the preceding JPOS movement at the start of this range.") \
+X("UTILITY_JPOS_CONFLICT", "The range already contains %d JPOS commands. Undo the previous generation or choose an empty range.") \
+X("UTILITY_JPOS_INVALID_GRID", "Enter a division grid from 1 to 4096 that fits within the range's beat resolution.") \
+X("UTILITY_JPOS_INVALID_MOVE", "Enter finite X and Y movement values.") \
+X("UTILITY_JPOS_INVALID_TIME", "The range cannot be converted to valid movement times.") \
+X("UTILITY_JPOS_INTERVAL_TOO_SHORT", "A segment is shorter than 1 ms. Reduce the division grid or select a longer range.") \
+X("UTILITY_JPOS_GENERATE", "Generate") \
+X("UTILITY_JPOS_GENERATED", "Last generation: %d JPOS commands. Undo once to remove them before adjusting and regenerating.") \
 X("TEXT_EDITOR_READ",							"Read") \
 X("TEXT_EDITOR_STATUS_LOADED",					"Loaded the selected chart") \
 X("TEXT_EDITOR_STATUS_WRITTEN",				"Wrote to the selected chart") \
@@ -264,6 +357,10 @@ X("SETTINGS_TEST_PLAY_DON_RIGHT", "Don right") \
 X("SETTINGS_TEST_PLAY_KA_LEFT", "Ka left") \
 X("SETTINGS_TEST_PLAY_KA_RIGHT", "Ka right") \
 X("SETTINGS_KEY_TEST_PLAY_DON_LEFT", "Testplay: Don left") \
+X("SETTINGS_KEY_TIMELINE_PLACE_ADLIB", "Timeline: Place Note Adlib") \
+X("SETTINGS_KEY_TIMELINE_PLACE_KADON", "Timeline: Place Note KaDon") \
+X("SETTINGS_KEY_TIMELINE_PLACE_BOMB", "Timeline: Place Note Bomb") \
+X("SETTINGS_KEY_TIMELINE_PLACE_FUSE", "Timeline: Place Note Fuseroll") \
 X("SETTINGS_KEY_TEST_PLAY_DON_RIGHT", "Testplay: Don right") \
 X("SETTINGS_KEY_TEST_PLAY_KA_LEFT", "Testplay: Ka left") \
 X("SETTINGS_KEY_TEST_PLAY_KA_RIGHT", "Testplay: Ka right") \
@@ -283,6 +380,10 @@ X("TEST_PLAY_START_MARKER", "Start from Marker") \
 X("TEST_PLAY_AUTO_BRANCH", "Automatic Branching") \
 X("TEST_PLAY_SCORE_BRANCH_UNAVAILABLE", "Automatic branching is unavailable for score conditions") \
 X("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS", "Show start buttons in chart preview") \
+X("SETTINGS_TEST_PLAY_USE_BACKGROUND_MOVIE", "Play BGMOVIE during test play") \
+X("SETTINGS_PREVIEW_USE_BACKGROUND_MOVIE", "Game Preview: Play BGMOVIE while editing") \
+X("SETTINGS_USE_BACKGROUND_MOVIE_DESC", "Play the video specified by BGMOVIE in sync with the chart. Video audio is muted.") \
+X("BACKGROUND_MOVIE_FAILED", "Could not play BGMOVIE.") \
 X("TEST_PLAY_PAUSE", "Pause") \
 X("TEST_PLAY_RESUME", "Resume") \
 X("TEST_PLAY_GOOD", "Good") \
@@ -492,6 +593,7 @@ X("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY", "Lane background transparency") \
 X("VIDEO_EXPORT_BACKGROUND_ASSET", "assets/background.png") \
 X("VIDEO_EXPORT_BACKGROUND_CUSTOM", "Selected image") \
 X("VIDEO_EXPORT_BACKGROUND_JACKET", "Chart jacket") \
+X("VIDEO_EXPORT_BACKGROUND_MOVIE", "Use BGMOVIE") \
 X("VIDEO_EXPORT_BACKGROUND_CHOOSE", "Choose image...") \
 X("VIDEO_EXPORT_BACKGROUND_FIT", "Image fit") \
 X("VIDEO_EXPORT_BACKGROUND_STRETCH", "Stretch") \

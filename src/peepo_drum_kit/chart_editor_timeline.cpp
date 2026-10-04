@@ -3766,6 +3766,8 @@ namespace PeepoDrumKit
 			PlaceBalloonBindingDownThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyDown(*Settings.Input.Timeline_PlaceNoteBalloon, InputModifierBehavior::Relaxed);
 			PlaceDrumrollBindingDownLastFrame = PlaceDrumrollBindingDownThisFrame;
 			PlaceDrumrollBindingDownThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyDown(*Settings.Input.Timeline_PlaceNoteDrumroll, InputModifierBehavior::Relaxed);
+			PlaceFuseBindingDownLastFrame = PlaceFuseBindingDownThisFrame;
+			PlaceFuseBindingDownThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyDown(*Settings.Input.Timeline_PlaceNoteFuse, InputModifierBehavior::Relaxed);
 			if (hasTimelineOrGamePreviewFocus)
 			{
 				const b8 shouldAutoStep = Settings.General.TimelineAutoStepAfterNoteInput.Value && !Gui::GetIO().KeyShift;
@@ -3779,16 +3781,29 @@ namespace PeepoDrumKit
 					Gui::SetKeyOwner(ImGuiKey_ModAlt, Gui::GetItemID());
 					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
 				}
+				if (!gridModeToggledThisFrame && updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteAdlib, NoteType::Adlib))
+				{
+					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
+				}
+				if (!gridModeToggledThisFrame && updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteKaDon, NoteType::KaDon))
+				{
+					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
+				}
+				if (!gridModeToggledThisFrame && updateNotePlacementBinding(*Settings.Input.Timeline_PlaceNoteBomb, NoteType::Bomb))
+				{
+					if (shouldAutoStep) stepCursorForwardByCurrentGrid();
+				}
 				if (!gridModeToggledThisFrame && Settings.General.TimelineAutoStepAfterNoteInput.Value
 					&& Gui::IsAnyPressed(*Settings.Input.Timeline_PlaceRestAndStepCursor, false, InputModifierBehavior::Relaxed))
 					stepCursorForwardByCurrentGrid();
 
-				if (PlaceBalloonBindingDownThisFrame || PlaceDrumrollBindingDownThisFrame)
+				if (PlaceBalloonBindingDownThisFrame || PlaceDrumrollBindingDownThisFrame || PlaceFuseBindingDownThisFrame)
 				{
 					const Beat cursorBeat = context.GetIsPlayback() ? RoundBeatToCurrentGrid(context, context.GetCursorBeat()) : FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 					if (IsNoteRangeValidForBranch(*context.ChartSelectedCourse, context.ChartSelectedBranch, cursorBeat, cursorBeat))
 					{
-						LongNotePlacement.NoteType = ToBigNoteIf(PlaceBalloonBindingDownThisFrame ? NoteType::Balloon : NoteType::Drumroll, Gui::GetIO().KeyAlt);
+						LongNotePlacement.NoteType = PlaceFuseBindingDownThisFrame ? NoteType::Fuse
+							: ToBigNoteIf(PlaceBalloonBindingDownThisFrame ? NoteType::Balloon : NoteType::Drumroll, Gui::GetIO().KeyAlt);
 						if (!LongNotePlacement.IsActive)
 						{
 							LongNotePlacement.IsActive = true;
@@ -3840,6 +3855,7 @@ namespace PeepoDrumKit
 			const b8 activeFocusedAndHasLength = hasTimelineOrGamePreviewFocus && LongNotePlacement.IsActive && (LongNotePlacement.CursorBeatHead != LongNotePlacement.CursorBeatTail);
 			if (PlaceBalloonBindingDownLastFrame && !PlaceBalloonBindingDownThisFrame) { if (activeFocusedAndHasLength) placeLongNoteOnBindingRelease(LongNotePlacement.NoteType); LongNotePlacement = {}; }
 			if (PlaceDrumrollBindingDownLastFrame && !PlaceDrumrollBindingDownThisFrame) { if (activeFocusedAndHasLength) placeLongNoteOnBindingRelease(LongNotePlacement.NoteType); LongNotePlacement = {}; }
+			if (PlaceFuseBindingDownLastFrame && !PlaceFuseBindingDownThisFrame) { if (activeFocusedAndHasLength) placeLongNoteOnBindingRelease(LongNotePlacement.NoteType); LongNotePlacement = {}; }
 
 			if (hasTimelineOrGamePreviewFocus)
 			{

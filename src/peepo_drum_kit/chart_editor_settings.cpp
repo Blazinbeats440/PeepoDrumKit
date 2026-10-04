@@ -307,6 +307,7 @@ namespace PeepoDrumKit
 				else if (it.Key == "show_window_lyrics") { if (!BoolFromString(in, out.LastSession.ShowWindow_Lyrics)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_comments") { if (!BoolFromString(in, out.LastSession.ShowWindow_Comments)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_text_editor") { if (!BoolFromString(in, out.LastSession.ShowWindow_TextEditor)) return parser.Error_InvalidBool(); }
+				else if (it.Key == "show_window_utilities") { if (!BoolFromString(in, out.LastSession.ShowWindow_Utilities)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_settings") { if (!BoolFromString(in, out.LastSession.ShowWindow_Settings)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_audio_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_AudioTest)) return parser.Error_InvalidBool(); }
 				else if (it.Key == "show_window_tja_import_test") { if (!BoolFromString(in, out.LastSession.ShowWindow_TJAImportTest)) return parser.Error_InvalidBool(); }
@@ -386,6 +387,7 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("show_window_lyrics", BoolToString(in.LastSession.ShowWindow_Lyrics));
 		writer.LineKeyValue_Str("show_window_comments", BoolToString(in.LastSession.ShowWindow_Comments));
 		writer.LineKeyValue_Str("show_window_text_editor", BoolToString(in.LastSession.ShowWindow_TextEditor));
+		writer.LineKeyValue_Str("show_window_utilities", BoolToString(in.LastSession.ShowWindow_Utilities));
 		writer.LineKeyValue_Str("show_window_settings", BoolToString(in.LastSession.ShowWindow_Settings));
 		writer.LineKeyValue_Str("show_window_audio_test", BoolToString(in.LastSession.ShowWindow_AudioTest));
 		writer.LineKeyValue_Str("show_window_tja_import_test", BoolToString(in.LastSession.ShowWindow_TJAImportTest));
@@ -596,6 +598,7 @@ namespace PeepoDrumKit
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
+			X(General.GamePreviewUseBackgroundMovie, "game_preview_use_background_movie");
 			X(General.GamePreviewShowUnselectedNoteTooltips, "game_preview_show_unselected_note_tooltips");
 			X(General.GamePreviewCommentFontSize, "game_preview_comment_font_size");
 			X(General.GamePreviewCommentHoldMeasures, "game_preview_comment_hold_measures");
@@ -685,6 +688,7 @@ namespace PeepoDrumKit
 			X(Input.Editor_ScreenshotWindow, "editor_screenshot_window");
 			X(Input.Editor_ScreenshotPreview, "editor_screenshot_preview");
 			X(Input.Editor_OpenTextEditor, "editor_open_text_editor");
+			X(Input.Editor_OpenUtilities, "editor_open_utilities");
 			X(Input.Editor_OpenSettings, "editor_open_settings");
 			X(Input.Editor_OpenTemplate, "editor_open_template");
 			X(Input.Editor_OpenChartBranches, "editor_open_chart_branches");
@@ -699,6 +703,10 @@ namespace PeepoDrumKit
 			X(Input.Timeline_PlaceNoteKa, "timeline_place_note_ka");
 			X(Input.Timeline_PlaceNoteBalloon, "timeline_place_note_balloon");
 			X(Input.Timeline_PlaceNoteDrumroll, "timeline_place_note_drumroll");
+			X(Input.Timeline_PlaceNoteAdlib, "timeline_place_note_adlib");
+			X(Input.Timeline_PlaceNoteKaDon, "timeline_place_note_kadon");
+			X(Input.Timeline_PlaceNoteBomb, "timeline_place_note_bomb");
+			X(Input.Timeline_PlaceNoteFuse, "timeline_place_note_fuse");
 			X(Input.Timeline_PlaceRestAndStepCursor, "timeline_place_rest_and_step_cursor");
 			X(Input.Timeline_SelectBranchNormal, "timeline_select_branch_normal");
 			X(Input.Timeline_SelectBranchExpert, "timeline_select_branch_expert");
@@ -826,6 +834,7 @@ namespace PeepoDrumKit
 			X(TestPlay.LoopDelayMilliseconds, "loop_delay_ms");
 			X(TestPlay.PlaybackSpeedPercent, "playback_speed_percent");
 			X(TestPlay.ShowStartButtonsInPreview, "show_start_buttons_in_preview");
+			X(TestPlay.UseBackgroundMovie, "use_background_movie");
 			SECTION("input");
 			X(Input.Timeline_ToggleMetronome, "timeline_toggle_metronome");
 			X(Input.TempoCalculator_Tap, "tempo_calculator_tap");

@@ -82,10 +82,14 @@ namespace PeepoDrumKit
 		}
 		if (!screenshotPreviewRequested) return;
 		screenshotPreviewRequested = false;
-		if (!context.ChartSelectedCourse || videoExport.Exporting || videoExport.Preparing) return;
+		if (!context.ChartSelectedCourse || videoExport.Exporting || videoExport.Preparing)
+		{
+			screenshotMovieWaiting = false;
+			return;
+		}
 		ConfigureVideoPreview(screenshotPreview);
 		screenshotPreview.VideoExportBranch = VideoBranchForCourse(*context.ChartSelectedCourse, context.ChartSelectedBranch);
-		screenshotPreview.VideoExportTime = context.GetCursorTime();
+		if (!screenshotMovieWaiting) screenshotPreview.VideoExportTime = context.GetCursorTime();
 		screenshotPreview.VideoFadeInSeconds = screenshotPreview.VideoFadeOutSeconds = 0.0f;
 		screenshotPreview.VideoExportCombos.Rebuild(*context.ChartSelectedCourse, screenshotPreview.VideoExportBranch);
 		Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
@@ -104,6 +108,23 @@ namespace PeepoDrumKit
 			screenshotPreview.DrawGui(context, *screenshotPreview.VideoExportTime);
 			screenshotDrawList->ChannelsMerge();
 			window->DrawList = originalDrawList;
+			if (screenshotPreview.VideoUseBackgroundMovie && screenshotPreview.MovieStatus == BackgroundMovieStatus::Pending)
+			{
+				screenshotPreviewRequested = screenshotMovieWaiting = true;
+				IM_DELETE(screenshotDrawList);
+				screenshotDrawList = nullptr;
+			}
+			else
+			{
+				screenshotMovieWaiting = false;
+				if (screenshotPreview.VideoUseBackgroundMovie && !screenshotPreview.MovieError.empty())
+				{
+					IM_DELETE(screenshotDrawList);
+					screenshotDrawList = nullptr;
+					screenshotStatus = std::string(UI_Str("BACKGROUND_MOVIE_FAILED")) + "\n" + screenshotPreview.MovieError;
+					screenshotStatusUntil = Gui::GetTime() + 6.0;
+				}
+			}
 		}
 		Gui::End();
 	}
@@ -299,7 +320,8 @@ namespace PeepoDrumKit
 		preview.VideoLaneBackgroundOpacity = 1.0f - exportData.LaneBackgroundTransparency / 100.0f;
 		preview.VideoBackgroundTexture = exportData.BackgroundSource == 1 ? &exportData.DefaultBackgroundTexture
 			: exportData.BackgroundSource == 2 ? &exportData.CustomBackgroundTexture
-			: exportData.BackgroundSource == 3 ? &context.JacketTexture : nullptr;
+			: exportData.BackgroundSource == 3 || exportData.BackgroundSource == 4 ? &context.JacketTexture : nullptr;
+		preview.VideoUseBackgroundMovie = exportData.BackgroundSource == 4;
 		preview.VideoBackgroundImageFit = exportData.BackgroundImageFit;
 	}
 
@@ -404,8 +426,11 @@ namespace PeepoDrumKit
 		if (Gui::Combo(UI_Str("VIDEO_EXPORT_AUDIO_BIT_RATE"), &audioBitRateIndex, audioBitRateNames, ArrayCountI32(audioBitRateNames)))
 			exportData.AudioBitRate = VideoAudioBitRatePresets[audioBitRateIndex].BitRate;
 		const char* backgroundNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), UI_Str("VIDEO_EXPORT_BACKGROUND_ASSET"),
-			UI_Str("VIDEO_EXPORT_BACKGROUND_CUSTOM"), UI_Str("VIDEO_EXPORT_BACKGROUND_JACKET") };
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND"), &exportData.BackgroundSource, backgroundNames, ArrayCountI32(backgroundNames)) &&
+			UI_Str("VIDEO_EXPORT_BACKGROUND_CUSTOM"), UI_Str("VIDEO_EXPORT_BACKGROUND_JACKET"), UI_Str("VIDEO_EXPORT_BACKGROUND_MOVIE") };
+		const auto movieDefinition = ReadBackgroundMovieDefinition(context.Chart.OtherMetadata);
+		const b8 hasBackgroundMovie = !movieDefinition.FileName.empty();
+		if (!hasBackgroundMovie && exportData.BackgroundSource == 4) exportData.BackgroundSource = 0;
+		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND"), &exportData.BackgroundSource, backgroundNames, hasBackgroundMovie ? 5 : 4) &&
 			exportData.BackgroundSource == 1 && !exportData.DefaultBackgroundTexture.IsValid())
 		{
 			if (!LoadVideoBackgroundImage("assets/background.png", exportData.DefaultBackgroundTexture))
@@ -524,7 +549,18 @@ namespace PeepoDrumKit
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
 			preview.DrawGui(context, *preview.VideoExportTime);
 		Gui::EndChild();
-		exportData.FramePrepared = exportData.Exporting && !exportData.Finalizing && preview.VideoExportDrawList != nullptr;
+		const b8 movieFrameReady = !preview.VideoUseBackgroundMovie || preview.MovieStatus == BackgroundMovieStatus::Ready || preview.MovieStatus == BackgroundMovieStatus::Inactive;
+		exportData.FramePrepared = exportData.Exporting && !exportData.Finalizing && preview.VideoExportDrawList != nullptr && movieFrameReady;
+		if (preview.VideoUseBackgroundMovie && !preview.MovieError.empty() && !exportData.Exporting)
+		{
+			exportData.Status = UI_Str("BACKGROUND_MOVIE_FAILED");
+			exportData.ErrorDetails = preview.MovieError;
+		}
+		else if (!exportData.Exporting && movieFrameReady && exportData.Status == UI_Str("BACKGROUND_MOVIE_FAILED"))
+		{
+			exportData.Status.clear();
+			exportData.ErrorDetails.clear();
+		}
 
 		if (exportData.Preparing)
 		{
@@ -559,7 +595,7 @@ namespace PeepoDrumKit
 		}
 		else
 		{
-			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady);
+			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady || !movieFrameReady);
 			if (Gui::Button(UI_Str("VIDEO_EXPORT_START")))
 			{
 				exportData.OutputBasePath.clear();
@@ -692,13 +728,18 @@ namespace PeepoDrumKit
 			exportData.Status = UI_Str("VIDEO_EXPORT_FINISHED");
 			return;
 		}
-		if (!exportData.FramePrepared) return;
 		if (context.ChartSelectedCourse != exportData.Course || context.SongSource != exportData.SongSource ||
 			context.Undo.NumberOfChangesMade != exportData.ChartChanges)
 		{
 			failExport(UI_Str("VIDEO_EXPORT_SOURCE_CHANGED"), {});
 			return;
 		}
+		if (exportData.Preview.VideoUseBackgroundMovie && !exportData.Preview.MovieError.empty())
+		{
+			failExport(UI_Str("BACKGROUND_MOVIE_FAILED"), exportData.Preview.MovieError);
+			return;
+		}
+		if (!exportData.FramePrepared) return;
 		const auto& resolution = VideoResolutionPresets[exportData.Resolution];
 		const u32 width = resolution.Width;
 		const u32 height = resolution.Height;

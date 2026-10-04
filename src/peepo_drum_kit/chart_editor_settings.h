@@ -126,6 +126,7 @@ namespace PeepoDrumKit
 			b8 ShowWindow_Lyrics = true;
 			b8 ShowWindow_Comments = false;
 			b8 ShowWindow_TextEditor = false;
+			b8 ShowWindow_Utilities = false;
 			b8 ShowWindow_Settings = true;
 			b8 ShowWindow_AudioTest = false;
 			b8 ShowWindow_TJAImportTest = false;
@@ -163,6 +164,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
+			WithDefault<b8> GamePreviewUseBackgroundMovie = false;
 			WithDefault<b8> GamePreviewShowUnselectedNoteTooltips = false;
 			WithDefault<i32> GamePreviewCommentFontSize = 28;
 			WithDefault<i32> GamePreviewCommentHoldMeasures = 0;
@@ -236,6 +238,7 @@ namespace PeepoDrumKit
 			WithDefault<i32> LoopDelayMilliseconds = 1000;
 			WithDefault<i32> PlaybackSpeedPercent = 100;
 			WithDefault<b8> ShowStartButtonsInPreview = false;
+			WithDefault<b8> UseBackgroundMovie = false;
 		} TestPlay;
 
 		struct AppearanceData
@@ -284,6 +287,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_ScreenshotWindow = { KeyBinding(ImGuiKey_F12) };
 			WithDefault<MultiInputBinding> Editor_ScreenshotPreview = {};
 			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
+			WithDefault<MultiInputBinding> Editor_OpenUtilities = {};
 			WithDefault<MultiInputBinding> Editor_OpenSettings = { KeyBinding(ImGuiKey_Comma, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Editor_OpenTemplate = {};
 			WithDefault<MultiInputBinding> Editor_OpenChartBranches = {};
@@ -299,6 +303,10 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteKa = { KeyBinding(ImGuiKey_D), KeyBinding(ImGuiKey_K) };
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteBalloon = { KeyBinding(ImGuiKey_E), KeyBinding(ImGuiKey_I) };
 			WithDefault<MultiInputBinding> Timeline_PlaceNoteDrumroll = { KeyBinding(ImGuiKey_R), KeyBinding(ImGuiKey_U) };
+			WithDefault<MultiInputBinding> Timeline_PlaceNoteAdlib = {};
+			WithDefault<MultiInputBinding> Timeline_PlaceNoteKaDon = {};
+			WithDefault<MultiInputBinding> Timeline_PlaceNoteBomb = {};
+			WithDefault<MultiInputBinding> Timeline_PlaceNoteFuse = {};
 			WithDefault<MultiInputBinding> Timeline_PlaceRestAndStepCursor = { KeyBinding(ImGuiKey_G), KeyBinding(ImGuiKey_H) };
 			WithDefault<MultiInputBinding> Timeline_SelectBranchNormal = { KeyBinding(ImGuiKey_1, ImGuiMod_Ctrl) };
 			WithDefault<MultiInputBinding> Timeline_SelectBranchExpert = { KeyBinding(ImGuiKey_2, ImGuiMod_Ctrl) };

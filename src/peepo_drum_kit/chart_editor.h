@@ -4,6 +4,7 @@
 #include "chart.h"
 #include "chart_editor_context.h"
 #include "chart_editor_widgets.h"
+#include "chart_editor_utilities.h"
 #include "chart_editor_video_writer.h"
 #include "chart_editor_settings_gui.h"
 #include "chart_editor_file_drop.h"
@@ -103,6 +104,7 @@ namespace PeepoDrumKit
 		std::future<FileDrop::Result> droppedPathFuture;
 		b8 droppedPathLoading = false, droppedPathCanceled = false;
 		b8 screenshotWindowRequested = false, screenshotPreviewRequested = false;
+		b8 screenshotMovieWaiting = false;
 		i32 screenshotWindowDelay = 0;
 		ChartGamePreview screenshotPreview = {};
 		ImDrawList* screenshotDrawList = nullptr;
@@ -170,6 +172,7 @@ namespace PeepoDrumKit
 		b8 focusChartStatsWindowNextFrame = false;
 		b8 focusLyricsWindowNextFrame = false;
 		b8 focusTextEditorWindowNextFrame = false;
+		b8 focusUtilitiesWindowNextFrame = false;
 		b8 focusSettingsWindowNextFrame = false;
 
 		ChartHelpWindow helpWindow = {};
@@ -184,6 +187,7 @@ namespace PeepoDrumKit
 		ChartLyricsWindow lyricsWindow = {};
 		ChartCommentsWindow commentsWindow = {};
 		ChartSettingsWindow settingsWindow = {};
+		ChartUtilitiesWindow utilitiesWindow = {};
 		AudioTestWindow audioTestWindow = {};
 		TJATestWindow tjaTestWindow = {};
 
