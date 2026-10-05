@@ -1,4 +1,5 @@
 #include "peepo_drum_kit/chart_editor_undo.h"
+#include "peepo_drum_kit/chart_editor_playback_timeline.h"
 #include <iostream>
 
 using namespace PeepoDrumKit;
@@ -161,6 +162,43 @@ int main()
 	selection.SetSelectedChart(selection.Chart.Courses[0].get(), BranchType::Normal);
 	check(close(selection.GetCursorTime().ToSec(), 1.25), "Opening a chart during playback retains the audio time without accessing the freed course");
 	Audio::TestVoicePlaying = false;
+	ChartProject playbackView;
+	parse("0001,\n#DELAY -2\n2000,", playbackView);
+	PlaybackTimelineData playbackData;
+	auto& playbackCourse = *playbackView.Courses[0];
+	BuildPlaybackTimelineData(playbackCourse, BranchType::Normal, Beat::FromBars(2), playbackData);
+	check(playbackData.Notes.size() == 2 && playbackData.Notes[0].OriginalNote->BeatTime == Beat::FromBars(1)
+		&& playbackData.Notes[1].OriginalNote->BeatTime < playbackData.Notes[0].OriginalNote->BeatTime, "Playback view orders notes by delayed time while keeping source beats");
+	check(playbackData.LaneCount == 2 && playbackData.Sections[0].Lane != playbackData.Sections[1].Lane, "Overlapping delay sections occupy separate playback rows");
+	check(playbackCourse.Notes_Normal[0].BeatTime < playbackCourse.Notes_Normal[1].BeatTime, "Building the playback view preserves chart note order");
+	PlaybackTimelineLayout visibleLayout;
+	std::set<Beat> hiddenSections { playbackData.Sections[0].StartBeat };
+	BuildPlaybackTimelineLayout(playbackData, hiddenSections, visibleLayout);
+	check(visibleLayout.LaneCount == 1 && visibleLayout.SectionLanes[0] == PlaybackTimelineLayout::HiddenLane && visibleLayout.SectionLanes[1] == 0,
+		"Closing a playback section removes its row and repacks the remaining section");
+	check(playbackData.Sections[1].Lane == 1 && playbackCourse.Notes_Normal.size() == 2, "Closing a playback section preserves chart data and the original playback layout");
+	hiddenSections.insert(playbackData.Sections[1].StartBeat);
+	BuildPlaybackTimelineLayout(playbackData, hiddenSections, visibleLayout);
+	check(visibleLayout.LaneCount == 0, "All playback sections can be closed");
+	hiddenSections.clear();
+	BuildPlaybackTimelineLayout(playbackData, hiddenSections, visibleLayout);
+	check(visibleLayout.LaneCount == 2 && visibleLayout.SectionLanes[0] != visibleLayout.SectionLanes[1], "Reopening playback sections restores overlapping rows");
+	BuildPlaybackTimelineData(playbackCourse, BranchType::Normal, Beat::FromBars(1), playbackData);
+	check(playbackData.LaneCount == 2 && playbackData.Sections.back().EndBeat > playbackData.Sections.back().StartBeat, "A final delay and note still participate in playback row overlap");
+	playbackCourse.Notes_Normal[1].TimeOffset = Time::FromSec(-0.125);
+	BuildPlaybackTimelineData(playbackCourse, BranchType::Normal, Beat::FromBars(2), playbackData);
+	check(close(playbackData.MinTime.ToSec(), -0.125) && close(playbackData.Notes[0].HeadTime.ToSec(), -0.125), "Playback view includes note offsets and negative time bounds");
+	ChartProject separatedView;
+	parse("1000,\n#DELAY 1\n2000,", separatedView);
+	BuildPlaybackTimelineData(*separatedView.Courses[0], BranchType::Normal, Beat::FromBars(2), playbackData);
+	check(playbackData.LaneCount == 1 && close(playbackData.Sections[1].StartTime.ToSec(), 3.0), "Nonoverlapping sections reuse a playback row and preserve delay gaps");
+	ChartProject sharedNotes;
+	parse("1000,\n#BRANCHSTART p,50,80\n#N\n1000,\n#E\n2000,\n#M\n3000,\n#BRANCHEND\n1000,", sharedNotes);
+	BuildPlaybackTimelineData(*sharedNotes.Courses[0], BranchType::Expert, Beat::FromBars(3), playbackData);
+	check(playbackData.Notes.size() == 3 && playbackData.Notes[0].OriginalNote == &sharedNotes.Courses[0]->Notes_Normal[0]
+		&& playbackData.Notes[1].OriginalNote->Type == NoteType::Ka, "Playback view combines shared notes and the selected branch without duplicates");
+	selection.SetCursorTimeAtBeat(Time::FromSec(3.125), Beat::FromBars(1));
+	check(selection.GetCursorBeat() == Beat::FromBars(1) && close(selection.GetCursorTime().ToSec(), 3.125), "Selecting a playback note retains its exact source beat and offset time");
 	std::cout << (failures ? "DELAY tests failed" : "DELAY tests passed") << '\n';
 	return failures ? 1 : 0;
 }

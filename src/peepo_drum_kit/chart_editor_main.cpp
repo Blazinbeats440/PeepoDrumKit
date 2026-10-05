@@ -303,6 +303,18 @@ namespace PeepoDrumKit
 				Log::Write("TJA branch self-test failed: %s", error.c_str());
 				return 1;
 			}
+			if (argv[i] == "--test-timeline-delay")
+			{
+				i18n::InitBuiltinLocale();
+				std::string error;
+				if (!ChartTimeline::RunPlaybackTimelineSelfTest(error))
+				{
+					Log::Write("Timeline DELAY self-test failed: %s", error.c_str());
+					return 1;
+				}
+				Log::Write("Timeline DELAY self-test passed");
+				return 0;
+			}
 		}
 
 		while (true)

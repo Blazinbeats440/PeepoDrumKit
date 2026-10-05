@@ -248,6 +248,14 @@ namespace PeepoDrumKit
 			CursorTimeOnPlaybackStart = newTime;
 		}
 
+		inline void SetCursorTimeAtBeat(Time newTime, Beat beat)
+		{
+			PlaybackBeatHint = beat;
+			SetCursorTime(newTime);
+			CursorBeatWhilePaused = PlaybackBeatHint = beat;
+			CursorBeatPlaybackTimeWhilePaused = BeatToPlaybackTime(beat);
+		}
+
 		inline void SetCursorBeat(Beat newBeat)
 		{
 			const Time newTime = BeatToPlaybackTime(newBeat);

@@ -1022,6 +1022,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR"),
 							UI_Str("SETTINGS_TIMELINE_GRID_STARTS_AT_BAR_DESC")),
 
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_SCROLL"),
+							settings.General.TimelinePlaybackTimeExpanded,
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_TIME_EXPANDED"),
+							UI_Str("SETTINGS_TIMELINE_PLAYBACK_TIME_EXPANDED_DESC")),
+
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Timeline, UI_Str("SETTINGS_SECTION_INPUT"),
 							settings.General.GridBarDivisions,
 							UI_Str("SETTINGS_GRID_DIVISIONS"),

@@ -3,6 +3,7 @@
 #include "core_beat.h"
 #include "chart_editor_settings.h"
 #include "chart_editor_context.h"
+#include "chart_editor_playback_timeline.h"
 #include "chart_editor_sound.h"
 #include "chart_editor_undo.h"
 #include "imgui/imgui_include.h"
@@ -216,6 +217,8 @@ namespace PeepoDrumKit
 		TimelineRegion Content;
 		TimelineRegion ContentScrollbarX;
 		TimelineRegion ContentScrollbarY;
+		TimelineRegion Playback;
+		TimelineRegion PlaybackSplitter;
 	};
 
 	// NOTE: Nudge the startup camera position and min scrollbar.x slightly to the left
@@ -347,6 +350,19 @@ namespace PeepoDrumKit
 
 		f32 WorldSpaceCursorXAnimationCurrent = 0.0f;
 		f32 GridSnapLineAnimationCurrent = 1.0f;
+		TimelineCamera PlaybackCamera;
+		PlaybackTimelineData PlaybackData;
+		PlaybackTimelineLayout PlaybackLayout;
+		std::set<Beat> PlaybackHiddenSections;
+		const ChartCourse* PlaybackVisibilityCourse = nullptr;
+		BranchType PlaybackVisibilityBranch = BranchType::Count;
+		std::string PlaybackVisibilityChartPath;
+		b8 IsPlaybackTimelineMaximized = false;
+		b8 IsPlaybackTimelineResizing = false;
+		std::optional<Time> PlaybackLastCursorTime;
+		std::optional<Time> PlaybackSelectedNoteTime;
+		b8 IsPlaybackTimelineScrubbing = false;
+		b8 IsPlaybackTimelinePanning = false;
 
 		b8 PlaybackSoundsEnabled = true;
 		struct MetronomeData
@@ -393,6 +409,7 @@ namespace PeepoDrumKit
 		}
 
 		void DrawGui(ChartContext& context, b8 hasGamePreviewFocus = false);
+		static b8 RunPlaybackTimelineSelfTest(std::string& outError);
 		void ScrollToBeat(ChartContext& context, Beat beat);
 		void ToggleMarkerAtCursor(ChartContext& context);
 		void JumpToMarker(ChartContext& context);
@@ -427,6 +444,9 @@ namespace PeepoDrumKit
 		void UpdateAllAnimationsAfterUserInput(ChartContext& context);
 
 		void DrawAllAtEndOfFrame(ChartContext& context, const TimelineRegionDrawers& drawers);
+		void DrawPlaybackTimeline(ChartContext& context);
+		void UpdatePlaybackTimelineVisibility(const ChartContext& context);
+		f32 UpdatePlaybackTimelineHeight(b8 visible, f32 headerHeight, f32 upperMinimumHeight);
 	};
 
 	template <GenericList List>
