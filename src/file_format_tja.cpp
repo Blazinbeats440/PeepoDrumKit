@@ -820,8 +820,10 @@ namespace TJA
 					} break;
 					case Key::Chart_DELAY:
 					{
-						if (!tryParseTime(in, &pushChartCommand(ParsedChartCommandType::ChangeDelay).Param.ChangeDelay.Value))
+						f64 duration = 0.0;
+						if (!ASCII::TryParse(in, duration) || !std::isfinite(duration))
 							outErrors.Push(lineIndex, "Invalid delay '%.*s'", FmtStrViewArgs(in));
+						else pushChartCommand(ParsedChartCommandType::ChangeDelay).Param.ChangeDelay.Value = Time::FromSec(duration);
 					} break;
 					case Key::Chart_SCROLL:
 					{
@@ -1400,7 +1402,7 @@ namespace TJA
 				} break;
 				case ParsedChartCommandType::ChangeDelay:
 				{
-					appendCommandLine(out, Key::Chart_DELAY, std::string_view(buffer, sprintf_s(buffer, "%g", command.Param.ChangeDelay.Value.ToSec())));
+					appendCommandLine(out, Key::Chart_DELAY, std::string_view(buffer, sprintf_s(buffer, "%.17g", command.Param.ChangeDelay.Value.ToSec())));
 				} break;
 				case ParsedChartCommandType::ChangeScrollSpeed:
 				{
@@ -1504,7 +1506,7 @@ namespace TJA
 
 	void ConvertConvertedMeasuresToParsedCommands(const std::vector<ConvertedMeasure>& inMeasures, std::vector<ParsedChartCommand>& outCommands)
 	{
-		struct TempCommand { Beat TimeWithinMeasure; ParsedChartCommand ParsedCommand; };
+		struct TempCommand { Beat TimeWithinMeasure; ParsedChartCommand ParsedCommand; i32 CommandOrder = -1; };
 		std::vector<TempCommand> tempBuffer;
 		tempBuffer.reserve(64);
 
@@ -1542,7 +1544,9 @@ namespace TJA
 
 			for (const ConvertedTempoChange& tempoChange : inMeasure.TempoChanges)
 			{
-				ParsedChartCommand& tempCommand = tempBuffer.emplace_back(TempCommand { tempoChange.TimeWithinMeasure }).ParsedCommand;
+				auto& entry = tempBuffer.emplace_back(TempCommand { tempoChange.TimeWithinMeasure });
+				entry.CommandOrder = tempoChange.CommandOrder;
+				ParsedChartCommand& tempCommand = entry.ParsedCommand;
 				tempCommand.Type = ParsedChartCommandType::ChangeTempo;
 				tempCommand.Param.ChangeTempo.Value = tempoChange.Tempo;
 			}
@@ -1599,7 +1603,9 @@ namespace TJA
 
 			for (const ConvertedDelayChange& delayChange : inMeasure.DelayChanges)
 			{
-				ParsedChartCommand& tempCommand = tempBuffer.emplace_back(TempCommand { delayChange.TimeWithinMeasure }).ParsedCommand;
+				auto& entry = tempBuffer.emplace_back(TempCommand { delayChange.TimeWithinMeasure });
+				entry.CommandOrder = delayChange.CommandOrder;
+				ParsedChartCommand& tempCommand = entry.ParsedCommand;
 				tempCommand.Type = ParsedChartCommandType::ChangeDelay;
 				tempCommand.Param.ChangeDelay.Value = delayChange.Delay;
 			}
@@ -1665,7 +1671,17 @@ namespace TJA
 					}
 
 					// Sort non-blank notes/commands first: O(nlogn)
-					std::stable_sort(tempBuffer.begin(), tempBuffer.begin() + noteCommandEnd, isLessTick);
+					std::stable_sort(tempBuffer.begin(), tempBuffer.begin() + noteCommandEnd, [&](const TempCommand& first, const TempCommand& second)
+					{
+						if (first.TimeWithinMeasure != second.TimeWithinMeasure) return isLessTick(first, second);
+						const auto order = [](const TempCommand& entry)
+						{
+							if (entry.ParsedCommand.Type == ParsedChartCommandType::MeasureNotes) return I32Max;
+							if (entry.CommandOrder >= 0) return entry.CommandOrder;
+							return entry.ParsedCommand.Type == ParsedChartCommandType::ChangeDelay ? I32Max - 1 : -1;
+						};
+						return order(first) < order(second);
+					});
 					// Then include blank notes (assumed to be much more than non-blanks),
 					// which are already ordered: O(n)
 					std::inplace_merge(tempBuffer.begin(), tempBuffer.begin() + noteCommandEnd, tempBuffer.end(), isLessTick);
@@ -1756,9 +1772,12 @@ namespace TJA
 			ConvertedMeasure* currentMeasure = &out.Measures[0];
 			Beat currentTimeWithinMeasure = Beat::Zero();
 			i32 currentNotesInMeasure = 0;
+			Tempo currentTempo = inContent.Metadata.BPM;
+			i32 commandOrder = 0;
 
 			for (const ParsedChartCommand& command : chartCommands)
 			{
+				++commandOrder;
 				if (command.Type == ParsedChartCommandType::MeasureNotes)
 				{
 					currentNotesInMeasure += static_cast<i32>(command.Param.MeasureNotes.Notes.size());
@@ -1776,11 +1795,12 @@ namespace TJA
 				}
 				else if (command.Type == ParsedChartCommandType::ChangeTempo)
 				{
-					currentMeasure->TempoChanges.push_back(ConvertedTempoChange { currentTimeWithinMeasure, command.Param.ChangeTempo.Value });
+					currentTempo = command.Param.ChangeTempo.Value;
+					currentMeasure->TempoChanges.push_back(ConvertedTempoChange { currentTimeWithinMeasure, currentTempo, commandOrder });
 				}
 				else if (command.Type == ParsedChartCommandType::ChangeDelay)
 				{
-					currentMeasure->DelayChanges.push_back(ConvertedDelayChange { currentTimeWithinMeasure, command.Param.ChangeDelay.Value });
+					currentMeasure->DelayChanges.push_back(ConvertedDelayChange { currentTimeWithinMeasure, command.Param.ChangeDelay.Value, currentTempo, commandOrder });
 				}
 				else if (command.Type == ParsedChartCommandType::ChangeScrollSpeed)
 				{

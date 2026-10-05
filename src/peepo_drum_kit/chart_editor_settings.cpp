@@ -597,6 +597,7 @@ namespace PeepoDrumKit
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
+			X(General.GamePreviewBarLinesBehindNotes, "game_preview_bar_lines_behind_notes");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
 			X(General.GamePreviewUseBackgroundMovie, "game_preview_use_background_movie");
 			X(General.GamePreviewShowUnselectedNoteTooltips, "game_preview_show_unselected_note_tooltips");
@@ -613,6 +614,7 @@ namespace PeepoDrumKit
 			X(General.EventShowSudden, "event_show_sudden");
 			X(General.EventShowJPOSScroll, "event_show_jpos_scroll");
 			X(General.EventShowScrollType, "event_show_scroll_type");
+			X(General.EventShowDelay, "event_show_delay");
 			X(General.ScrollSpeedViewType, "scroll_speed_view_type");
 			X(General.InspectorScrollInputMode, "inspector_scroll_input_mode");
 			X(General.TimelineScrollInvertMouseWheel, "timeline_scroll_invert_mouse_wheel");

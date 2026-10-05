@@ -312,6 +312,18 @@ namespace PeepoDrumKit
 		Complex SourceScrollSpeed = {};
 		b8 SourceIsCommon = false;
 	};
+
+	struct DelayChange
+	{
+		Beat BeatTime;
+		Time Duration;
+		b8 IsSelected = false;
+		Beat SourceBeat = {};
+		Time SourceDuration = {};
+		std::vector<TJA::ConvertedDelayChange> SourceCommands;
+	};
+	template <> constexpr std::string_view DisplayNameOfChartEvent<DelayChange> = "Delay";
+	template <> inline DelayChange FallbackEvent<DelayChange> = {};
 	template <> constexpr std::string_view DisplayNameOfChartEvent<ScrollChange> = "Scroll Changes";
 
 	template <>
@@ -473,6 +485,7 @@ namespace PeepoDrumKit
 	}
 
 	using SortedNotesList = BeatSortedList<Note>;
+	using SortedDelayChangesList = BeatSortedList<DelayChange>;
 	using SortedScrollChangesList = BeatSortedList<ScrollChange>;
 	using SortedBarLineChangesList = BeatSortedList<BarLineChange>;
 	using SortedGoGoRangesList = BeatSortedList<GoGoRange>;
@@ -508,6 +521,11 @@ namespace PeepoDrumKit
 		std::string CourseCreator;
 
 		SortedTempoMap TempoMap;
+		i32 SourceTempoChangeCount = -1;
+		SortedDelayChangesList DelayChanges_Normal;
+		SortedDelayChangesList DelayChanges_Expert;
+		SortedDelayChangesList DelayChanges_Master;
+		mutable TempoMapAccelerationStructure PlaybackTiming[3];
 
 		SortedNotesList Notes_Normal;
 		SortedNotesList Notes_Expert;
@@ -540,6 +558,51 @@ namespace PeepoDrumKit
 		std::map<std::string, std::string> OtherMetadata;
 
 		inline auto& GetNotes(BranchType branch) { assert(branch < BranchType::Count); return (&Notes_Normal)[EnumToIndex(branch)]; }
+		inline auto& GetDelayChanges(BranchType branch) { assert(branch < BranchType::Count); return (&DelayChanges_Normal)[EnumToIndex(branch)]; }
+		inline auto& GetDelayChanges(BranchType branch) const { assert(branch < BranchType::Count); return (&DelayChanges_Normal)[EnumToIndex(branch)]; }
+		const TempoMapAccelerationStructure& GetPlaybackTiming(BranchType branch = BranchType::Normal) const;
+		b8 CanUseSourceTiming() const
+		{
+			if (static_cast<i32>(TempoMap.Tempo.size()) != SourceTempoChangeCount) return false;
+			for (const TempoChange& tempo : TempoMap.Tempo)
+				if (tempo.Beat != tempo.SourceBeat || tempo.Tempo.BPM != tempo.SourceTempo.BPM) return false;
+			return true;
+		}
+		std::pair<Time, Time> GetPlaybackTimeBounds(Time minimumEnd = {}) const
+		{
+			Time first = {}, last = minimumEnd;
+			for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+			{
+				if (Branches.empty() && branch != BranchType::Normal) break;
+				for (const Note& note : GetNotes(branch))
+				{
+					const Time head = BeatToPlaybackTime(note.GetStart(), branch) + note.TimeOffset;
+					const Time tail = BeatToPlaybackTime(note.GetEnd(), branch) + note.TimeOffset;
+					first = Min(first, Min(head, tail)); last = Max(last, Max(head, tail));
+				}
+				for (const DelayChange& delay : GetDelayChanges(branch))
+				{
+					const Time after = BeatToPlaybackTime(delay.BeatTime, branch);
+					first = Min(first, Min(after, after - delay.Duration));
+					last = Max(last, Max(after, after - delay.Duration));
+				}
+			}
+			return { first, last };
+		}
+		Time BeatToPlaybackTime(Beat beat, BranchType branch = BranchType::Normal) const
+		{
+			Time offset = {};
+			for (const DelayChange& delay : GetDelayChanges(branch))
+			{
+				if (delay.BeatTime > beat) break;
+				offset += delay.Duration;
+			}
+			return TempoMap.BeatToTime(beat) + offset;
+		}
+		Beat PlaybackTimeToBeat(Time time, BranchType branch = BranchType::Normal, Beat hint = {}, bool truncTo0 = false) const
+		{
+			return GetPlaybackTiming(branch).ConvertTimeToBeatWithHint(time, hint, truncTo0);
+		}
 		inline auto& GetNotes(BranchType branch) const { assert(branch < BranchType::Count); return (&Notes_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetScrollChanges(BranchType branch) { assert(branch < BranchType::Count); return (&ScrollChanges_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetScrollChanges(BranchType branch) const { assert(branch < BranchType::Count); return (&ScrollChanges_Normal)[EnumToIndex(branch)]; }
@@ -678,6 +741,9 @@ namespace PeepoDrumKit
 		ScrollType,
 		JPOSScroll,
 		Sudden,
+		DelayChanges_Normal,
+		DelayChanges_Expert,
+		DelayChanges_Master,
 		Count
 	};
 
@@ -734,7 +800,7 @@ namespace PeepoDrumKit
 
 // EnumNames<> is global
 template <>
-constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "Comments", "ScrollType", "JPOSScroll", "Sudden",};
+constexpr std::string_view EnumNames<PeepoDrumKit::GenericList>[EnumCount<PeepoDrumKit::GenericList>] = { "TempoChanges", "SignatureChanges", "Notes_Normal", "Notes_Expert", "Notes_Master", "ScrollChanges_Normal", "ScrollChanges_Expert", "ScrollChanges_Master", "BarLineChanges", "GoGoRanges", "Lyrics", "Comments", "ScrollType", "JPOSScroll", "Sudden", "DelayChanges_Normal", "DelayChanges_Expert", "DelayChanges_Master" };
 template <>
 constexpr std::string_view EnumNames<PeepoDrumKit::GenericMember>[EnumCount<PeepoDrumKit::GenericMember>] = {"IsSelected", "BarLineVisible", "BalloonPopCount", "ScrollSpeed", "BeatStart", "BeatDuration", "TimeOffset", "NoteType", "Tempo", "TimeSignature", "Lyric", "ScrollType", "JPOSScrollMove", "JPOSScrollDuration", "SuddenAppearanceOffset", "SuddenMovementOffset", "SuddenHideRoll"};
 
@@ -854,6 +920,13 @@ namespace PeepoDrumKit
 	};
 
 	// types with subset members, return `void` for unavailable members
+	template <GenericMember Member, typename DelayChangeT, expect_type_t<DelayChangeT, DelayChange> = true>
+	constexpr decltype(auto) get(DelayChangeT&& event)
+	{
+		if constexpr (Member == GenericMember::B8_IsSelected) return (std::forward<DelayChangeT>(event).IsSelected);
+		else if constexpr (Member == GenericMember::Beat_Start) return (std::forward<DelayChangeT>(event).BeatTime);
+		else if constexpr (Member == GenericMember::Time_Offset) return (std::forward<DelayChangeT>(event).Duration);
+	}
 
 	// member accessing in decltype(), enclose by () for returning a reference
 	template <GenericMember Member, typename TempoChangeT, expect_type_t<TempoChangeT, TempoChange> = true>
@@ -1170,6 +1243,7 @@ namespace PeepoDrumKit
 		{
 			LyricChange Lyric;
 			CommentChange Comment;
+			DelayChange Delay;
 		} NonTrivial {};
 
 		GenericListStruct(const GenericListStruct& other) {
@@ -1228,6 +1302,9 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<ChartCourseT>(course).ScrollTypes);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<ChartCourseT>(course).JPOSScrollChanges);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<ChartCourseT>(course).SuddenChanges);
+		else if constexpr (List == GenericList::DelayChanges_Normal) return (std::forward<ChartCourseT>(course).DelayChanges_Normal);
+		else if constexpr (List == GenericList::DelayChanges_Expert) return (std::forward<ChartCourseT>(course).DelayChanges_Expert);
+		else if constexpr (List == GenericList::DelayChanges_Master) return (std::forward<ChartCourseT>(course).DelayChanges_Master);
 		else static_assert(false, "unhandled or invalid GenericList value");
 	}
 
@@ -1252,6 +1329,7 @@ namespace PeepoDrumKit
 		else if constexpr (List == GenericList::ScrollType) return (std::forward<GenericListStructT>(inValue).POD.ScrollType);
 		else if constexpr (List == GenericList::JPOSScroll) return (std::forward<GenericListStructT>(inValue).POD.JPOSScroll);
 		else if constexpr (List == GenericList::Sudden) return (std::forward<GenericListStructT>(inValue).POD.Sudden);
+		else if constexpr (List == GenericList::DelayChanges_Normal || List == GenericList::DelayChanges_Expert || List == GenericList::DelayChanges_Master) return (std::forward<GenericListStructT>(inValue).NonTrivial.Delay);
 		else static_assert(false, "unhandled or invalid GenericList value");
 	}
 
@@ -1322,6 +1400,9 @@ namespace PeepoDrumKit
 		X(GenericList::ScrollType)
 		X(GenericList::JPOSScroll)
 		X(GenericList::Sudden)
+		X(GenericList::DelayChanges_Normal)
+		X(GenericList::DelayChanges_Expert)
+		X(GenericList::DelayChanges_Master)
 #undef X
 		default: assert(false); return keep_or_static_cast<TRet>(vError);
 		}
@@ -1359,6 +1440,12 @@ namespace PeepoDrumKit
 
 	// course list attribute query functions
 	constexpr b8 IsNotesList(GenericList list) { return (list == GenericList::Notes_Normal) || (list == GenericList::Notes_Expert) || (list == GenericList::Notes_Master); }
+	constexpr b8 IsDelayChangesList(GenericList list) { return list >= GenericList::DelayChanges_Normal && list <= GenericList::DelayChanges_Master; }
+	constexpr GenericList BranchTypeToDelayChangesList(BranchType branch)
+	{
+		assert(branch < BranchType::Count);
+		return static_cast<GenericList>(EnumToIndex(GenericList::DelayChanges_Normal) + EnumToIndex(branch));
+	}
 	constexpr b8 IsScrollChangesList(GenericList list) { return (list == GenericList::ScrollChanges_Normal) || (list == GenericList::ScrollChanges_Expert) || (list == GenericList::ScrollChanges_Master); }
 	constexpr GenericList BranchTypeToNotesList(BranchType branch)
 	{
@@ -1509,6 +1596,7 @@ namespace PeepoDrumKit
 	{
 		const GenericList activeScrollChanges = BranchTypeToScrollChangesList(branch);
 		ApplyForEachGenericList([&](GenericList list, auto&& typedList) {
+			if (IsDelayChangesList(list) && list != BranchTypeToDelayChangesList(branch)) return;
 			if (IsScrollChangesList(list) && list != activeScrollChanges)
 				return;
 			for (size_t i = 0; i < typedList.size(); i++)

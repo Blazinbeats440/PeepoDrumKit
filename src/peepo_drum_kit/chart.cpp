@@ -76,15 +76,38 @@ namespace PeepoDrumKit
 		}
 	}
 
-	struct TempTimedDelayCommand { Beat Beat; Time Delay; };
-
-	template <>
-	struct IsNonListChartEventTrait<TempTimedDelayCommand> : std::true_type { };
-
-	template <GenericMember Member, typename TempTimedDelayCommandT, expect_type_t<TempTimedDelayCommandT, TempTimedDelayCommand> = true>
-	constexpr decltype(auto) get(TempTimedDelayCommandT&& event)
+	const TempoMapAccelerationStructure& ChartCourse::GetPlaybackTiming(BranchType branch) const
 	{
-		if constexpr (Member == GenericMember::Beat_Start) return (std::forward<TempTimedDelayCommandT>(event).Beat);
+		if (GetDelayChanges(branch).empty()) return TempoMap.AccelerationStructure;
+		auto& timing = PlaybackTiming[EnumToIndex(branch)];
+		timing.BaseTiming = &TempoMap.AccelerationStructure;
+		timing.FirstTempoBPM = TempoMap.AccelerationStructure.FirstTempoBPM;
+		timing.LastTempoBPM = TempoMap.AccelerationStructure.LastTempoBPM;
+		timing.DelayPoints.clear();
+		Time offset = {};
+		f64 scrollOffset = 0.0;
+		for (const DelayChange& delay : GetDelayChanges(branch))
+		{
+			if (!std::isfinite(delay.Duration.Seconds)) continue;
+			const Tempo tempo = TempoOrDefault(TempoMap.Tempo.TryFindLastAtBeat(delay.BeatTime));
+			const b8 useSource = CanUseSourceTiming() && delay.BeatTime == delay.SourceBeat && delay.Duration == delay.SourceDuration && !delay.SourceCommands.empty();
+			if (useSource)
+			{
+				for (const auto& command : delay.SourceCommands)
+				{
+					offset += command.Delay;
+					scrollOffset += command.Delay.ToSec() * command.TempoAtCommand.BPM / 60.0 * Beat::TicksPerBeat;
+					timing.DelayPoints.push_back({ delay.BeatTime, offset, scrollOffset, command.TempoAtCommand.BPM });
+				}
+			}
+			else
+			{
+				offset += delay.Duration;
+				scrollOffset += delay.Duration.ToSec() * tempo.BPM / 60.0 * Beat::TicksPerBeat;
+				timing.DelayPoints.push_back({ delay.BeatTime, offset, scrollOffset, tempo.BPM });
+			}
+		}
+		return timing;
 	}
 
 	static constexpr NoteType ConvertTJANoteType(TJA::NoteType tjaNoteType)
@@ -226,19 +249,36 @@ namespace PeepoDrumKit
 			outCourse.Side = Clamp(static_cast<Side>(inCourse.CourseMetadata.SIDE), Side{}, Side::Count);
 
 			outCourse.TempoMap.Tempo.Sorted = { TempoChange(Beat::Zero(), inTJA.Metadata.BPM) };
+			outCourse.TempoMap.Tempo[0].SourceTempo = inTJA.Metadata.BPM;
 			outCourse.TempoMap.Signature.Sorted = { TimeSignatureChange(Beat::Zero(), TimeSignature(4, 4)) };
 			TimeSignature lastSignature = TimeSignature(4, 4);
+			auto importDelays = [&](const std::vector<TJA::ConvertedMeasure>& measures, SortedDelayChangesList& delays)
+			{
+				for (const auto& measure : measures)
+					for (const auto& command : measure.DelayChanges)
+					{
+						if (!std::isfinite(command.Delay.Seconds)) continue;
+						const Beat beat = measure.StartTime + command.TimeWithinMeasure;
+						DelayChange* delay = delays.TryFindExactAtBeat(beat);
+						if (!delay) { delays.InsertOrUpdate(DelayChange { beat, {} }); delay = delays.TryFindExactAtBeat(beat); }
+						delay->Duration += command.Delay;
+						delay->SourceBeat = beat;
+						delay->SourceDuration = delay->Duration;
+						delay->SourceCommands.push_back(command);
+					}
+			};
+			importDelays(inCourse.Measures, outCourse.DelayChanges_Normal);
+			importDelays(inCourse.Measures_Expert, outCourse.DelayChanges_Expert);
+			importDelays(inCourse.Measures_Master, outCourse.DelayChanges_Master);
+			if (inCourse.Branches.empty())
+			{
+				outCourse.DelayChanges_Expert = outCourse.DelayChanges_Normal;
+				outCourse.DelayChanges_Master = outCourse.DelayChanges_Normal;
+			}
 
 			auto importNotes = [&](const std::vector<TJA::ConvertedMeasure>& measures, SortedNotesList& outNotes, const std::vector<i32>& balloonPopCounts)
 			{
 				i32 currentBalloonIndex = 0;
-				BeatSortedList<TempTimedDelayCommand> tempSortedDelayCommands;
-				BeatSortedForwardIterator<TempTimedDelayCommand> tempDelayCommandsIt;
-				for (const TJA::ConvertedMeasure& inMeasure : measures)
-				{
-					for (const TJA::ConvertedDelayChange& inDelayChange : inMeasure.DelayChanges)
-						tempSortedDelayCommands.InsertOrUpdate(TempTimedDelayCommand { inMeasure.StartTime + inDelayChange.TimeWithinMeasure, inDelayChange.Delay });
-				}
 
 				for (const TJA::ConvertedMeasure& inMeasure : measures)
 				{
@@ -259,8 +299,7 @@ namespace PeepoDrumKit
 						outNote.BeatTime = (inMeasure.StartTime + inNote.TimeWithinMeasure);
 						outNote.Type = outNoteType;
 
-						const TempTimedDelayCommand* delayCommandForThisNote = tempDelayCommandsIt.Next(tempSortedDelayCommands.Sorted, outNote.BeatTime);
-						outNote.TimeOffset = (delayCommandForThisNote != nullptr) ? delayCommandForThisNote->Delay : Time::Zero();
+						outNote.TimeOffset = Time::Zero();
 
 						if (IsBalloonNote(outNote.Type))
 						{
@@ -317,7 +356,13 @@ namespace PeepoDrumKit
 				}
 
 				for (const TJA::ConvertedTempoChange& inTempoChange : inMeasure.TempoChanges)
-					outCourse.TempoMap.Tempo.InsertOrUpdate(TempoChange(inMeasure.StartTime + inTempoChange.TimeWithinMeasure, inTempoChange.Tempo));
+				{
+					TempoChange change(inMeasure.StartTime + inTempoChange.TimeWithinMeasure, inTempoChange.Tempo);
+					change.SourceCommandOrder = inTempoChange.CommandOrder;
+					change.SourceBeat = change.Beat;
+					change.SourceTempo = change.Tempo;
+					outCourse.TempoMap.Tempo.InsertOrUpdate(change);
+				}
 
 				for (const TJA::ConvertedScrollType& inScrollType : inMeasure.ScrollTypes)
 					outCourse.ScrollTypes.Sorted.push_back(ScrollType{ (inMeasure.StartTime + inScrollType.TimeWithinMeasure),  static_cast<ScrollMethod>(inScrollType.Method) });
@@ -363,6 +408,7 @@ namespace PeepoDrumKit
 			outCourse.OtherMetadata = inCourse.CourseMetadata.Others;
 
 			outCourse.TempoMap.RebuildAccelerationStructure();
+			outCourse.SourceTempoChangeCount = static_cast<i32>(outCourse.TempoMap.Tempo.size());
 			outCourse.RecalculateNoteStates();
 
 			// NOTE: use the non-0 shortest duration to prevent extra measures (editor need to display until max used beat in each difficulty)
@@ -487,11 +533,12 @@ namespace PeepoDrumKit
 
 			for (const TempoChange& inTempoChange : inCourse.TempoMap.Tempo)
 			{
-				if (!(&inTempoChange == &inCourse.TempoMap.Tempo[0] && inTempoChange.Tempo.BPM == out.Metadata.BPM.BPM))
+				if (!(&inTempoChange == &inCourse.TempoMap.Tempo[0] && inTempoChange.Tempo.BPM == out.Metadata.BPM.BPM && inTempoChange.SourceCommandOrder < 0))
 				{
 					TJA::ConvertedMeasure* outConvertedMeasure = tryFindMeasureForBeat(outConvertedMeasures, inTempoChange.Beat);
 					if (assert(outConvertedMeasure != nullptr); outConvertedMeasure != nullptr)
-						outConvertedMeasure->TempoChanges.push_back(TJA::ConvertedTempoChange { (inTempoChange.Beat - outConvertedMeasure->StartTime), inTempoChange.Tempo });
+						outConvertedMeasure->TempoChanges.push_back(TJA::ConvertedTempoChange { (inTempoChange.Beat - outConvertedMeasure->StartTime), inTempoChange.Tempo,
+							inCourse.CanUseSourceTiming() && inTempoChange.Beat == inTempoChange.SourceBeat ? inTempoChange.SourceCommandOrder * 2 : -1 });
 				}
 			}
 
@@ -514,12 +561,33 @@ namespace PeepoDrumKit
 					const Time thisNoteTimeOffset = ApproxmiatelySame(inNote.TimeOffset.Seconds, 0.0) ? Time::Zero() : inNote.TimeOffset;
 					if (thisNoteTimeOffset != lastNoteTimeOffset)
 					{
-						outConvertedMeasure->DelayChanges.push_back(TJA::ConvertedDelayChange { (inNote.BeatTime - outConvertedMeasure->StartTime), thisNoteTimeOffset });
+						outConvertedMeasure->DelayChanges.push_back(TJA::ConvertedDelayChange { (inNote.BeatTime - outConvertedMeasure->StartTime), thisNoteTimeOffset - lastNoteTimeOffset });
 						lastNoteTimeOffset = thisNoteTimeOffset;
 					}
 				}
 			};
 			appendNotesToMeasures(inCourse.Notes_Normal, outConvertedMeasures);
+			auto appendDelaysToMeasures = [&](const SortedDelayChangesList& delays, std::vector<TJA::ConvertedMeasure>& measures)
+			{
+				for (const DelayChange& delay : delays)
+				{
+					auto* measure = tryFindMeasureForBeat(measures, delay.BeatTime);
+					if (!measure) continue;
+					if (inCourse.CanUseSourceTiming() && delay.BeatTime == delay.SourceBeat && delay.Duration == delay.SourceDuration && !delay.SourceCommands.empty())
+					{
+						for (auto command : delay.SourceCommands)
+						{
+							command.TimeWithinMeasure = delay.BeatTime - measure->StartTime;
+							// Keep intermediate BPMs that the editor's one-event-per-beat tempo list cannot represent.
+							measure->TempoChanges.push_back({ command.TimeWithinMeasure, command.TempoAtCommand, command.CommandOrder * 2 });
+							command.CommandOrder = command.CommandOrder * 2 + 1;
+							measure->DelayChanges.push_back(command);
+						}
+					}
+					else measure->DelayChanges.push_back({ delay.BeatTime - measure->StartTime, delay.Duration });
+				}
+			};
+			appendDelaysToMeasures(inCourse.DelayChanges_Normal, outConvertedMeasures);
 
 			auto appendScrollChangesToMeasures = [&](const SortedScrollChangesList& scrollChanges, std::vector<TJA::ConvertedMeasure>& measures)
 			{
@@ -618,6 +686,8 @@ namespace PeepoDrumKit
 			}
 			appendNotesToMeasures(inCourse.Notes_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
 			appendNotesToMeasures(inCourse.Notes_Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
+			appendDelaysToMeasures(inCourse.DelayChanges_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
+			appendDelaysToMeasures(inCourse.DelayChanges_Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
 			appendScrollChangesToMeasures(inCourse.ScrollChanges_Expert, measuresByBranch[EnumToIndex(BranchType::Expert)]);
 			appendScrollChangesToMeasures(inCourse.ScrollChanges_Master, measuresByBranch[EnumToIndex(BranchType::Master)]);
 

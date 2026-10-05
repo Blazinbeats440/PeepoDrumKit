@@ -1118,6 +1118,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE"),
 							UI_Str("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC")),
 
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_EVENTS"),
+							settings.General.EventShowDelay,
+							UI_Str("SETTINGS_EVENT_SHOW_DELAY"),
+							UI_Str("SETTINGS_EVENT_SHOW_DELAY_DESC")),
+
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.ScrollSpeedViewType,
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
@@ -1129,6 +1134,11 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
 							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewBarLinesBehindNotes,
+							UI_Str("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES"),
+							UI_Str("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC")),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.GamePreviewShowJPOSPosition,

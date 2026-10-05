@@ -25,7 +25,7 @@ namespace PeepoDrumKit
 		route.Branches.assign(course.Branches.size(), branch);
 		if (branch == BranchType::Count)
 			for (const BranchRange& range : course.Branches)
-				route.DecisionTimes.push_back(course.TempoMap.BeatToTime(GetBranchJudgeCutoff(course, range.GetStart())));
+				route.DecisionTimes.push_back(course.BeatToPlaybackTime(GetBranchJudgeCutoff(course, range.GetStart()), BranchType::Normal));
 		return route;
 	}
 
@@ -108,7 +108,7 @@ namespace PeepoDrumKit
 			state.Branch = Branches[index];
 			state.Index = index;
 			state.DecisionTime = DecisionTimes[index];
-			state.Duration = Max(Time::Zero(), Min(Time::FromSec(0.1), course.TempoMap.BeatToTime(course.Branches[index].GetStart()) - state.DecisionTime));
+			state.Duration = Max(Time::Zero(), Min(Time::FromSec(0.1), course.BeatToPlaybackTime(course.Branches[index].GetStart(), state.Branch) - state.DecisionTime));
 			if (index + 1 < DecisionTimes.size()) state.Duration = Min(state.Duration, DecisionTimes[index + 1] - state.DecisionTime);
 		}
 		return state;
@@ -155,14 +155,14 @@ namespace PeepoDrumKit
 				if (!held)
 				{
 					i32 total = 0, rolls = 0;
-					const Time sectionTime = course.TempoMap.BeatToTime(sectionBeat), cutoffTime = course.TempoMap.BeatToTime(decision);
+					const Time sectionTime = course.BeatToPlaybackTime(sectionBeat, currentBranch), cutoffTime = course.BeatToPlaybackTime(decision, currentBranch);
 					for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
 					for (const Note& note : course.GetNotes(branch))
 					{
 						if (out.GetNoteBranch(course, note.BeatTime) != branch) continue;
 						if (IsComboNote(note.Type) && note.BeatTime >= sectionBeat && note.BeatTime < decision) ++total;
 						if (IsLongNote(note.Type)) ForEachVideoRollHit(course, note, rollsPerSecond, [&](Time time, b8)
-						{ if (time >= sectionTime && time < cutoffTime) ++rolls; });
+						{ if (time >= sectionTime && time < cutoffTime) ++rolls; }, branch);
 					}
 					const BranchRange& range = course.Branches[decisionIndex];
 					const f64 value = range.Condition == TJA::BranchCondition::Roll ? static_cast<f64>(rolls) : GetTestPlayBranchAccuracy(total, 0, total);
@@ -214,7 +214,7 @@ namespace PeepoDrumKit
 				else if (!held)
 				{
 					i32 good = 0, ok = 0, total = 0, rolls = 0;
-					const Time sectionTime = course.TempoMap.BeatToTime(sectionBeat), cutoffTime = course.TempoMap.BeatToTime(decision);
+					const Time sectionTime = course.BeatToPlaybackTime(sectionBeat, currentBranch), cutoffTime = course.BeatToPlaybackTime(decision, currentBranch);
 					for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
 					for (const Note& note : course.GetNotes(branch))
 					{

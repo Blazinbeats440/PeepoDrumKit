@@ -454,6 +454,8 @@ X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are 
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
+X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES", "Game Preview: Always Draw Bar Lines Behind Notes") \
+X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC", "Keep bar lines behind all notes regardless of timing. Disable to draw bar lines and notes in TJA placement order, with earlier chart elements in front. Also applies to exported video.") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION_DESC", "Display the current JPOS coordinates beside the hit circle in the game preview and exported video.") \
 X("SETTINGS_PREVIEW_UNSELECTED_NOTE_TOOLTIPS", "Game Preview: Show Tooltips for Unselected Notes") \
@@ -474,6 +476,8 @@ X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL_DESC", "Show the JPOS Scroll field in the Chart Events window. It is always shown when the chart contains #JPOSSCROLL.") \
 X("SETTINGS_EVENT_SHOW_SCROLL_TYPE", "Chart Events: Show Scroll Type") \
 X("SETTINGS_EVENT_SHOW_SCROLL_TYPE_DESC", "Show the Scroll Type field in the Chart Events window. It is always shown when the chart contains #NMSCROLL, #HBSCROLL, or #BMSCROLL.") \
+X("SETTINGS_EVENT_SHOW_DELAY", "Chart Events: Show DELAY") \
+X("SETTINGS_EVENT_SHOW_DELAY_DESC", "Show the DELAY field in the Chart Events window. It is always shown when the chart contains #DELAY.") \
 X("SETTINGS_SCROLL_SPEED_VIEW_TYPE", "Chart Preview: Scroll Speed View Type") \
 X("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC", "Select how complex scroll speeds are displayed in the chart preview.") \
 X("SETTINGS_TIMELINE_INVERT_SCROLL", "Timeline: Invert Scroll Wheel Direction") \
@@ -774,6 +778,9 @@ X("EVENT_COMMENTS",								"Comments") \
 X("EVENT_SCROLL_TYPE",								"Scroll Type") \
 X("EVENT_JPOS_SCROLL",								"JPOS Scroll") \
 X("EVENT_SCROLL_DISTANCE_4_BEATS_TOOLTIP",			"Scroll distance of 4 beats when scroll speed is 1x") \
+X("EVENT_DELAY", "Delay") \
+X("DELAY_TIME_TRANSITION", "Playback: %.3f s -> %.3f s") \
+X("TIMELINE_DELAY_EDIT_TIME", "Timeline positions exclude DELAY; playback time is shown below.") \
 X("EVENT_SUDDEN",									"Sudden") \
 X("EVENT_SUDDEN_HIDE_ROLL",							"Hide Rolls") \
 X("EVENT_PROP_JPOS_SCROLL_MOVE",					"JPOS Scroll Move") \

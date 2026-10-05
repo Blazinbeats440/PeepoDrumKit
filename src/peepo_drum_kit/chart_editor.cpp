@@ -509,13 +509,16 @@ namespace PeepoDrumKit
 						std::pair { GenericList::Sudden, "EVENT_SUDDEN" },
 					};
 					const GenericList activeScrollChanges = BranchTypeToScrollChangesList(context.ChartSelectedBranch);
-					b8 hasEvents = GetGenericListCount(*context.ChartSelectedCourse, activeScrollChanges) != 0;
+					const GenericList activeDelayChanges = BranchTypeToDelayChangesList(context.ChartSelectedBranch);
+					b8 hasEvents = GetGenericListCount(*context.ChartSelectedCourse, activeScrollChanges) != 0 || GetGenericListCount(*context.ChartSelectedCourse, activeDelayChanges) != 0;
 					for (const auto& [list, label] : eventListsAndLabels)
 						hasEvents |= GetGenericListCount(*context.ChartSelectedCourse, list) != 0;
 					if (hasEvents && Gui::BeginMenu(UI_Str("ACT_SELECTION_EVENTS")))
 					{
 						if (GetGenericListCount(*context.ChartSelectedCourse, activeScrollChanges) != 0 && Gui::MenuItem(UI_Str("EVENT_SCROLL_SPEED")))
 							timeline.ExecuteSelectionAction(context, SelectionAction::SelectEventsOfType, param.SetEventListToSelect(activeScrollChanges));
+						if (GetGenericListCount(*context.ChartSelectedCourse, activeDelayChanges) != 0 && Gui::MenuItem(UI_Str("EVENT_DELAY")))
+							timeline.ExecuteSelectionAction(context, SelectionAction::SelectEventsOfType, param.SetEventListToSelect(activeDelayChanges));
 						for (const auto& [list, label] : eventListsAndLabels)
 							if (GetGenericListCount(*context.ChartSelectedCourse, list) != 0 && Gui::MenuItem(UI_StrRuntime(label)))
 								timeline.ExecuteSelectionAction(context, SelectionAction::SelectEventsOfType, param.SetEventListToSelect(list));

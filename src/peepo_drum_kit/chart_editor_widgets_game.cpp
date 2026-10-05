@@ -482,7 +482,7 @@ namespace PeepoDrumKit
 
 			const b8 isVisible = VisibleOrDefault(barLineChangeIt.Next(course.BarLineChanges.Sorted, it.Beat));
 
-			const Time time = course.TempoMap.BeatToTime(it.Beat);
+			const Time time = course.BeatToPlaybackTime(it.Beat, branch);
 			perBarFunc(ForEachBarLaneData { it.Beat, time,
 				TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, it.Beat)),
 				scrollTypeToView(ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, it.Beat))),
@@ -512,10 +512,10 @@ namespace PeepoDrumKit
 		for (Note& note : course.GetNotes(branch))
 		{
 			const Beat beat = note.BeatTime;
-			const Time head = (course.TempoMap.BeatToTime(beat) + note.TimeOffset);
+			const Time head = (course.BeatToPlaybackTime(beat, branch) + note.TimeOffset);
 			const Beat beatTail = (note.BeatDuration > Beat::Zero()) ? (beat + note.BeatDuration) : beat;
 			const b8 hasDuration = (beatTail != beat);
-			const Time tail = hasDuration ? (course.TempoMap.BeatToTime(beatTail) + note.TimeOffset) : head;
+			const Time tail = hasDuration ? (course.BeatToPlaybackTime(beatTail, branch) + note.TimeOffset) : head;
 			const Complex scrollSpeed = ScrollOrDefault(scrollChangeIt.Next(scrollChanges.Sorted, beat));
 			const Tempo tempo = TempoOrDefault(tempoChangeIt.Next(course.TempoMap.Tempo.Sorted, beat));
 			const ScrollMethod scrollType = ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, beat));
@@ -764,7 +764,7 @@ namespace PeepoDrumKit
 				if (!TestPlayLevelHeld)
 				{
 					const Beat cutoff = TestPlayBranchCutoffs[index];
-					const Time cutoffTime = TestPlayCourse->TempoMap.BeatToTime(cutoff);
+					const Time cutoffTime = TestPlayCourse->BeatToPlaybackTime(cutoff, TestPlayBranch);
 					i32 good = 0, ok = 0, total = 0, roll = 0;
 					for (const TestPlayNoteState& note : TestPlayNotes)
 						if (note.Source->BeatTime >= TestPlaySectionBeat && note.Source->BeatTime < cutoff && IsTestPlayNoteActive(note.Source, note.Branch))
@@ -776,7 +776,7 @@ namespace PeepoDrumKit
 					for (const TestPlayLongNoteState& note : TestPlayLongNotes)
 						if (IsTestPlayNoteActive(note.Source, note.Branch))
 							for (Time hit : note.HitTimes)
-								if (hit >= TestPlayCourse->TempoMap.BeatToTime(TestPlaySectionBeat) && hit < cutoffTime) ++roll;
+								if (hit >= TestPlayCourse->BeatToPlaybackTime(TestPlaySectionBeat, TestPlayBranch) && hit < cutoffTime) ++roll;
 					const f64 value = range.Condition == TJA::BranchCondition::Roll ? static_cast<f64>(roll) : GetTestPlayBranchAccuracy(good, ok, total);
 					decidedBranch = static_cast<BranchType>(GetTestPlayBranchIndex(value, range.RequirementExpert, range.RequirementMaster));
 				}
@@ -787,7 +787,7 @@ namespace PeepoDrumKit
 					TestPlayBranchTransitionIndex = index;
 					const Time decisionTime = context.GetCursorTime();
 					TestPlayBranchTransitionDuration = std::min(Time::FromSec(0.1 * TestPlayPlaybackSpeed),
-						TestPlayCourse->TempoMap.BeatToTime(range.GetStart()) - decisionTime);
+						TestPlayCourse->BeatToPlaybackTime(range.GetStart(), TestPlayBranch) - decisionTime);
 					if (TestPlayBranchTransitionDuration > Time::Zero()) TestPlayBranchDecisionTime = decisionTime;
 					else TestPlayBranchDecisionTime.reset();
 				}
@@ -838,18 +838,18 @@ namespace PeepoDrumKit
 		if (mode == TestPlayStartMode::Beginning)
 		{
 			context.RangeSelection = {};
-			TestPlayStartTime = Time::Zero();
+			TestPlayStartTime = TestPlayCourse->GetPlaybackTimeBounds().first;
 		}
 		else if (mode == TestPlayStartMode::Marker)
 		{
 			const Beat markerBeat = context.Marker.BeatTime;
 			context.RangeSelection = {};
-			TestPlayStartTime = context.BeatToTime(markerBeat);
+			TestPlayStartTime = context.BeatToPlaybackTime(markerBeat);
 		}
 		else
 			TestPlayStartTime = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero()
-				? context.BeatToTime(context.RangeSelection.GetMin()) : context.GetCursorTime();
-		TestPlayEndTime = context.GetUsedDuration(*TestPlayCourse);
+				? context.BeatToPlaybackTime(context.RangeSelection.GetMin()) : context.GetCursorTime();
+		TestPlayEndTime = TestPlayCourse->GetPlaybackTimeBounds(context.GetUsedDuration(*TestPlayCourse)).second;
 		TestPlayAttemptStartTime = TestPlayStartTime;
 		context.TestPlaySeekTime.reset();
 		context.TestPlaySmoothCursor = false;
@@ -867,14 +867,14 @@ namespace PeepoDrumKit
 			if (!TestPlayAutoBranchActive && branch != TestPlayBranch) continue;
 			if (IsComboNote(note.Type))
 			{
-				const Time noteTime = TestPlayCourse->TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset;
+				const Time noteTime = TestPlayCourse->BeatToPlaybackTime(note.BeatTime, branch) + note.TimeOffset;
 				if (noteTime <= TestPlayEndTime)
 					TestPlayNotes.push_back({ &note, noteTime, 0, Time::Zero(), 0, false, branch });
 			}
 			if (IsLongNote(note.Type))
 			{
-				const Time startTime = TestPlayCourse->TempoMap.BeatToTime(note.GetStart()) + note.TimeOffset;
-				const Time endTime = TestPlayCourse->TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset;
+				const Time startTime = TestPlayCourse->BeatToPlaybackTime(note.GetStart(), branch) + note.TimeOffset;
+				const Time endTime = TestPlayCourse->BeatToPlaybackTime(note.GetEnd(), branch) + note.TimeOffset;
 				if (endTime >= Time::Zero() && startTime <= TestPlayEndTime)
 					TestPlayLongNotes.push_back({ &note, startTime, endTime, 0, {}, branch });
 			}
@@ -899,7 +899,7 @@ namespace PeepoDrumKit
 		TestPlayRecordedThrough = startTime;
 		if (TestPlayAutoBranchActive)
 		{
-			TestPlayBranchStartBeat = TestPlayCourse->TempoMap.TimeToBeat(startTime);
+			TestPlayBranchStartBeat = TestPlayCourse->PlaybackTimeToBeat(startTime, TestPlayBranch, TestPlayBranchStartBeat);
 			erase_remove_if(TestPlayBranchDecisions, [&](const auto& decision)
 				{ return decision.first >= TestPlayCourse->Branches.size() || TestPlayCourse->Branches[decision.first].GetStart() >= TestPlayBranchStartBeat; });
 			for (const auto& decision : TestPlayBranchDecisions)
@@ -935,8 +935,10 @@ namespace PeepoDrumKit
 	TestPlayInterval<Time> ChartGamePreview::GetTestPlaySelectedRange(const ChartContext& context) const
 	{
 		if (context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero())
-			return { Clamp(context.BeatToTime(context.RangeSelection.GetMin()), Time::Zero(), TestPlayEndTime),
-				Clamp(context.BeatToTime(context.RangeSelection.GetMax()), Time::Zero(), TestPlayEndTime) };
+		{
+			const auto [first, last] = context.GetRangePlaybackTimes();
+			return { first, Min(last, TestPlayEndTime) };
+		}
 		return { Time::Zero(), Time::Zero() };
 	}
 
@@ -1032,9 +1034,9 @@ namespace PeepoDrumKit
 				barNavigationTriggered = true;
 				context.TestPlaySmoothCursor = true;
 				context.TestPlayFollowCursor = true;
-				const Beat currentBeat = context.TimeToBeat(context.GetCursorTime());
+				const Beat currentBeat = context.PlaybackTimeToBeat(context.GetCursorTime());
 				Beat previousBeat = Beat::Zero();
-				Beat nextBeat = context.TimeToBeat(TestPlayEndTime);
+				Beat nextBeat = context.PlaybackTimeToBeat(TestPlayEndTime);
 				TestPlayCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
 				{
 					if (!bar.IsBar) return ControlFlow::Fallthrough;
@@ -1042,7 +1044,7 @@ namespace PeepoDrumKit
 					else if (bar.Beat > currentBeat) { nextBeat = bar.Beat; return ControlFlow::Break; }
 					return ControlFlow::Fallthrough;
 				});
-				context.TestPlaySeekTime = TestPlayCourse->TempoMap.BeatToTime(previousBar ? previousBeat : nextBeat);
+				context.TestPlaySeekTime = TestPlayCourse->BeatToPlaybackTime(previousBar ? previousBeat : nextBeat, TestPlayBranch);
 			}
 		}
 		if (context.TestPlaySeekTime)
@@ -1055,7 +1057,7 @@ namespace PeepoDrumKit
 		{
 			if (Gui::IsAnyPressed(*Settings.Input.TestPlay_Exit, false)) { ExitTestPlay(context); return; }
 			if (Gui::IsAnyPressed(*Settings.Input.TestPlay_Retry, false))
-				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
+				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToPlaybackTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
 			else if (Gui::IsAnyPressed(*Settings.Input.TestPlay_TogglePause, false))
 				ToggleTestPlayPause(context);
 		}
@@ -1089,7 +1091,7 @@ namespace PeepoDrumKit
 		const TestPlayInterval<Time> interval = GetTestPlayInterval(context);
 
 		const Time now = context.GetCursorTime() - Time::FromMS(*Settings.TestPlay.InputLatencyCompensationMilliseconds * TestPlayPlaybackSpeed);
-		UpdateTestPlayBranches(context, TestPlayCourse->TempoMap.TimeToBeat(now));
+		UpdateTestPlayBranches(context, TestPlayCourse->PlaybackTimeToBeat(now, TestPlayBranch, context.PlaybackBeatHint));
 		TestPlayRecordedThrough = Max(TestPlayRecordedThrough, Min(now, interval.End));
 		auto recordJudgement = [&](TestPlayNoteState& note, i32 judgement, i32 timingError, b8 wasHit)
 		{
@@ -1280,7 +1282,7 @@ namespace PeepoDrumKit
 				ToggleTestPlayPause(context);
 			Gui::SameLine();
 			if (Gui::Button(UI_Str("SETTINGS_TEST_PLAY_RETRY")))
-				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
+				ResetTestPlayAttempt(context, context.RangeSelection.IsActiveAndHasEnd() ? context.BeatToPlaybackTime(context.RangeSelection.GetMin()) : TestPlayStartTime);
 			Gui::SameLine();
 			if (Gui::Button(UI_Str("SETTINGS_TEST_PLAY_EXIT")))
 				ExitTestPlay(context);
@@ -1349,10 +1351,8 @@ namespace PeepoDrumKit
 				Gui::SameLine();
 				if (Gui::Button(UI_Str("TEST_PLAY_CLEAR_RANGE_RECORDS")))
 				{
-					const Time start = context.BeatToTime(context.RangeSelection.GetMin());
-					const Time end = context.BeatToTime(context.RangeSelection.GetMax());
 					for (const auto& note : TestPlayNotes)
-						if (note.NoteTime >= start && note.NoteTime <= end)
+						if (note.Source->BeatTime >= context.RangeSelection.GetMin() && note.Source->BeatTime <= context.RangeSelection.GetMax())
 						{
 							context.TestPlayJudgements.erase(note.Source);
 							TestPlayAttemptJudgements.erase(note.Source);
@@ -1691,27 +1691,27 @@ namespace PeepoDrumKit
 
 			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + commentLaneHeight) };
 
-			const TempoMapAccelerationStructure& tempoChanges = course->TempoMap.AccelerationStructure;
+			const TempoMapAccelerationStructure& tempoChanges = course->GetPlaybackTiming(branch);
 			const SortedJPOSScrollChangesList& jposScrollChanges = course->JPOSScrollChanges;
 			const std::vector<TempoChange>& tempos = course->TempoMap.Tempo.Sorted;
 			const SortedGoGoRangesList& gogoRanges = course->GoGoRanges;
 
 			const b8 isPlayback = isVideoExport || context.GetIsPlayback();
 			const BeatAndTime exactCursorBeatAndTime = isVideoExport
-				? BeatAndTime { course->TempoMap.TimeToBeat(*VideoExportTime, true), *VideoExportTime }
-				: context.GetCursorBeatAndTime(course, true);
+				? BeatAndTime { tempoChanges.ConvertTimeToBeatWithHint(*VideoExportTime, context.PlaybackBeatHint, true), *VideoExportTime }
+				: context.GetCursorBeatAndTime(course, true, branch);
 			const b8 useExactCursor = isPlayback || (IsTestPlaying && !context.TestPlaySmoothCursor);
 			const Time cursorTimeOrAnimated = useExactCursor ? exactCursorBeatAndTime.Time : animatedCursorTime;
-			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : course->TempoMap.TimeToBeat(animatedCursorTime, true);
-			const f64 cursorHBScrollBeatOrAnimated = course->TempoMap.BeatAndTimeToHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated);
+			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : tempoChanges.ConvertTimeToBeatWithHint(animatedCursorTime, context.PlaybackBeatHint, true);
+			const f64 cursorHBScrollBeatOrAnimated = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated);
 			const Beat chartBeatDuration = context.GetUsedBeatDurationFast(*course);
 
 			const auto* lastGogo = gogoRanges.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
 			const b8 isGogo = (lastGogo != nullptr && cursorBeatOrAnimatedTrunc < lastGogo->GetEnd());
 			const Time timeSinceGogo = (lastGogo == nullptr) ? Time::FromSec(F64Max)
-				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->BeatTime), cursorTimeOrAnimated);
+				: TimeSinceNoteHit(course->BeatToPlaybackTime(lastGogo->BeatTime, branch), cursorTimeOrAnimated);
 			const Time timeAfterGogo = (lastGogo == nullptr) ? Time::FromSec(F64Max)
-				: TimeSinceNoteHit(course->TempoMap.BeatToTime(lastGogo->GetEnd()), cursorTimeOrAnimated);
+				: TimeSinceNoteHit(course->BeatToPlaybackTime(lastGogo->GetEnd(), branch), cursorTimeOrAnimated);
 			const auto [gogoFireZoom, gogoFireAlpha, gogoLaneZoom, gogoLaneAlpha] = getGogoTransition(isGogo, timeSinceGogo, timeAfterGogo);
 			const VideoBranchRoute* videoRoute = isVideoExport ? VideoExportRoute : nullptr;
 			if (videoRoute) UpdateVideoScrolls(*course, cursorTimeOrAnimated);
@@ -1917,7 +1917,7 @@ namespace PeepoDrumKit
 				for (size_t commentIndex = 0; commentIndex < course->Comments.size(); commentIndex++)
 				{
 				const CommentChange& comment = course->Comments.Sorted[commentIndex];
-					const Time commentTime = course->TempoMap.BeatToTime(comment.BeatTime);
+					const Time commentTime = course->BeatToPlaybackTime(comment.BeatTime, branch);
 					f32 laneX = Camera.TimeToLaneSpace(cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated,
 						commentTime, comment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
 						pxWorldPer4Beats, tempoChanges);
@@ -1927,21 +1927,21 @@ namespace PeepoDrumKit
 						const TimeSignatureChange* signatureChange = course->TempoMap.Signature.TryFindLastAtBeat(comment.BeatTime);
 						const TimeSignature signature = signatureChange ? signatureChange->Signature : FallbackTimeSignature;
 						const Beat measureDuration = std::max(abs(signature.GetDurationPerBar()), Beat::FromTicks(1));
-						const Time holdEndTime = course->TempoMap.BeatToTime(comment.BeatTime + measureDuration * holdMeasures);
+						const Time holdEndTime = course->BeatToPlaybackTime(comment.BeatTime + measureDuration * holdMeasures, branch);
 						alpha = Clamp((holdEndTime + fadeDuration - cursorTimeOrAnimated).ToSec_F32() / fadeDuration.ToSec_F32(), 0.0f, 1.0f);
 						laneX = 0.0f;
 					}
 					if (holdMeasures > 0 && commentIndex + 1 < course->Comments.size() && cursorTimeOrAnimated >= commentTime)
 					{
 						const CommentChange& nextComment = course->Comments.Sorted[commentIndex + 1];
-						const Time nextTime = course->TempoMap.BeatToTime(nextComment.BeatTime);
+						const Time nextTime = course->BeatToPlaybackTime(nextComment.BeatTime, branch);
 						const f32 nextLaneX = Camera.TimeToLaneSpace(cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated,
 							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
 							pxWorldPer4Beats, tempoChanges);
 						const f32 nextScreenX = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + nextLaneX, 0.0f)).x;
 						const Time laterTime = cursorTimeOrAnimated + fadeDuration;
-						const Beat laterBeat = course->TempoMap.TimeToBeat(laterTime);
-						const f64 laterHBBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(laterBeat, laterTime);
+						const Beat laterBeat = tempoChanges.ConvertTimeToBeatWithHint(laterTime, comment.BeatTime);
+						const f64 laterHBBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(laterBeat, laterTime);
 						const f32 laterLaneX = Camera.TimeToLaneSpace(laterTime, laterHBBeat,
 							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
 							pxWorldPer4Beats, tempoChanges);
@@ -1966,6 +1966,29 @@ namespace PeepoDrumKit
 				}
 				drawList->PopClipRect();
 			}
+			struct DeferredBarLineDrawData
+			{
+				Beat BeatTime;
+				vec2 TL;
+				vec2 BR;
+				u32 Color;
+				i32 BarIndex;
+				b8 IsVisible;
+			};
+			const b8 barLinesBehindNotes = *Settings.General.GamePreviewBarLinesBehindNotes;
+			const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
+			std::vector<DeferredBarLineDrawData> reverseBarLineDrawBuffer;
+			auto drawBarLine = [&](const DeferredBarLineDrawData& bar)
+			{
+				if (bar.IsVisible)
+					drawList->AddLine(Camera.WorldToScreenSpace(bar.TL), Camera.WorldToScreenSpace(bar.BR), bar.Color, Camera.WorldToScreenScale(GameLaneBarLineThickness));
+				if (measureNumberDisplay != 0)
+				{
+					char barLineStr[32];
+					DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(bar.TL + vec2(5.0f, 1.0f), vec2(0.5f)),
+						std::string_view(barLineStr, sprintf_s(barLineStr, "%d", bar.BarIndex)));
+				}
+			};
 			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](ForEachBarLaneData it)
 			{
 				if (playbackScrolls)
@@ -1973,7 +1996,6 @@ namespace PeepoDrumKit
 					const BranchType barBranch = videoRoute ? videoRoute->GetDisplayBranch(*course, it.Beat, cursorTimeOrAnimated) : GetTestPlayNoteBranch(it.Beat);
 					if (barBranch < BranchType::Count) it.ScrollSpeed = scrollSpeedToView((*playbackScrolls)[EnumToIndex(getScrollBranch(it.Beat, barBranch))].GetScroll(it.Beat));
 				}
-				const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
 				if (!it.IsVisible && measureNumberDisplay != 2) return;
 				const vec2 lane = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeed, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
 				const f32 laneX = lane.x, laneY = lane.y;
@@ -1988,15 +2010,11 @@ namespace PeepoDrumKit
 						return branchRange.GetStart() == it.Beat;
 					});
 					const u32 barLineColor = isBranchStart ? GameLaneBranchStartBarLineColor : GameLaneBarLineColor;
-					if (it.IsVisible)
-						drawList->AddLine(Camera.WorldToScreenSpace(tl), Camera.WorldToScreenSpace(br), barLineColor, Camera.WorldToScreenScale(GameLaneBarLineThickness));
-
-					if (measureNumberDisplay != 0)
-					{
-						char barLineStr[32];
-						DrawGamePreviewNumericText(context.Gfx, Camera, drawList, SprTransform::FromTL(tl + vec2(5.0f, 1.0f), vec2(0.5f)),
-							std::string_view(barLineStr, sprintf_s(barLineStr, "%d", it.BarIndex)));
-					}
+					const DeferredBarLineDrawData bar { it.Beat, tl, br, barLineColor, it.BarIndex, it.IsVisible };
+					if (barLinesBehindNotes)
+						drawBarLine(bar);
+					else
+						reverseBarLineDrawBuffer.push_back(bar);
 				}
 			});
 
@@ -2110,11 +2128,11 @@ namespace PeepoDrumKit
 				b8 isPreMoveTail = !(cursorTimeOrAnimated >= suddenMoveTimeTail);
 				if (isPreMoveHead) {
 					positionTime = suddenMoveTimeHead;
-					positionHBScrollBeat = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTime, true), positionTime);
+					positionHBScrollBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(tempoChanges.ConvertTimeToBeatWithHint(positionTime, it.Beat, true), positionTime);
 				}
 				if (isPreMoveTail) {
 					positionTimeEnd = suddenMoveTimeTail;
-					positionHBScrollBeatEnd = course->TempoMap.BeatAndTimeToHBScrollBeatTick(course->TempoMap.TimeToBeat(positionTimeEnd, true), positionTimeEnd);
+					positionHBScrollBeatEnd = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(tempoChanges.ConvertTimeToBeatWithHint(positionTimeEnd, it.Tail.Beat, true), positionTimeEnd);
 				}
 				vec2 laneHeadMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTime, positionHBScrollBeat, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
 				vec2 laneTailMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTimeEnd, positionHBScrollBeatEnd, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
@@ -2225,11 +2243,21 @@ namespace PeepoDrumKit
 					ForEachNoteOnNoteLane(*course, BranchType::Normal, scrollSpeedToView, [&](const ForEachNoteLaneData& it) { drawTestPlayNote(it, BranchType::Normal); });
 			}
 
+			if (!barLinesBehindNotes)
+				std::stable_sort(ReverseNoteDrawBuffer.begin(), ReverseNoteDrawBuffer.end(), [](const DeferredNoteDrawData& a, const DeferredNoteDrawData& b) { return a.Beat < b.Beat; });
+
 			b8 balloonPopCountDrawn = false; // prevent long pop count text from overlapping with long combo text
 			const f32 rollsPerSecond = videoRoute ? VideoRollsPerSecond : *Settings.General.DrumrollPreviewRollsPerSecond;
 			const Time drumrollHitInterval = rollsPerSecond > 0.0f ? Time::FromSec(1.0 / rollsPerSecond) : Time::Zero();
+			auto nextBarLine = reverseBarLineDrawBuffer.rbegin();
 			for (auto it = ReverseNoteDrawBuffer.rbegin(); it != ReverseNoteDrawBuffer.rend(); it++)
 			{
+				// Bar lines precede notes at the same beat, so draw them after those notes.
+				while (nextBarLine != reverseBarLineDrawBuffer.rend() && nextBarLine->BeatTime > it->Beat)
+				{
+					drawBarLine(*nextBarLine);
+					++nextBarLine;
+				}
 				if (it->BranchSliding)
 					drawList->PushClipRect(Camera.WorldToScreenSpace(Camera.LaneRect.TL), Camera.WorldToScreenSpace(Camera.LaneRect.BR), true);
 				defer { if (it->BranchSliding) drawList->PopClipRect(); };
@@ -2464,6 +2492,8 @@ namespace PeepoDrumKit
 					}
 				}
 			}
+			for (; nextBarLine != reverseBarLineDrawBuffer.rend(); ++nextBarLine)
+				drawBarLine(*nextBarLine);
 			ReverseNoteDrawBuffer.clear();
 
 			// NOTE: Draw combo near the hit circle or over the Taiko combo panel
