@@ -352,7 +352,7 @@ namespace PeepoDrumKit
 		const auto* song = context.SongSource == Audio::SourceHandle::Invalid ? nullptr : Audio::Engine.GetSourceSampleBufferView(context.SongSource);
 		const ChartCourse& course = *context.ChartSelectedCourse;
 		const Time songEnd = song && song->SampleRate > 0 ? context.Chart.SongOffset + Audio::FramesToTime(song->FrameCount, song->SampleRate) : Time::Zero();
-		const Time fullEnd = std::max(context.Chart.GetUsedDuration(course), songEnd);
+		const Time fullEnd = course.GetPlaybackTimeBounds(std::max(context.Chart.GetUsedDuration(course), songEnd)).second;
 		const b8 hasRange = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero();
 		const b8 hasPreview = context.Chart.SongDemoStartTime > Time::Zero();
 		const b8 hasMarker = context.Marker.IsActive;
@@ -492,16 +492,15 @@ namespace PeepoDrumKit
 		Gui::ColorEdit4_U32(UI_Str("VIDEO_EXPORT_TITLE_BAND_COLOR"), &exportData.TitleBandColor, ImGuiColorEditFlags_AlphaBar);
 		Gui::EndDisabled();
 		Gui::EndChild();
-		Time selectedStart = Time::Zero(), selectedEnd = fullEnd;
+		Time selectedStart = course.GetPlaybackTimeBounds().first, selectedEnd = fullEnd;
 		if (exportData.Range == RangeMode::SelectedRange)
 		{
-			selectedStart = context.BeatToTime(context.RangeSelection.GetMin());
-			selectedEnd = context.BeatToTime(context.RangeSelection.GetMax());
+			std::tie(selectedStart, selectedEnd) = context.GetRangePlaybackTimes();
 		}
 		else if (exportData.Range == RangeMode::Preview || exportData.Range == RangeMode::Marker)
 		{
 			selectedStart = exportData.Range == RangeMode::Preview
-				? context.Chart.SongDemoStartTime + context.Chart.SongOffset : context.BeatToTime(context.Marker.BeatTime);
+				? context.Chart.SongDemoStartTime + context.Chart.SongOffset : context.BeatToPlaybackTime(context.Marker.BeatTime);
 			selectedEnd = selectedStart + Time::FromSec(exportData.ExcerptSeconds);
 		}
 

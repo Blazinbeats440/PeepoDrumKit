@@ -152,6 +152,9 @@ namespace PeepoDrumKit {
 		Beat Beat = {};
 		Tempo Tempo = {};
 		b8 IsSelected = false;
+		i32 SourceCommandOrder = -1;
+		struct Beat SourceBeat = {};
+		struct Tempo SourceTempo = {};
 	};
 
 	struct TimeSignatureChange
@@ -231,6 +234,9 @@ public:
 
 struct TempoMapAccelerationStructure
 {
+	struct DelayPoint { Beat BeatTime; Time Offset; f64 ScrollOffset; f64 BPM; };
+	const TempoMapAccelerationStructure* BaseTiming = nullptr;
+	std::vector<DelayPoint> DelayPoints;
 	// NOTE: Pre calculated beat times up to the last tempo change
 	std::vector<Time> BeatTickToTimes;
 	std::vector<i32> BeatTickToHBScrollBeatTicks;
@@ -240,6 +246,9 @@ struct TempoMapAccelerationStructure
 	Time ConvertBeatToTimeUsingLookupTableIndexing(Beat beat) const;
 	Beat ConvertTimeToBeatUsingLookupTableBinarySearch(Time time) const;
 	Beat ConvertTimeToBeatUsingLookupTableBinarySearch(Time time, bool truncTo0) const;
+	Beat ConvertTimeToBeatWithHint(Time time, Beat hint, bool truncTo0 = false) const;
+	std::vector<Beat> FindBeatCandidates(Time time, bool truncTo0 = false) const;
+	Time GetDelayOffset(Beat beat) const;
 	f64 ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat beat, Time time) const;
 
 	Time GetLastCalculatedTime() const;

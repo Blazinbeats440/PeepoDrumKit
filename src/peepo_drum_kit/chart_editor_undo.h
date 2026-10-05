@@ -399,6 +399,9 @@ namespace PeepoDrumKit
 		using UpdateTimeSignatureChange = UpdateSingleChartEvent<TimeSignatureChange>;
 
 		using AddSudden = AddSingleChartEvent<SuddenChange>;
+		using AddDelay = AddSingleChartEvent<DelayChange>;
+		using RemoveDelay = RemoveSingleChartEvent<DelayChange>;
+		using UpdateDelay = UpdateSingleChartEvent<DelayChange>;
 		using RemoveSudden = RemoveSingleChartEvent<SuddenChange>;
 		using UpdateSudden = UpdateSingleChartEvent<SuddenChange>;
 

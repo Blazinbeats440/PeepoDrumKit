@@ -525,12 +525,15 @@ namespace TJA
 	{
 		Beat TimeWithinMeasure;
 		Tempo Tempo;
+		i32 CommandOrder = -1;
 	};
 
 	struct ConvertedDelayChange
 	{
 		Beat TimeWithinMeasure;
 		Time Delay;
+		Tempo TempoAtCommand = DefaultTempo;
+		i32 CommandOrder = -1;
 	};
 
 	struct ConvertedScrollChange

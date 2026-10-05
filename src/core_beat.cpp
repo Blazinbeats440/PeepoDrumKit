@@ -1,8 +1,70 @@
 #include "core_beat.h"
 #include <algorithm>
 
+Time TempoMapAccelerationStructure::GetDelayOffset(Beat beat) const
+{
+	auto after = std::upper_bound(DelayPoints.begin(), DelayPoints.end(), beat,
+		[](Beat value, const DelayPoint& point) { return value < point.BeatTime; });
+	return after == DelayPoints.begin() ? Time::Zero() : (after - 1)->Offset;
+}
+
+std::vector<Beat> TempoMapAccelerationStructure::FindBeatCandidates(Time time, bool truncTo0) const
+{
+	if (BaseTiming == nullptr)
+		return { ConvertTimeToBeatUsingLookupTableBinarySearch(time, truncTo0) };
+	std::vector<Beat> candidates;
+	Time offset = {};
+	for (size_t index = 0; index <= DelayPoints.size(); ++index)
+	{
+		const Time baseTime = time - offset;
+		const Beat start = index == 0 ? Beat::FromTicks(I32Min) : DelayPoints[index - 1].BeatTime;
+		const Beat end = index == DelayPoints.size() ? Beat::FromTicks(I32Max) : DelayPoints[index].BeatTime;
+		if ((index == 0 || baseTime >= BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(start)) &&
+			(index == DelayPoints.size() || baseTime < BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(end)))
+		{
+			Beat candidate = BaseTiming->ConvertTimeToBeatUsingLookupTableBinarySearch(baseTime, truncTo0);
+			candidate = Max(candidate, start);
+			if (index < DelayPoints.size()) candidate = Min(candidate, end - Beat::FromTicks(1));
+			if (start < end) candidates.push_back(candidate);
+		}
+		if (index < DelayPoints.size()) offset = DelayPoints[index].Offset;
+	}
+	return candidates;
+}
+
+Beat TempoMapAccelerationStructure::ConvertTimeToBeatWithHint(Time time, Beat hint, bool truncTo0) const
+{
+	if (BaseTiming == nullptr)
+		return ConvertTimeToBeatUsingLookupTableBinarySearch(time, truncTo0);
+	const auto candidates = FindBeatCandidates(time, truncTo0);
+	const auto intervalOf = [&](Beat beat)
+	{
+		return std::upper_bound(DelayPoints.begin(), DelayPoints.end(), beat,
+			[](Beat value, const DelayPoint& point) { return value < point.BeatTime; }) - DelayPoints.begin();
+	};
+	const auto hintInterval = intervalOf(hint);
+	for (Beat candidate : candidates)
+		if (intervalOf(candidate) == hintInterval) return candidate;
+	if (!candidates.empty())
+		return *std::min_element(candidates.begin(), candidates.end(), [&](Beat first, Beat second)
+		{
+			return std::abs(static_cast<i64>(first.Ticks) - hint.Ticks) < std::abs(static_cast<i64>(second.Ticks) - hint.Ticks);
+		});
+	Time offset = {};
+	for (const DelayPoint& point : DelayPoints)
+	{
+		const Time before = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + offset;
+		const Time after = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + point.Offset;
+		if (time >= before && time < after) return point.BeatTime;
+		offset = point.Offset;
+	}
+	return hint;
+}
+
 Time TempoMapAccelerationStructure::ConvertBeatToTimeUsingLookupTableIndexing(Beat beat) const
 {
+	if (BaseTiming != nullptr)
+		return BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(beat) + GetDelayOffset(beat);
 	const i32 beatTickToTimesCount = static_cast<i32>(BeatTickToTimes.size());
 	const i32 totalBeatTicks = beat.Ticks;
 
@@ -39,6 +101,8 @@ Beat TempoMapAccelerationStructure::ConvertTimeToBeatUsingLookupTableBinarySearc
 
 Beat TempoMapAccelerationStructure::ConvertTimeToBeatUsingLookupTableBinarySearch(Time time, bool truncTo0) const
 {
+	if (BaseTiming != nullptr)
+		return ConvertTimeToBeatWithHint(time, Beat::Zero(), truncTo0);
 	const i32 beatTickToTimesCount = static_cast<i32>(BeatTickToTimes.size());
 	const Time lastTime = GetLastCalculatedTime();
 
@@ -68,7 +132,7 @@ Beat TempoMapAccelerationStructure::ConvertTimeToBeatUsingLookupTableBinarySearc
 		auto base = std::begin(BeatTickToTimes);
 		auto [atOrAfter, after] = std::equal_range(base, std::end(BeatTickToTimes), time);
 		if (atOrAfter != after) // found
-			Beat::FromTicks(atOrAfter - base);
+			return Beat::FromTicks(atOrAfter - base);
 		auto before = after - 1;
 
 		// left > right
@@ -81,6 +145,24 @@ Beat TempoMapAccelerationStructure::ConvertTimeToBeatUsingLookupTableBinarySearc
 // allow over-extrapolating for reproducing TaikoJiro "time offset over tempo change" behavior
 f64 TempoMapAccelerationStructure::ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat beat, Time time) const
 {
+	if (BaseTiming != nullptr)
+	{
+		Time offset = {};
+		f64 scrollOffset = 0.0;
+		for (const DelayPoint& point : DelayPoints)
+		{
+			const Time before = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + offset;
+			const Time after = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + point.Offset;
+			if (after > before && time >= before && time < after && beat == point.BeatTime &&
+				time < ConvertBeatToTimeUsingLookupTableIndexing(beat))
+				return BaseTiming->ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(point.BeatTime, before - offset)
+					+ scrollOffset + (time - before).ToSec() * point.BPM / 60.0 * Beat::TicksPerBeat;
+			if (point.BeatTime > beat) break;
+			offset = point.Offset;
+			scrollOffset = point.ScrollOffset;
+		}
+		return BaseTiming->ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(beat, time - offset) + scrollOffset;
+	}
 	const i32 beatTickToTimesCount = static_cast<i32>(BeatTickToTimes.size());
 	const i32 totalBeatTicks = beat.Ticks;
 
@@ -122,16 +204,22 @@ f64 TempoMapAccelerationStructure::ConvertBeatAndTimeToHBScrollBeatTickUsingLook
 
 Time TempoMapAccelerationStructure::GetLastCalculatedTime() const
 {
+	if (BaseTiming != nullptr)
+		return BaseTiming->GetLastCalculatedTime() + (DelayPoints.empty() ? Time::Zero() : DelayPoints.back().Offset);
 	return BeatTickToTimes.empty() ? Time::Zero() : BeatTickToTimes.back();
 }
 
 f64 TempoMapAccelerationStructure::GetLastCalculatedHBScrollBeatTick() const
 {
+	if (BaseTiming != nullptr)
+		return BaseTiming->GetLastCalculatedHBScrollBeatTick() + (DelayPoints.empty() ? 0.0 : DelayPoints.back().ScrollOffset);
 	return BeatTickToHBScrollBeatTicks.empty() ? 0.0 : BeatTickToHBScrollBeatTicks.back();
 }
 
 void TempoMapAccelerationStructure::Rebuild(const TempoChange* inTempoChanges, size_t inTempoCount)
 {
+	BaseTiming = nullptr;
+	DelayPoints.clear();
 	const TempoChange* tempoChanges = inTempoChanges;
 	size_t tempoCount = inTempoCount;
 

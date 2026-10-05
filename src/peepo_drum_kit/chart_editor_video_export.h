@@ -60,11 +60,11 @@ namespace PeepoDrumKit
 	b8 RunVideoBranchSelfTest(std::string& error);
 
 	template <typename Func>
-	void ForEachVideoRollHit(const ChartCourse& course, const Note& note, f32 rollsPerSecond, Func callback)
+	void ForEachVideoRollHit(const ChartCourse& course, const Note& note, f32 rollsPerSecond, Func callback, BranchType branch = BranchType::Normal)
 	{
 		if (!std::isfinite(rollsPerSecond) || rollsPerSecond <= 0.0f) return;
-		const Time head = course.TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset;
-		const Time tail = course.TempoMap.BeatToTime(note.GetEnd()) + note.TimeOffset;
+		const Time head = course.BeatToPlaybackTime(note.BeatTime, branch) + note.TimeOffset;
+		const Time tail = course.BeatToPlaybackTime(note.GetEnd(), branch) + note.TimeOffset;
 		for (i32 hit = 0; !IsBalloonNote(note.Type) || hit < note.BalloonPopCount; ++hit)
 		{
 			const Time time = head + Time::FromSec(static_cast<f64>(hit) / rollsPerSecond);
@@ -87,7 +87,7 @@ namespace PeepoDrumKit
 			for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
 			for (const Note& note : course.GetNotes(branch))
 				if (IsComboNote(note.Type) && route.GetNoteBranch(course, note.BeatTime) == branch)
-					HitTimes.push_back(course.TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset);
+					HitTimes.push_back(course.BeatToPlaybackTime(note.BeatTime, branch) + note.TimeOffset);
 			std::sort(HitTimes.begin(), HitTimes.end());
 		}
 
@@ -119,13 +119,13 @@ namespace PeepoDrumKit
 			for (const Note& note : course.GetNotes(branch))
 			{
 				if (route.GetNoteBranch(course, note.BeatTime) != branch) continue;
-				const Time head = course.TempoMap.BeatToTime(note.BeatTime) + note.TimeOffset;
+				const Time head = course.BeatToPlaybackTime(note.BeatTime, branch) + note.TimeOffset;
 				if (IsLongNote(note.Type) && rollsPerSecond > 0.0f)
 				{
 					ForEachVideoRollHit(course, note, rollsPerSecond, [&](Time time, b8 pop)
 					{
 						Events.push_back({ time, pop ? SoundEffectType::Balloon : SoundEffectType::TaikoDon });
-					});
+					}, branch);
 				}
 				else if (IsComboNote(note.Type))
 				{

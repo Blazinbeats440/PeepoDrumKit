@@ -163,6 +163,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
+			WithDefault<b8> GamePreviewBarLinesBehindNotes = true;
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
 			WithDefault<b8> GamePreviewUseBackgroundMovie = false;
 			WithDefault<b8> GamePreviewShowUnselectedNoteTooltips = false;
@@ -179,6 +180,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> EventShowSudden = true;
 			WithDefault<b8> EventShowJPOSScroll = true;
 			WithDefault<b8> EventShowScrollType = true;
+			WithDefault<b8> EventShowDelay = true;
 			WithDefault<i32> ScrollSpeedViewType = 0;
 			WithDefault<i32> InspectorScrollInputMode = 0;
 			WithDefault<b8> TimelineScrollInvertMouseWheel = false;
