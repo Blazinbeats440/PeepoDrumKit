@@ -781,6 +781,25 @@ X("EVENT_SCROLL_DISTANCE_4_BEATS_TOOLTIP",			"Scroll distance of 4 beats when sc
 X("EVENT_DELAY", "Delay") \
 X("DELAY_TIME_TRANSITION", "Playback: %.3f s -> %.3f s") \
 X("TIMELINE_DELAY_EDIT_TIME", "Timeline positions exclude DELAY; playback time is shown below.") \
+X("SETTINGS_TIMELINE_PLAYBACK_TIME_EXPANDED", "Timeline: Expand Playback Time View for DELAY") \
+X("SETTINGS_TIMELINE_PLAYBACK_TIME_EXPANDED_DESC", "Expand the playback time view below the chart timeline when the course contains DELAY. It can also be collapsed using its arrow button.") \
+X("TIMELINE_PLAYBACK_TIME_VIEW", "Playback time") \
+X("TIMELINE_PLAYBACK_FIT", "Fit all") \
+X("TIMELINE_PLAYBACK_FOLLOW", "Follow") \
+X("TIMELINE_PLAYBACK_HELP", "Click a note to select it and reveal its chart position. Drag empty space to seek. Mouse wheel: scroll; Ctrl + wheel: vertical scroll; Alt + wheel: zoom; middle drag: pan. Resize using the top divider and choose visible sections from Sections.") \
+X("TIMELINE_PLAYBACK_SECTIONS", "Sections") \
+X("TIMELINE_PLAYBACK_SHOW_ALL", "Show all") \
+X("TIMELINE_PLAYBACK_HIDE_ALL", "Close all") \
+X("TIMELINE_PLAYBACK_CURRENT_ONLY", "Only the cursor section") \
+X("TIMELINE_PLAYBACK_ENLARGE", "Enlarge") \
+X("TIMELINE_PLAYBACK_RESTORE", "Restore") \
+X("TIMELINE_PLAYBACK_RESIZE_HELP", "Drag vertically to resize the playback time view.") \
+X("TIMELINE_PLAYBACK_CLOSE_SECTION", "Close this section. Reopen it from Sections.") \
+X("TIMELINE_PLAYBACK_SECTIONS_HIDDEN", "All sections are closed. Reopen them from Sections.") \
+X("TIMELINE_PLAYBACK_NOTE", "Playback: %.3f s | Chart: %.3f beats | Section %zu | Cumulative DELAY: %+.3f s") \
+X("TIMELINE_PLAYBACK_SECTION", "Section %zu | DELAY %+.3f s") \
+X("TIMELINE_DELAY_BOUNDARY", "DELAY %+.3f s | cumulative %+.3f s") \
+X("TIMELINE_DELAY_WAIT", "DELAY wait: %.3f / %.3f s") \
 X("EVENT_SUDDEN",									"Sudden") \
 X("EVENT_SUDDEN_HIDE_ROLL",							"Hide Rolls") \
 X("EVENT_PROP_JPOS_SCROLL_MOVE",					"JPOS Scroll Move") \

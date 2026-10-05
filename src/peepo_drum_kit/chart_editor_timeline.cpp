@@ -1409,6 +1409,556 @@ namespace PeepoDrumKit
 		}
 	}
 
+	static u32 PlaybackTimelineSectionColor(size_t index)
+	{
+		static constexpr u32 colors[] = { 0xFF85AD75, 0xFFE2BE22, 0xFF6CB0E8, 0xFFD89CBE, 0xFF22C6BC, 0xFFC997FF };
+		return colors[index % std::size(colors)];
+	}
+
+	void ChartTimeline::UpdatePlaybackTimelineVisibility(const ChartContext& context)
+	{
+		if (PlaybackVisibilityCourse == context.ChartSelectedCourse && PlaybackVisibilityBranch == context.ChartSelectedBranch && PlaybackVisibilityChartPath == context.ChartFilePath) return;
+		PlaybackHiddenSections.clear();
+		PlaybackVisibilityCourse = context.ChartSelectedCourse;
+		PlaybackVisibilityBranch = context.ChartSelectedBranch;
+		PlaybackVisibilityChartPath = context.ChartFilePath;
+	}
+
+	f32 ChartTimeline::UpdatePlaybackTimelineHeight(b8 visible, f32 headerHeight, f32 upperMinimumHeight)
+	{
+		Regions.PlaybackSplitter.Rect() = Rect::FromTLSize(Regions.Window.BR, vec2(0.0f));
+		IsPlaybackTimelineResizing = false;
+		if (!visible) return 0.0f;
+		if (!*Settings.General.TimelinePlaybackTimeExpanded) return headerHeight;
+		const f32 splitterHeight = GuiScale(6.0f);
+		const f32 maximum = Max(headerHeight, Regions.Window.GetHeight() - upperMinimumHeight - splitterHeight);
+		const f32 minimum = Min(maximum, Max(headerHeight, GuiScale(110.0f)));
+		const f32 preferredHeight = std::isfinite(*Settings.General.TimelinePlaybackTimeHeight) ? *Settings.General.TimelinePlaybackTimeHeight : Settings.General.TimelinePlaybackTimeHeight.Default;
+		f32 height = IsPlaybackTimelineMaximized ? maximum : Clamp(GuiScale(preferredHeight), minimum, maximum);
+		f32 upperHeight = Regions.Window.GetHeight() - splitterHeight - height;
+		Regions.PlaybackSplitter.Rect() = Rect::FromTLSize(vec2(Regions.Window.TL.x, Regions.Window.BR.y - height - splitterHeight), vec2(Regions.Window.GetWidth(), splitterHeight));
+		IsPlaybackTimelineResizing = Gui::SplitterBehavior(ImRect(Regions.PlaybackSplitter.TL, Regions.PlaybackSplitter.BR), Gui::GetID("PlaybackTimelineSplitter"), ImGuiAxis_Y, &upperHeight, &height, upperMinimumHeight, minimum, 0.0f, 0.0f);
+		if (IsPlaybackTimelineResizing)
+		{
+			IsPlaybackTimelineMaximized = false;
+			Settings_Mutable.General.TimelinePlaybackTimeHeight.Value = height / GuiScaleFactorCurrent;
+			Settings_Mutable.General.TimelinePlaybackTimeHeight.SetHasValueIfNotDefault();
+			Settings_Mutable.IsDirty = true;
+			Regions.PlaybackSplitter.Rect() = Rect::FromTLSize(vec2(Regions.Window.TL.x, Regions.Window.BR.y - height - splitterHeight), vec2(Regions.Window.GetWidth(), splitterHeight));
+		}
+		if (Gui::IsItemHovered()) Gui::SetTooltip("%s", UI_Str("TIMELINE_PLAYBACK_RESIZE_HELP"));
+		return height;
+	}
+
+	void ChartTimeline::DrawPlaybackTimeline(ChartContext& context)
+	{
+		UpdatePlaybackTimelineVisibility(context);
+		Gui::SetCursorScreenPos(Regions.Playback.TL + GuiScale(vec2(4.0f)));
+		b8 expanded = *Settings.General.TimelinePlaybackTimeExpanded;
+		if (Gui::ArrowButton("##PlaybackTimelineExpanded", expanded ? ImGuiDir_Down : ImGuiDir_Right))
+		{
+			expanded = !expanded;
+			Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = expanded;
+			Settings_Mutable.General.TimelinePlaybackTimeExpanded.SetHasValueIfNotDefault();
+			Settings_Mutable.IsDirty = true;
+		}
+		Gui::SameLine();
+		Gui::TextUnformatted(UI_Str("TIMELINE_PLAYBACK_TIME_VIEW"));
+		if (Gui::IsItemHovered()) Gui::SetTooltip("%s", UI_Str("TIMELINE_PLAYBACK_HELP"));
+		if (!expanded)
+		{
+			IsPlaybackTimelineScrubbing = IsPlaybackTimelinePanning = false;
+			return;
+		}
+		const Time displayOffset = *Settings.General.DisplayTimeInSongSpace ? context.Chart.SongOffset : Time::Zero();
+		const Time cursorTime = context.GetCursorTime();
+		auto nextToolbarItem = [&](f32 width)
+		{
+			if (Gui::GetItemRectMax().x + Gui::GetStyle().ItemSpacing.x + width < Regions.Playback.BR.x - GuiScale(4.0f)) Gui::SameLine();
+		};
+		nextToolbarItem(Gui::CalcTextSize("-000.000 s").x);
+		Gui::Text("%.3f s", (cursorTime - displayOffset).ToSec());
+		nextToolbarItem(Gui::CalcTextSize(UI_Str("TIMELINE_PLAYBACK_FIT")).x + Gui::GetStyle().FramePadding.x * 2.0f);
+		const b8 fitAll = Gui::Button(UI_Str("TIMELINE_PLAYBACK_FIT"));
+		nextToolbarItem(Gui::CalcTextSize(UI_Str("TIMELINE_PLAYBACK_FOLLOW")).x + Gui::GetFrameHeight() + Gui::GetStyle().ItemInnerSpacing.x);
+		b8 follow = *Settings.General.TimelinePlaybackCursorFollow;
+		if (Gui::Checkbox(UI_Str("TIMELINE_PLAYBACK_FOLLOW"), &follow))
+		{
+			Settings_Mutable.General.TimelinePlaybackCursorFollow.Value = follow;
+			Settings_Mutable.General.TimelinePlaybackCursorFollow.SetHasValueIfNotDefault();
+			Settings_Mutable.IsDirty = true;
+		}
+		nextToolbarItem(Gui::CalcTextSize(UI_Str("TIMELINE_PLAYBACK_SECTIONS")).x + Gui::GetStyle().FramePadding.x * 2.0f);
+		if (Gui::Button(UI_Str("TIMELINE_PLAYBACK_SECTIONS"))) Gui::OpenPopup("PlaybackSections");
+		const cstr sizeButton = IsPlaybackTimelineMaximized ? UI_Str("TIMELINE_PLAYBACK_RESTORE") : UI_Str("TIMELINE_PLAYBACK_ENLARGE");
+		nextToolbarItem(Gui::CalcTextSize(sizeButton).x + Gui::GetStyle().FramePadding.x * 2.0f);
+		if (Gui::Button(sizeButton)) IsPlaybackTimelineMaximized = !IsPlaybackTimelineMaximized;
+		const vec2 toolbarEnd = Gui::GetItemRectMax();
+		const f32 headerHeight = toolbarEnd.y - Regions.Playback.TL.y + GuiScale(4.0f);
+		auto setSectionVisible = [&](const PlaybackTimelineSection& section, b8 shown)
+		{
+			if (shown) PlaybackHiddenSections.erase(section.StartBeat);
+			else PlaybackHiddenSections.insert(section.StartBeat);
+		};
+		if (Gui::BeginPopup("PlaybackSections"))
+		{
+			if (Gui::Button(UI_Str("TIMELINE_PLAYBACK_SHOW_ALL"))) PlaybackHiddenSections.clear();
+			Gui::SameLine();
+			if (Gui::Button(UI_Str("TIMELINE_PLAYBACK_HIDE_ALL")))
+				for (const auto& section : PlaybackData.Sections) setSectionVisible(section, false);
+			if (Gui::Button(UI_Str("TIMELINE_PLAYBACK_CURRENT_ONLY")))
+			{
+				const Beat beat = context.GetCursorBeat();
+				for (const auto& section : PlaybackData.Sections) setSectionVisible(section, beat >= section.StartBeat && beat < section.EndBeat);
+			}
+			Gui::BeginChild("PlaybackSectionsList", GuiScale(vec2(380.0f, 260.0f)), true);
+			for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
+			{
+				const auto& section = PlaybackData.Sections[index];
+				if (section.StartBeat == section.EndBeat) continue;
+				Gui::PushID(static_cast<i32>(index));
+				b8 shown = PlaybackHiddenSections.find(section.StartBeat) == PlaybackHiddenSections.end();
+				char label[128]; sprintf_s(label, UI_Str("TIMELINE_PLAYBACK_SECTION"), index + 1, section.Offset.ToSec());
+				Gui::PushStyleColor(ImGuiCol_Text, PlaybackTimelineSectionColor(index));
+				if (Gui::Checkbox(label, &shown)) setSectionVisible(section, shown);
+				Gui::PopStyleColor();
+				Gui::TextDisabled("%.3f s - %.3f s", (section.StartTime - displayOffset).ToSec(), (section.EndTime - displayOffset).ToSec());
+				Gui::PopID();
+			}
+			Gui::EndChild();
+			Gui::EndPopup();
+		}
+		BuildPlaybackTimelineLayout(PlaybackData, PlaybackHiddenSections, PlaybackLayout);
+
+		for (size_t index = 1; index < PlaybackData.Sections.size(); ++index)
+		{
+			const Time before = PlaybackData.Sections[index - 1].EndTime;
+			const Time after = PlaybackData.Sections[index].StartTime;
+			if (after <= before || cursorTime < before || cursorTime >= after || context.GetCursorBeat() != PlaybackData.Sections[index].StartBeat) continue;
+			char text[96]; sprintf_s(text, UI_Str("TIMELINE_DELAY_WAIT"), (cursorTime - before).ToSec(), (after - before).ToSec());
+			if (Regions.Playback.BR.x - toolbarEnd.x > Gui::CalcTextSize(text).x + Gui::GetStyle().ItemSpacing.x + GuiScale(4.0f))
+			{
+				Gui::SetCursorScreenPos(vec2(toolbarEnd.x + Gui::GetStyle().ItemSpacing.x, toolbarEnd.y - Gui::GetFrameHeight()));
+				Gui::TextUnformatted(text);
+			}
+			const f32 progress = static_cast<f32>((cursorTime - before).ToSec() / (after - before).ToSec());
+			Gui::GetWindowDrawList()->AddRectFilled(Regions.Playback.TL + vec2(0.0f, headerHeight - 3.0f),
+				Regions.Playback.TL + vec2(Regions.Playback.GetWidth() * progress, headerHeight), PlaybackTimelineSectionColor(index));
+			break;
+		}
+		const f32 axisHeight = GuiScale(20.0f);
+		const f32 scrollbarHeight = Gui::GetStyle().ScrollbarSize;
+		const f32 canvasHeight = Regions.Playback.GetHeight() - headerHeight - axisHeight - scrollbarHeight - GuiScale(4.0f);
+		if (canvasHeight <= 2.0f) return;
+		ImDrawList* parentDrawList = Gui::GetWindowDrawList();
+		Gui::SetCursorScreenPos(Regions.Playback.TL + vec2(GuiScale(4.0f), headerHeight + axisHeight));
+		Gui::BeginChild("PlaybackTimelineCanvas", vec2(Regions.Playback.GetWidth() - GuiScale(8.0f), canvasHeight), true, ImGuiWindowFlags_NoScrollWithMouse);
+		ImDrawList* drawList = Gui::GetWindowDrawList();
+		const vec2 rowsTL = Gui::GetCursorScreenPos();
+		const f32 width = Max(Gui::GetContentRegionAvail().x, 1.0f);
+		const Rect viewport = Rect::FromTLSize(vec2(rowsTL.x, Gui::GetWindowPos().y + 1.0f), vec2(width, canvasHeight - 2.0f));
+		const f32 rowHeight = GuiScale(44.0f);
+		auto& course = *context.ChartSelectedCourse;
+		Time minTime = Min(PlaybackData.MinTime, context.Chart.SongOffset);
+		Time maxTime = Max(PlaybackData.MaxTime, context.Chart.SongOffset + context.SongWaveformL.Duration);
+		maxTime = Max(maxTime, minTime + Time::FromSec(1.0));
+		const f32 rowsHeight = Max(static_cast<f32>(PlaybackLayout.LaneCount) * rowHeight, Gui::GetContentRegionAvail().y);
+		Gui::Dummy(vec2(width, rowsHeight));
+		const ImGuiID canvasID = Gui::GetID("PlaybackTimelineInput");
+		Gui::KeepAliveID(canvasID);
+		if (Gui::GetActiveID() == canvasID && !Gui::IsMouseDown(ImGuiMouseButton_Left) && !Gui::IsMouseDown(ImGuiMouseButton_Middle)) Gui::ClearActiveID();
+		const b8 hovered = Gui::IsWindowHovered(IsPlaybackTimelineScrubbing || IsPlaybackTimelinePanning ? ImGuiHoveredFlags_AllowWhenBlockedByActiveItem : ImGuiHoveredFlags_None) && viewport.Contains(Gui::GetMousePos());
+		if (fitAll)
+		{
+			PlaybackCamera.ZoomTarget.x = Clamp(width / ((maxTime - minTime).ToSec_F32() * TimelineCamera::WorldSpaceXUnitsPerSecond), 0.00001f, 100.0f);
+			PlaybackCamera.PositionTarget.x = PlaybackCamera.TimeToWorldSpaceX(minTime) * PlaybackCamera.ZoomTarget.x;
+		}
+		std::optional<Time> selectedTime;
+		for (const auto& note : PlaybackData.Notes)
+			if (note.OriginalNote->IsSelected && PlaybackLayout.SectionLanes[note.SectionIndex] != PlaybackTimelineLayout::HiddenLane) { selectedTime = note.HeadTime; break; }
+		const b8 cursorChanged = !PlaybackLastCursorTime.has_value() || cursorTime != *PlaybackLastCursorTime;
+		const b8 selectionChanged = selectedTime.has_value() && selectedTime != PlaybackSelectedNoteTime;
+		if (!fitAll && !IsPlaybackTimelineScrubbing && !IsPlaybackTimelinePanning &&
+			((context.GetIsPlayback() && follow) || (!context.GetIsPlayback() && cursorChanged) || selectionChanged))
+		{
+			const Time focusTime = selectionChanged && !context.GetIsPlayback() ? *selectedTime : cursorTime;
+			const f32 x = PlaybackCamera.TimeToLocalSpaceX_AtTarget(focusTime);
+			if (!PlaybackLastCursorTime.has_value() || x < 0.0f || x > width * TimelineAutoScrollLockContentWidthFactor)
+				PlaybackCamera.PositionTarget.x = PlaybackCamera.TimeToWorldSpaceX(focusTime) * PlaybackCamera.ZoomTarget.x - width * 0.35f;
+		}
+		PlaybackSelectedNoteTime = selectedTime;
+		PlaybackLastCursorTime = cursorTime;
+		if (hovered && Gui::GetIO().MouseWheel != 0.0f)
+		{
+			if (Gui::GetIO().KeyAlt)
+			{
+				Gui::SetKeyOwner(ImGuiKey_ModAlt, canvasID);
+				const f32 factor = *Settings.General.TimelineZoomFactorPerMouseWheelTick;
+				const f32 zoom = Clamp(PlaybackCamera.ZoomTarget.x * (Gui::GetIO().MouseWheel > 0.0f ? factor : 1.0f / factor), 0.00001f, 100.0f);
+				PlaybackCamera.SetZoomTargetAroundLocalPivot(vec2(zoom, 1.0f), vec2(Gui::GetMousePos().x - rowsTL.x, 0.0f));
+			}
+			else if (Gui::GetIO().KeyCtrl)
+			{
+				Gui::SetKeyOwner(ImGuiKey_ModCtrl, canvasID);
+				Gui::SetScrollY(Gui::GetScrollY() - Gui::GetIO().MouseWheel * rowHeight);
+			}
+			else
+			{
+				f32 scrollStep = Gui::GetIO().KeyShift ? *Settings.General.TimelineScrollDistancePerMouseWheelTickFast : *Settings.General.TimelineScrollDistancePerMouseWheelTick;
+				if (*Settings.General.TimelineScrollInvertMouseWheel) scrollStep *= -1.0f;
+				PlaybackCamera.PositionTarget.x += Gui::GetIO().MouseWheel * scrollStep;
+			}
+		}
+		if (hovered && Gui::IsMouseClicked(ImGuiMouseButton_Middle))
+		{
+			IsPlaybackTimelinePanning = true;
+			Gui::SetActiveID(canvasID, Gui::GetCurrentWindow());
+		}
+		if (!Gui::IsMouseDown(ImGuiMouseButton_Middle)) IsPlaybackTimelinePanning = false;
+		if (IsPlaybackTimelinePanning)
+		{
+			Gui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			PlaybackCamera.PositionTarget.x -= Gui::GetIO().MouseDelta.x;
+		}
+		const f32 minScroll = PlaybackCamera.TimeToWorldSpaceX(minTime) * PlaybackCamera.ZoomTarget.x - GuiScale(8.0f);
+		const f32 maxScroll = Max(minScroll, PlaybackCamera.TimeToWorldSpaceX(maxTime) * PlaybackCamera.ZoomTarget.x - width + GuiScale(8.0f));
+		PlaybackCamera.PositionTarget.x = Clamp(PlaybackCamera.PositionTarget.x, minScroll, maxScroll);
+		PlaybackCamera.UpdateAnimations();
+		if (fitAll)
+		{
+			PlaybackCamera.PositionCurrent = PlaybackCamera.PositionCurrentScrollBar = PlaybackCamera.PositionTarget;
+			PlaybackCamera.ZoomCurrent = PlaybackCamera.ZoomTarget;
+		}
+		auto screenX = [&](Time time) { return rowsTL.x + PlaybackCamera.TimeToLocalSpaceX(time); };
+		auto laneY = [&](size_t lane) { return rowsTL.y + static_cast<f32>(lane) * rowHeight + rowHeight * 0.72f; };
+		drawList->AddRectFilled(viewport.TL, viewport.BR, TimelineBackgroundColor);
+
+		const auto& waveform = context.SongWaveformL;
+		if (!waveform.IsEmpty())
+		{
+			const Time timePerPixel = PlaybackCamera.TimePerScreenPixel();
+			const auto& mip = waveform.FindClosestMip(timePerPixel);
+			for (i32 pixel = 0; pixel < width;)
+			{
+				const i32 firstPixel = pixel;
+				CustomDraw::WaveformChunk chunk;
+				for (i32 part = 0; part < CustomDraw::WaveformPixelsPerChunk; ++part, ++pixel)
+				{
+					const Time sample = PlaybackCamera.LocalSpaceXToTime(static_cast<f32>(pixel)) - context.Chart.SongOffset;
+					chunk.PerPixelAmplitude[part] = sample < Time::Zero() || sample > waveform.Duration ? 0.0f
+						: context.SongWaveformFadeAnimationCurrent * waveform.GetAmplitudeAt(mip, sample, timePerPixel);
+				}
+				CustomDraw::DrawWaveformChunk(drawList, Rect::FromTLSize(viewport.TL + vec2(static_cast<f32>(firstPixel), 0.0f), vec2(static_cast<f32>(CustomDraw::WaveformPixelsPerChunk), viewport.GetHeight())), Gui::ColorU32WithAlpha(TimelineWaveformBaseColor, 0.35f), chunk);
+			}
+		}
+
+		const f64 rawStep = Max(PlaybackCamera.TimePerScreenPixel().ToSec() * GuiScale(90.0f), 0.000001);
+		const f64 power = std::pow(10.0, std::floor(std::log10(rawStep)));
+		const f64 ratio = rawStep / power;
+		const f64 step = power * (ratio <= 1.0 ? 1.0 : ratio <= 2.0 ? 2.0 : ratio <= 5.0 ? 5.0 : 10.0);
+		const f64 firstTick = std::ceil((PlaybackCamera.LocalSpaceXToTime(0.0f) - displayOffset).ToSec() / step) * step;
+		const f64 lastTick = (PlaybackCamera.LocalSpaceXToTime(width) - displayOffset).ToSec();
+		for (f64 tick = firstTick; tick <= lastTick; tick += step)
+		{
+			const f32 x = screenX(Time::FromSec(tick) + displayOffset);
+			drawList->AddLine(vec2(x, viewport.TL.y), vec2(x, viewport.BR.y), TimelineGridBarLineColor);
+			char text[48]; sprintf_s(text, "%g s", std::abs(tick) < step * 0.001 ? 0.0 : tick);
+			parentDrawList->AddText(vec2(x + 2.0f, Regions.Playback.TL.y + headerHeight), TimelineItemTextColor, text);
+		}
+		b8 sectionControlsHovered = false;
+		for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
+		{
+			const auto& section = PlaybackData.Sections[index];
+			const size_t lane = PlaybackLayout.SectionLanes[index];
+			if (lane == PlaybackTimelineLayout::HiddenLane) continue;
+			const f32 left = screenX(section.StartTime), right = screenX(section.EndTime);
+			if (right < viewport.TL.x || left > viewport.BR.x || section.StartBeat == section.EndBeat) continue;
+			const f32 y = rowsTL.y + static_cast<f32>(lane) * rowHeight;
+			if (y + rowHeight < viewport.TL.y || y > viewport.BR.y) continue;
+			const u32 color = PlaybackTimelineSectionColor(index);
+			drawList->AddRectFilled(vec2(left, y), vec2(right, y + rowHeight), Gui::ColorU32WithAlpha(color, 0.10f));
+			drawList->AddLine(vec2(left, y + 2.0f), vec2(right, y + 2.0f), color, 2.0f);
+			char text[96]; sprintf_s(text, UI_Str("TIMELINE_PLAYBACK_SECTION"), index + 1, section.Offset.ToSec());
+			f32 labelX = Max(left + 3.0f, viewport.TL.x + 3.0f);
+			if (Min(right, viewport.BR.x) - labelX > Gui::GetFrameHeight() + GuiScale(3.0f))
+			{
+				Gui::SetCursorScreenPos(vec2(labelX, y + 2.0f));
+				Gui::PushID(static_cast<i32>(index));
+				Gui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+				if (Gui::ArrowButton("##ClosePlaybackSection", ImGuiDir_Down)) setSectionVisible(section, false);
+				Gui::PopStyleColor();
+				if (Gui::IsItemHovered())
+				{
+					sectionControlsHovered = true;
+					Gui::SetTooltip("%s", UI_Str("TIMELINE_PLAYBACK_CLOSE_SECTION"));
+				}
+				labelX = Gui::GetItemRectMax().x + 2.0f;
+				Gui::PopID();
+			}
+			drawList->PushClipRect(vec2(Max(left, viewport.TL.x), y), vec2(Min(right, viewport.BR.x), y + rowHeight), true);
+			drawList->AddText(vec2(labelX, y + 3.0f), color, text);
+			drawList->PopClipRect();
+		}
+		const PlaybackTimelineNote* hoveredNote = nullptr;
+		b8 selectionLinkDrawn = false;
+		f32 nearestDistance = F32Max;
+		for (const auto& note : PlaybackData.Notes)
+		{
+			const size_t lane = PlaybackLayout.SectionLanes[note.SectionIndex];
+			if (lane == PlaybackTimelineLayout::HiddenLane) continue;
+			const vec2 head(screenX(note.HeadTime), laneY(lane)), tail(screenX(note.TailTime), head.y);
+			if (head.y < viewport.TL.y - GuiScale(12.0f) || head.y > viewport.BR.y + GuiScale(12.0f)) continue;
+			if (Max(head.x, tail.x) < viewport.TL.x - GuiScale(12.0f) || Min(head.x, tail.x) > viewport.BR.x + GuiScale(12.0f)) continue;
+			if (note.OriginalNote->BeatDuration > Beat::Zero()) drawList->AddLine(head, tail, PlaybackTimelineSectionColor(note.SectionIndex), GuiScale(5.0f));
+			DrawTimelineNote(context.Gfx, drawList, head, 0.6f, note.OriginalNote->Type);
+			if (note.OriginalNote->IsSelected) drawList->AddCircle(head, GuiScale(10.0f), PlaybackTimelineSectionColor(note.SectionIndex), 16, 2.0f);
+			if (!selectionLinkDrawn && note.OriginalNote->IsSelected && viewport.Contains(head))
+			{
+				const b8 branchedBeat = IsBeatInsideBranchRange(course, note.OriginalNote->BeatTime);
+				ForEachTimelineRow(*this, course, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+				{
+					if (!((row.RowType == TimelineRowType::Notes && !branchedBeat) ||
+						(IsBranchNoteRow(row.RowType) && branchedBeat && TimelineRowToBranchType(row.RowType) == context.ChartSelectedBranch))) return;
+					const vec2 source = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(note.OriginalNote->BeatTime) + note.OriginalNote->TimeOffset), row.LocalY + row.LocalHeight * 0.5f));
+					if (!Regions.Content.Contains(source)) return;
+					ImDrawList* links = Gui::GetForegroundDrawList();
+					links->PushClipRect(Regions.Window.TL, Regions.Window.BR, true);
+					const u32 color = PlaybackTimelineSectionColor(note.SectionIndex);
+					links->AddCircle(source, GuiScale(12.0f), color, 16, 2.0f);
+					links->AddBezierCubic(source, vec2(source.x, Regions.ContentScrollbarX.BR.y), vec2(head.x, Regions.Playback.TL.y), head, Gui::ColorU32WithAlpha(color, 0.35f), 1.0f);
+					links->PopClipRect();
+					selectionLinkDrawn = true;
+				});
+			}
+			const vec2 mouse = Gui::GetMousePos();
+			const f32 distance = Absolute(mouse.x - Clamp(mouse.x, Min(head.x, tail.x), Max(head.x, tail.x)));
+			if (hovered && Absolute(mouse.y - head.y) <= GuiScale(10.0f) && distance <= GuiScale(10.0f) && distance < nearestDistance)
+			{
+				hoveredNote = &note;
+				nearestDistance = distance;
+			}
+		}
+		if (PlaybackLayout.LaneCount == 0) drawList->AddText(viewport.TL + GuiScale(vec2(8.0f)), TimelineItemTextColor, UI_Str("TIMELINE_PLAYBACK_SECTIONS_HIDDEN"));
+		const b8 canUseCanvas = hovered && !sectionControlsHovered && (Gui::GetActiveID() == 0 || Gui::GetActiveID() == canvasID);
+		if (hoveredNote && canUseCanvas)
+			Gui::SetTooltip(UI_Str("TIMELINE_PLAYBACK_NOTE"), (hoveredNote->HeadTime - displayOffset).ToSec(), hoveredNote->OriginalNote->BeatTime.BeatsFraction(), hoveredNote->SectionIndex + 1, PlaybackData.Sections[hoveredNote->SectionIndex].Offset.ToSec());
+		else if (canUseCanvas && !Gui::IsMouseDown(ImGuiMouseButton_Left)) Gui::SetTooltip("%s", UI_Str("TIMELINE_PLAYBACK_HELP"));
+		if (canUseCanvas && Gui::IsMouseClicked(ImGuiMouseButton_Left))
+		{
+			Gui::SetActiveID(canvasID, Gui::GetCurrentWindow());
+			if (hoveredNote)
+			{
+				if (context.TestPlayActive) context.TestPlaySeekTime = hoveredNote->HeadTime;
+				else
+				{
+					if (!Gui::GetIO().KeyShift) ExecuteSelectionAction(context, SelectionAction::UnselectAll, {});
+					hoveredNote->OriginalNote->IsSelected = Gui::GetIO().KeyShift ? !hoveredNote->OriginalNote->IsSelected : true;
+					context.SetCursorTimeAtBeat(hoveredNote->HeadTime, hoveredNote->OriginalNote->BeatTime);
+					ScrollToBeat(context, hoveredNote->OriginalNote->BeatTime);
+				}
+				IsPlaybackTimelineScrubbing = false;
+			}
+			else IsPlaybackTimelineScrubbing = true;
+		}
+		if (!Gui::IsMouseDown(ImGuiMouseButton_Left)) IsPlaybackTimelineScrubbing = false;
+		if (IsPlaybackTimelineScrubbing)
+		{
+			const Time time = Clamp(PlaybackCamera.LocalSpaceXToTime(Gui::GetMousePos().x - rowsTL.x), minTime, maxTime);
+			if (context.TestPlayActive) context.TestPlaySeekTime = time;
+			else
+			{
+				const f32 mouseY = Gui::GetMousePos().y - rowsTL.y;
+				std::optional<Beat> sourceBeat;
+				for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
+				{
+					const auto& section = PlaybackData.Sections[index];
+					const size_t lane = PlaybackLayout.SectionLanes[index];
+					if (lane == PlaybackTimelineLayout::HiddenLane) continue;
+					if (time >= section.StartTime && time < section.EndTime && mouseY >= static_cast<f32>(lane) * rowHeight && mouseY < static_cast<f32>(lane + 1) * rowHeight)
+						{ sourceBeat = course.TempoMap.TimeToBeat(time - section.Offset); break; }
+				}
+				if (sourceBeat.has_value()) context.SetCursorTimeAtBeat(time, *sourceBeat);
+				else context.SetCursorTime(time);
+				ScrollToBeat(context, context.GetCursorBeat());
+			}
+		}
+		if (context.TestPlayActive && context.TestPlaySeekTime) context.TestPlaySmoothCursor = context.TestPlayFollowCursor = true;
+		const f32 cursorX = screenX(context.GetCursorTime());
+		drawList->AddLine(vec2(cursorX, viewport.TL.y), vec2(cursorX, viewport.BR.y), TimelineCursorColor, GuiScale(2.0f));
+		Gui::EndChild();
+		Gui::SetCursorScreenPos(vec2(rowsTL.x, Regions.Playback.BR.y - scrollbarHeight - GuiScale(2.0f)));
+		Gui::Dummy(vec2(width, scrollbarHeight));
+		i64 scroll = static_cast<i64>(PlaybackCamera.PositionCurrent.x - minScroll);
+		const i64 scrollMax = static_cast<i64>(maxScroll - minScroll + width);
+		if (Gui::ScrollbarEx(ImRect(vec2(rowsTL.x, Regions.Playback.BR.y - scrollbarHeight - GuiScale(2.0f)), vec2(rowsTL.x + width, Regions.Playback.BR.y - GuiScale(2.0f))), Gui::GetID("PlaybackTimelineScrollbar"), ImGuiAxis_X, &scroll, static_cast<i64>(width), Max(scrollMax, static_cast<i64>(width)), ImDrawFlags_None))
+			PlaybackCamera.PositionCurrent.x = PlaybackCamera.PositionTarget.x = minScroll + static_cast<f32>(scroll);
+	}
+
+	b8 ChartTimeline::RunPlaybackTimelineSelfTest(std::string& outError)
+	{
+		outError.clear();
+		ImGuiContext* previousContext = Gui::GetCurrentContext();
+		ImGuiContext* testContext = Gui::CreateContext();
+		Gui::SetCurrentContext(testContext);
+		defer { Gui::DestroyContext(testContext); Gui::SetCurrentContext(previousContext); };
+		auto& io = Gui::GetIO();
+		io.IniFilename = io.LogFilename = nullptr;
+		io.DisplaySize = vec2(1280.0f, 720.0f);
+		io.DeltaTime = 1.0f / 60.0f;
+		io.ConfigInputTrickleEventQueue = false;
+		io.ConfigErrorRecoveryEnableAssert = io.ConfigErrorRecoveryEnableDebugLog = io.ConfigErrorRecoveryEnableTooltip = false;
+		testContext->ErrorCallbackUserData = &outError;
+		testContext->ErrorCallback = [](ImGuiContext*, void* userData, cstr message)
+		{
+			auto& error = *static_cast<std::string*>(userData);
+			if (!error.empty()) error += '\n';
+			error += message;
+		};
+		unsigned char* pixels;
+		i32 atlasWidth, atlasHeight;
+		io.Fonts->GetTexDataAsRGBA32(&pixels, &atlasWidth, &atlasHeight);
+		const b8 expandedSetting = *Settings.General.TimelinePlaybackTimeExpanded;
+		defer { Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = expandedSetting; };
+		const b8 settingsWereDirty = Settings.IsDirty;
+		defer { Settings_Mutable.IsDirty = settingsWereDirty; };
+		const f32 heightSetting = *Settings.General.TimelinePlaybackTimeHeight;
+		const b8 heightHasValue = Settings.General.TimelinePlaybackTimeHeight.HasValue;
+		defer { Settings_Mutable.General.TimelinePlaybackTimeHeight.Value = heightSetting; Settings_Mutable.General.TimelinePlaybackTimeHeight.HasValue = heightHasValue; };
+		std::vector<std::string> fixtures = { "1000,\n#DELAY 1\n2000,", "0001,\n#DELAY -2\n2000,",
+			"#DELAY -1\n1000,", "1000,\n#DELAY -2\n2000,\n#DELAY -2\n3000," };
+		std::string manySections;
+		for (i32 index = 0; index < 32; ++index) manySections += "1000,\n#DELAY -2\n";
+		fixtures.push_back(manySections);
+		struct ViewCase { f32 Height, Width; b8 Expanded; i32 HiddenMode; };
+		std::vector<ViewCase> viewCases;
+		for (f32 height : { 500.0f, 200.0f, 80.0f, 40.0f })
+			for (f32 width : { 960.0f, 360.0f })
+				for (i32 hiddenMode = 0; hiddenMode < 4; ++hiddenMode)
+				{
+					viewCases.push_back({ height, width, true, hiddenMode });
+					viewCases.push_back({ height, width, false, hiddenMode });
+				}
+		viewCases.push_back({ 200.0f, 960.0f, true, 4 });
+		for (const auto& body : fixtures)
+		{
+			ChartContext context;
+			TJA::ErrorList parseErrors;
+			const std::string text = std::string("TITLE:Timeline delay test\nBPM:120\nCOURSE:Oni\n#START\n") + body + "\n#END\n";
+			const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(text)), parseErrors);
+			if (!parseErrors.Errors.empty() || !CreateChartProjectFromTJA(parsed, context.Chart) || context.Chart.Courses.empty())
+				{ outError = "Unable to import timeline test chart"; return false; }
+			context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
+			ChartTimeline timeline;
+			BuildPlaybackTimelineData(*context.ChartSelectedCourse, BranchType::Normal, Beat::FromBars(4), timeline.PlaybackData);
+			timeline.UpdatePlaybackTimelineVisibility(context);
+			for (const auto& view : viewCases)
+			{
+				timeline.PlaybackHiddenSections.clear();
+				if (view.HiddenMode == 1)
+					for (const auto& section : timeline.PlaybackData.Sections)
+						if (section.StartBeat != section.EndBeat) { timeline.PlaybackHiddenSections.insert(section.StartBeat); break; }
+				if (view.HiddenMode == 2 || view.HiddenMode == 3)
+					for (const auto& section : timeline.PlaybackData.Sections) timeline.PlaybackHiddenSections.insert(section.StartBeat);
+				if (view.HiddenMode == 3) timeline.PlaybackHiddenSections.erase(timeline.PlaybackData.Sections.back().StartBeat);
+				Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = view.Expanded;
+				const Beat originalBeat = context.GetCursorBeat();
+				const Time originalTime = context.GetCursorTime();
+				vec2 closeButtonPosition;
+				io.AddMousePosEvent(-F32Max, -F32Max);
+				for (i32 frame = 0; frame < (view.HiddenMode == 4 ? 5 : 2); ++frame)
+				{
+					if (view.HiddenMode == 4)
+					{
+						if (frame == 1) io.AddMousePosEvent(closeButtonPosition.x, closeButtonPosition.y);
+						if (frame == 2) io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+						if (frame == 3) io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+					}
+					Gui::NewFrame();
+					if (frame == 0 && !testContext->OpenPopupStack.empty()) Gui::ClosePopupToLevel(0, true);
+					Gui::SetNextWindowPos(vec2(0.0f));
+					Gui::SetNextWindowSize(vec2(view.Width + 40.0f, Max(400.0f, view.Height + 140.0f)));
+					Gui::Begin("Timeline DELAY self-test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+					timeline.Regions.Window.Rect() = Rect::FromTLSize(Gui::GetCursorScreenPos(), Gui::GetContentRegionAvail());
+					timeline.Regions.Playback.Rect() = Rect::FromTLSize(timeline.Regions.Window.TL + vec2(0.0f, 100.0f), vec2(view.Width, view.Height));
+					Gui::SetCursorScreenPos(timeline.Regions.Playback.TL);
+					Gui::PushStyleVar(ImGuiStyleVar_WindowPadding, vec2(0.0f));
+					Gui::BeginChild("TimelinePlayback", timeline.Regions.Playback.GetSize(), true, ImGuiWindowFlags_NoScrollbar);
+					Gui::PopStyleVar();
+					if (view.Expanded && view.HiddenMode == 2 && frame == 0) Gui::OpenPopup("PlaybackSections");
+					timeline.DrawPlaybackTimeline(context);
+					Gui::EndChild();
+					Gui::End();
+					Gui::Render();
+					if (!outError.empty()) return false;
+					if (view.Expanded && view.HiddenMode == 2 && timeline.PlaybackLayout.LaneCount != 0) { outError = "Closed sections still occupy playback rows"; return false; }
+					if (view.HiddenMode == 4 && frame == 0)
+					{
+						for (ImGuiWindow* window : testContext->Windows)
+							if (window->Active && std::string_view(window->Name).find("PlaybackTimelineCanvas") != std::string_view::npos)
+							{
+								const auto section = std::find_if(timeline.PlaybackData.Sections.begin(), timeline.PlaybackData.Sections.end(), [](const PlaybackTimelineSection& section) { return section.StartBeat != section.EndBeat; });
+								const size_t index = static_cast<size_t>(section - timeline.PlaybackData.Sections.begin());
+								const vec2 rowsTL = window->DC.CursorStartPos;
+								closeButtonPosition = rowsTL + vec2(Max(timeline.PlaybackCamera.TimeToLocalSpaceX(section->StartTime) + 3.0f, 3.0f) + Gui::GetFrameHeight() * 0.5f,
+									static_cast<f32>(timeline.PlaybackLayout.SectionLanes[index]) * GuiScale(44.0f) + 2.0f + Gui::GetFrameHeight() * 0.5f);
+							}
+					}
+				}
+				if (view.HiddenMode == 4 && (timeline.PlaybackHiddenSections.empty() || timeline.IsPlaybackTimelineScrubbing || context.GetCursorBeat() != originalBeat || context.GetCursorTime() != originalTime))
+					{ outError = "Closing a playback section failed or changed the chart cursor"; return false; }
+			}
+		}
+		ChartTimeline resizeTimeline;
+		Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = true;
+		Settings_Mutable.General.TimelinePlaybackTimeHeight.Value = 200.0f;
+		Settings_Mutable.IsDirty = false;
+		io.AddMousePosEvent(-F32Max, -F32Max);
+		auto drawResizeFrame = [&](b8 visible = true)
+		{
+			Gui::NewFrame();
+			if (!testContext->OpenPopupStack.empty()) Gui::ClosePopupToLevel(0, true);
+			Gui::SetNextWindowPos(vec2(0.0f));
+			Gui::SetNextWindowSize(vec2(900.0f, 600.0f));
+			Gui::Begin("Playback resize self-test", nullptr, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar);
+			resizeTimeline.Regions.Window.Rect() = Rect::FromTLSize(Gui::GetCursorScreenPos(), Gui::GetContentRegionAvail());
+			Gui::PushStyleVar(ImGuiStyleVar_WindowPadding, vec2(0.0f));
+			Gui::BeginChild("TimelineWindow", resizeTimeline.Regions.Window.GetSize(), true, ImGuiWindowFlags_NoScrollbar);
+			Gui::PopStyleVar();
+			const f32 height = resizeTimeline.UpdatePlaybackTimelineHeight(visible, Gui::GetFrameHeight() + GuiScale(8.0f), GuiScale(100.0f));
+			Gui::Dummy(resizeTimeline.Regions.Window.GetSize());
+			Gui::EndChild();
+			Gui::End();
+			Gui::Render();
+			return height;
+		};
+		drawResizeFrame();
+		const f32 originalHeight = drawResizeFrame();
+		const vec2 splitterCenter = resizeTimeline.Regions.PlaybackSplitter.GetCenter();
+		io.AddMousePosEvent(splitterCenter.x, splitterCenter.y);
+		drawResizeFrame();
+		io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+		drawResizeFrame();
+		io.AddMousePosEvent(splitterCenter.x, splitterCenter.y - 80.0f);
+		if (drawResizeFrame() < originalHeight + 60.0f) { outError = "Dragging the playback divider did not increase its height"; return false; }
+		if (!Settings.IsDirty || !Settings.General.TimelinePlaybackTimeHeight.HasValue) { outError = "Dragging the playback divider did not mark its height for saving"; return false; }
+		io.AddMousePosEvent(splitterCenter.x, -1000.0f);
+		const f32 maximumHeight = resizeTimeline.Regions.Window.GetHeight() - GuiScale(106.0f);
+		if (Absolute(drawResizeFrame() - maximumHeight) > 1.0f) { outError = "Playback divider exceeded its upper limit"; return false; }
+		io.AddMousePosEvent(splitterCenter.x, 1000.0f);
+		if (Absolute(drawResizeFrame() - GuiScale(110.0f)) > 1.0f) { outError = "Playback divider exceeded its lower limit"; return false; }
+		io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+		const f32 restoredHeight = drawResizeFrame();
+		resizeTimeline.IsPlaybackTimelineMaximized = true;
+		if (drawResizeFrame() <= restoredHeight) { outError = "Enlarging the playback view did not increase its height"; return false; }
+		resizeTimeline.IsPlaybackTimelineMaximized = false;
+		if (Absolute(drawResizeFrame() - restoredHeight) > 1.0f) { outError = "Restoring the playback view changed its preferred height"; return false; }
+		Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = false;
+		if (Absolute(drawResizeFrame() - (Gui::GetFrameHeight() + GuiScale(8.0f))) > 1.0f || resizeTimeline.Regions.PlaybackSplitter.GetHeight() != 0.0f)
+			{ outError = "Collapsing the playback view left an active divider"; return false; }
+		if (drawResizeFrame(false) != 0.0f) { outError = "Hidden playback view still occupies space"; return false; }
+		return outError.empty();
+	}
+
 	void ChartTimeline::DrawGui(ChartContext& context, b8 hasGamePreviewFocus)
 	{
 		UpdateInputAtStartOfFrame(context, hasGamePreviewFocus);
@@ -1426,12 +1976,13 @@ namespace PeepoDrumKit
 		const f32 scrollbarXHeight = Gui::GetStyle().ScrollbarSize * 3.0f;
 		const f32 scrollbarYWidth = Gui::GetStyle().ScrollbarSize;
 		Regions.Window.Rect() = Rect::FromTLSize(Gui::GetCursorScreenPos(), Gui::GetContentRegionAvail());
-		Regions.SidebarHeader.Rect() = Rect::FromTLSize(Regions.Window.TL, vec2(sidebarWidth, sidebarHeight));
-		Regions.Sidebar.Rect() = Rect::FromTLSize(Regions.SidebarHeader.GetBL(), vec2(sidebarWidth, Regions.Window.GetHeight() - sidebarHeight));
-		Regions.ContentHeader.Rect() = Rect(Regions.SidebarHeader.GetTR(), vec2(Regions.Window.BR.x, Regions.SidebarHeader.BR.y));
-		Regions.Content.Rect() = Rect::FromTLSize(Regions.ContentHeader.GetBL(), Max(vec2(0.0f), vec2(Regions.Window.GetWidth() - sidebarWidth - scrollbarYWidth, Regions.Window.GetHeight() - sidebarHeight - scrollbarXHeight)));
-		Regions.ContentScrollbarY.Rect() = Rect::FromTLSize(Regions.Content.GetTR(), vec2(scrollbarYWidth, Regions.Content.GetHeight()));
-		Regions.ContentScrollbarX.Rect() = Rect::FromTLSize(Regions.Content.GetBL(), vec2(Regions.ContentHeader.GetWidth(), scrollbarXHeight));
+		const auto& course = *context.ChartSelectedCourse;
+		const b8 hasDelay = !course.DelayChanges_Normal.empty() || !course.DelayChanges_Expert.empty() || !course.DelayChanges_Master.empty();
+		if (hasDelay)
+			BuildPlaybackTimelineData(*context.ChartSelectedCourse, context.ChartSelectedBranch, course.TempoMap.TimeToBeat(context.GetUsedDurationFast()), PlaybackData);
+		const f32 playbackHeaderHeight = Gui::GetFrameHeight() + GuiScale(8.0f);
+		const f32 upperMinimumHeight = sidebarHeight + scrollbarXHeight + GuiScale(80.0f);
+		const b8 showPlaybackTimeline = hasDelay && Regions.Window.GetHeight() > upperMinimumHeight + playbackHeaderHeight + GuiScale(6.0f);
 
 		auto timelineRegionBegin = [](const Rect region, cstr name, b8 padding = false)
 		{
@@ -1452,6 +2003,16 @@ namespace PeepoDrumKit
 
 		timelineRegionBegin(Regions.Window, "TimelineWindow");
 		{
+			const f32 playbackHeight = UpdatePlaybackTimelineHeight(showPlaybackTimeline, playbackHeaderHeight, upperMinimumHeight);
+			const f32 reservedPlaybackHeight = playbackHeight + Regions.PlaybackSplitter.GetHeight();
+			Regions.Playback.Rect() = Rect::FromTLSize(vec2(Regions.Window.TL.x, Regions.Window.BR.y - playbackHeight), vec2(Regions.Window.GetWidth(), playbackHeight));
+			Regions.Playback.IsHovered = Regions.Playback.IsFocused = false;
+			Regions.SidebarHeader.Rect() = Rect::FromTLSize(Regions.Window.TL, vec2(sidebarWidth, sidebarHeight));
+			Regions.Sidebar.Rect() = Rect::FromTLSize(Regions.SidebarHeader.GetBL(), vec2(sidebarWidth, Regions.Window.GetHeight() - sidebarHeight - reservedPlaybackHeight));
+			Regions.ContentHeader.Rect() = Rect(Regions.SidebarHeader.GetTR(), vec2(Regions.Window.BR.x, Regions.SidebarHeader.BR.y));
+			Regions.Content.Rect() = Rect::FromTLSize(Regions.ContentHeader.GetBL(), Max(vec2(0.0f), vec2(Regions.Window.GetWidth() - sidebarWidth - scrollbarYWidth, Regions.Window.GetHeight() - sidebarHeight - scrollbarXHeight - reservedPlaybackHeight)));
+			Regions.ContentScrollbarY.Rect() = Rect::FromTLSize(Regions.Content.GetTR(), vec2(scrollbarYWidth, Regions.Content.GetHeight()));
+			Regions.ContentScrollbarX.Rect() = Rect::FromTLSize(Regions.Content.GetBL(), vec2(Regions.ContentHeader.GetWidth(), scrollbarXHeight));
 			const ImGuiHoveredFlags hoveredFlags = BoxSelection.IsActive ? ImGuiHoveredFlags_AllowWhenBlockedByActiveItem : ImGuiHoveredFlags_None;
 
 			TimelineRegionDrawers drawers = {};
@@ -1485,7 +2046,7 @@ namespace PeepoDrumKit
 			drawers.DrawTimelineContentScrollbarY = makeDrawer(Regions.ContentScrollbarY, "TimelineContentScrollbarY", [] {});
 
 			drawers.HideTimelineContentScrollbarY = [&]() {
-				Regions.Content.Rect() = Rect::FromTLSize(Regions.ContentHeader.GetBL(), Max(vec2(0.0f), vec2(Regions.Window.GetWidth() - sidebarWidth, Regions.Window.GetHeight() - sidebarHeight - scrollbarXHeight)));
+				Regions.Content.Rect() = Rect::FromTLSize(Regions.ContentHeader.GetBL(), Max(vec2(0.0f), vec2(Regions.Window.GetWidth() - sidebarWidth, Regions.Window.GetHeight() - sidebarHeight - scrollbarXHeight - reservedPlaybackHeight)));
 				Regions.ContentScrollbarY.Rect() = Rect::FromTLSize(Regions.Content.GetTR(), vec2(0, Regions.Content.GetHeight()));
 			};
 
@@ -1500,6 +2061,16 @@ namespace PeepoDrumKit
 				Gui::EndDisabled();
 				Gui::PopStyleVar();
 			}
+			if (showPlaybackTimeline)
+			{
+				timelineRegionBegin(Regions.Playback, "TimelinePlayback");
+				Regions.Playback.IsHovered = Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+				Regions.Playback.IsFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+				DrawPlaybackTimeline(context);
+				timelineRegionEnd();
+			}
+			else
+				IsPlaybackTimelineScrubbing = IsPlaybackTimelinePanning = false;
 		}
 		timelineRegionEnd();
 	}
@@ -2707,6 +3278,14 @@ namespace PeepoDrumKit
 
 		MousePosLastFrame = MousePosThisFrame;
 		MousePosThisFrame = Gui::GetMousePos();
+		if ((Regions.Playback.GetHeight() > 0.0f && Regions.Playback.Contains(MousePosThisFrame))
+			|| (Regions.PlaybackSplitter.GetHeight() > 0.0f && Regions.PlaybackSplitter.Contains(MousePosThisFrame))
+			|| IsPlaybackTimelineScrubbing || IsPlaybackTimelinePanning || IsPlaybackTimelineResizing)
+		{
+			Regions.Sidebar.IsHovered = Regions.SidebarHeader.IsHovered = false;
+			Regions.Content.IsHovered = Regions.ContentHeader.IsHovered = false;
+			Regions.ContentScrollbarX.IsHovered = Regions.ContentScrollbarY.IsHovered = false;
+		}
 
 		// NOTE: Mouse scroll / zoom
 		if (!ApproxmiatelySame(Gui::GetIO().MouseWheel, 0.0f))
@@ -4737,6 +5316,27 @@ namespace PeepoDrumKit
 		if (TimelineWaveformDrawOrder == WaveformDrawOrder::Foreground && !context.SongWaveformL.IsEmpty()) {
 			DrawListContent->ChannelsSetCurrent(1);
 			DrawTimelineContentWaveform(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, DrawListContent, context.Chart.SongOffset, context.SongWaveformL, context.SongWaveformR, context.SongWaveformFadeAnimationCurrent);
+		}
+
+		if (!context.ChartSelectedCourse->GetDelayChanges(context.ChartSelectedBranch).empty())
+		{
+			DrawListContent->ChannelsSetCurrent(0);
+			DrawListContentHeader->ChannelsSetCurrent(1);
+			for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
+			{
+				const auto& section = PlaybackData.Sections[index];
+				const f32 left = Camera.TimeToLocalSpaceX(context.BeatToTime(section.StartBeat));
+				const f32 right = Camera.TimeToLocalSpaceX(context.BeatToTime(section.EndBeat));
+				if (right < 0.0f || left > Regions.Content.GetWidth()) continue;
+				const u32 color = PlaybackTimelineSectionColor(index);
+				DrawListContent->AddRectFilled(LocalToScreenSpace(vec2(left, 0.0f)), LocalToScreenSpace(vec2(right, Regions.Content.GetHeight())), Gui::ColorU32WithAlpha(color, 0.045f));
+				DrawListContentHeader->AddRectFilled(LocalToScreenSpace_ContentHeader(vec2(left, Regions.ContentHeader.GetHeight() - GuiScale(3.0f))),
+					LocalToScreenSpace_ContentHeader(vec2(right, Regions.ContentHeader.GetHeight())), color);
+				if (index == 0) continue;
+				DrawListContent->AddLine(LocalToScreenSpace(vec2(left, 0.0f)), LocalToScreenSpace(vec2(left, Regions.Content.GetHeight())), Gui::ColorU32WithAlpha(color, 0.6f), 2.0f);
+				if (Regions.ContentHeader.IsHovered && Absolute(MousePosThisFrame.x - LocalToScreenSpace(vec2(left, 0.0f)).x) < GuiScale(5.0f))
+					Gui::SetTooltip(UI_Str("TIMELINE_DELAY_BOUNDARY"), (section.Offset - PlaybackData.Sections[index - 1].Offset).ToSec(), section.Offset.ToSec());
+			}
 		}
 
 		// NOTE: Cursor foreground

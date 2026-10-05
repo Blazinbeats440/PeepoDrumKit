@@ -608,6 +608,8 @@ namespace PeepoDrumKit
 			X(General.CommentsShowCourseTextBox, "comments_show_course_text_box");
 			X(General.CommentsShowEventTextBox, "comments_show_event_text_box");
 			X(General.TimelinePlaybackCursorFollow, "timeline_playback_cursor_follow");
+			X(General.TimelinePlaybackTimeExpanded, "timeline_playback_time_expanded");
+			X(General.TimelinePlaybackTimeHeight, "timeline_playback_time_height");
 			X(General.TimelineLoopPlayback, "timeline_loop_playback");
 			X(General.TimelineAutoStepAfterNoteInput, "timeline_auto_step_after_note_input");
 			X(General.TimelineGridStartsAtBar, "timeline_grid_starts_at_bar");

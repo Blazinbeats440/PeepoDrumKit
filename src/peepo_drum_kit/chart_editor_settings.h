@@ -174,6 +174,8 @@ namespace PeepoDrumKit
 			WithDefault<b8> CommentsShowCourseTextBox = true;
 			WithDefault<b8> CommentsShowEventTextBox = true;
 			WithDefault<b8> TimelinePlaybackCursorFollow = true;
+			WithDefault<b8> TimelinePlaybackTimeExpanded = true;
+			WithDefault<f32> TimelinePlaybackTimeHeight = 200.0f;
 			WithDefault<b8> TimelineLoopPlayback = false;
 			WithDefault<b8> TimelineAutoStepAfterNoteInput = false;
 			WithDefault<b8> TimelineGridStartsAtBar = true;
