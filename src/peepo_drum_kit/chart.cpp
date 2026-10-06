@@ -84,28 +84,33 @@ namespace PeepoDrumKit
 		timing.FirstTempoBPM = TempoMap.AccelerationStructure.FirstTempoBPM;
 		timing.LastTempoBPM = TempoMap.AccelerationStructure.LastTempoBPM;
 		timing.DelayPoints.clear();
+		timing.ScrollStops.clear();
 		Time offset = {};
 		f64 scrollOffset = 0.0;
+		const b8 canUseSourceTiming = CanUseSourceTiming();
 		for (const DelayChange& delay : GetDelayChanges(branch))
 		{
 			if (!std::isfinite(delay.Duration.Seconds)) continue;
 			const Tempo tempo = TempoOrDefault(TempoMap.Tempo.TryFindLastAtBeat(delay.BeatTime));
-			const b8 useSource = CanUseSourceTiming() && delay.BeatTime == delay.SourceBeat && delay.Duration == delay.SourceDuration && !delay.SourceCommands.empty();
+			const Time baseTime = TempoMap.BeatToTime(delay.BeatTime);
+			const f64 baseScrollBeatTick = TempoMap.BeatAndTimeToHBScrollBeatTick(delay.BeatTime, baseTime);
+			auto appendDelay = [&](Time duration, Tempo commandTempo)
+			{
+				if (duration > Time::Zero())
+					timing.ScrollStops.push_back({ delay.BeatTime, baseTime + offset, baseTime + offset + duration, baseScrollBeatTick + scrollOffset });
+				else
+					scrollOffset += duration.ToSec() * commandTempo.BPM / 60.0 * Beat::TicksPerBeat;
+				offset += duration;
+				timing.DelayPoints.push_back({ delay.BeatTime, offset, scrollOffset, commandTempo.BPM });
+			};
+			const b8 useSource = canUseSourceTiming && delay.BeatTime == delay.SourceBeat && delay.Duration == delay.SourceDuration && !delay.SourceCommands.empty();
 			if (useSource)
 			{
 				for (const auto& command : delay.SourceCommands)
-				{
-					offset += command.Delay;
-					scrollOffset += command.Delay.ToSec() * command.TempoAtCommand.BPM / 60.0 * Beat::TicksPerBeat;
-					timing.DelayPoints.push_back({ delay.BeatTime, offset, scrollOffset, command.TempoAtCommand.BPM });
-				}
+					appendDelay(command.Delay, command.TempoAtCommand);
 			}
 			else
-			{
-				offset += delay.Duration;
-				scrollOffset += delay.Duration.ToSec() * tempo.BPM / 60.0 * Beat::TicksPerBeat;
-				timing.DelayPoints.push_back({ delay.BeatTime, offset, scrollOffset, tempo.BPM });
-			}
+				appendDelay(delay.Duration, tempo);
 		}
 		return timing;
 	}

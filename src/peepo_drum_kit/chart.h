@@ -586,6 +586,13 @@ namespace PeepoDrumKit
 					first = Min(first, Min(after, after - delay.Duration));
 					last = Max(last, Max(after, after - delay.Duration));
 				}
+				const auto& timing = GetPlaybackTiming(branch);
+				for (const auto& stop : timing.ScrollStops)
+				{
+					const Time end = Min(stop.EndTime, timing.ConvertBeatToTimeUsingLookupTableIndexing(stop.BeatTime));
+					if (end <= stop.StartTime) continue;
+					first = Min(first, stop.StartTime); last = Max(last, end);
+				}
 			}
 			return { first, last };
 		}

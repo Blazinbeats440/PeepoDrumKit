@@ -729,6 +729,10 @@ namespace PeepoDrumKit
 					}
 				};
 
+				if (Gui::MenuItem(UI_Str("ACT_TRANSFORM_CONVERT_RANGE_DELAY"), ToShortcutString(*Settings.Input.Timeline_ConvertRangeToDelay).Data, nullptr,
+					context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero() && !context.GetIsPlayback() && !context.TestPlayActive))
+					timeline.OpenDelayConversionPopup(context);
+
 				if (Gui::BeginMenu(UI_Str("ACT_TRANSFORM_SCALE_ITEMS"))) {
 					scaleMenu(TransformAction::ScaleItemTime, isAnyItemSelected);
 					Gui::EndMenu();

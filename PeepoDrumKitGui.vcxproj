@@ -205,6 +205,7 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor_file_drop.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_settings.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_timeline.h" />
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_delay_conversion.h" />
     <ClInclude Include="src\peepo_drum_kit\test_gui_tja.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_undo.h" />
     <ClInclude Include="src\core_undo.h" />

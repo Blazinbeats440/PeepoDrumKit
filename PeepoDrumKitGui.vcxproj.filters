@@ -257,6 +257,9 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor_timeline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_delay_conversion.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_undo.h">
       <Filter>Header Files</Filter>
     </ClInclude>

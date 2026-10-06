@@ -235,8 +235,10 @@ public:
 struct TempoMapAccelerationStructure
 {
 	struct DelayPoint { Beat BeatTime; Time Offset; f64 ScrollOffset; f64 BPM; };
+	struct ScrollStop { Beat BeatTime; Time StartTime, EndTime; f64 HBScrollBeatTick; };
 	const TempoMapAccelerationStructure* BaseTiming = nullptr;
 	std::vector<DelayPoint> DelayPoints;
+	std::vector<ScrollStop> ScrollStops;
 	// NOTE: Pre calculated beat times up to the last tempo change
 	std::vector<Time> BeatTickToTimes;
 	std::vector<i32> BeatTickToHBScrollBeatTicks;
@@ -249,6 +251,7 @@ struct TempoMapAccelerationStructure
 	Beat ConvertTimeToBeatWithHint(Time time, Beat hint, bool truncTo0 = false) const;
 	std::vector<Beat> FindBeatCandidates(Time time, bool truncTo0 = false) const;
 	Time GetDelayOffset(Beat beat) const;
+	const ScrollStop* TryFindScrollStop(Beat beat, Time time) const;
 	f64 ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat beat, Time time) const;
 
 	Time GetLastCalculatedTime() const;
