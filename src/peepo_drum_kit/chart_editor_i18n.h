@@ -673,6 +673,27 @@ X("PROMPT_SELECTION_CUSTOM_PATTERN_DELETE",			"Delete?") \
 X("ACT_TRANSFORM_FLIP_NOTE_TYPES",					"Flip Note Types") \
 X("ACT_TRANSFORM_TOGGLE_NOTE_SIZES",				"Toggle Note Sizes") \
 X("ACT_TRANSFORM_QUANTIZE_ITEMS",					"Quantize Selected Items") \
+X("ACT_TRANSFORM_CONVERT_RANGE_DELAY", "Convert Selected Range to DELAY...") \
+X("SETTINGS_KEY_CONVERT_RANGE_DELAY", "Timeline: Convert Selected Range to DELAY") \
+X("DELAY_CONVERSION_TITLE", "Convert Selected Range to DELAY") \
+X("DELAY_CONVERSION_DESCRIPTION", "Replace a range without note heads or long note ends with a positive DELAY, preserving later hit times. A drumroll or balloon body may cross the range. Time signatures are adjusted automatically. BM/HB scrolling stops during the DELAY.") \
+X("DELAY_CONVERSION_MERGE_BARS", "Merge the remaining parts of different measures") \
+X("DELAY_CONVERSION_DURATION", "Resulting DELAY: +%.9g seconds") \
+X("DELAY_CONVERSION_BEATS", "Beats removed: %.9g") \
+X("DELAY_CONVERSION_SIGNATURES", "Automatic time signature changes (positions after conversion):") \
+X("DELAY_CONVERSION_NO_SIGNATURES", "No time signature changes needed.") \
+X("DELAY_CONVERSION_SIGNATURE", "Beat %.9g: %d/%d") \
+X("DELAY_CONVERSION_INVALID_RANGE", "Select a range with a positive beat length.") \
+X("DELAY_CONVERSION_INVALID_TIME", "The range cannot be converted to a finite positive duration.") \
+X("DELAY_CONVERSION_BRANCHES", "Charts with branching commands are not supported by this conversion yet.") \
+X("DELAY_CONVERSION_NOTE", "The range contains a note, including its left edge. Select an empty range.") \
+X("DELAY_CONVERSION_LONG_NOTE", "A drumroll or balloon ends inside the range, including its left edge but excluding its right edge.") \
+X("DELAY_CONVERSION_EVENT", "An event inside the range or at its joining edge cannot retain its timing. Only BPM, time signature and positive DELAY changes may occur there.") \
+X("DELAY_CONVERSION_ACTIVE_JPOS", "A JPOSSCROLL movement overlaps the range.") \
+X("DELAY_CONVERSION_NEGATIVE_DELAY", "A negative DELAY occurs inside the range or at a joining edge.") \
+X("DELAY_CONVERSION_INVALID_SIGNATURE", "The affected measure cannot be represented by a supported time signature.") \
+X("DELAY_CONVERSION_ERROR_BEAT", "Chart position: beat %.9g") \
+X("DELAY_CONVERSION_APPLY", "Convert") \
 X("ACT_TRANSFORM_SCALE_ITEMS",						"Scale/Quantize Items") \
 X("ACT_TRANSFORM_SCALE_RANGE",						"Scale/Quantize Range") \
 X("ACT_TRANSFORM_SCALE_BY_TEMPO",					"Scale by Tempo") \
@@ -797,9 +818,11 @@ X("TIMELINE_PLAYBACK_RESIZE_HELP", "Drag vertically to resize the playback time 
 X("TIMELINE_PLAYBACK_CLOSE_SECTION", "Close this section. Reopen it from Sections.") \
 X("TIMELINE_PLAYBACK_SECTIONS_HIDDEN", "All sections are closed. Reopen them from Sections.") \
 X("TIMELINE_PLAYBACK_NOTE", "Playback: %.3f s | Chart: %.3f beats | Section %zu | Cumulative DELAY: %+.3f s") \
-X("TIMELINE_PLAYBACK_SECTION", "Section %zu | DELAY %+.3f s") \
+X("TIMELINE_PLAYBACK_SECTION", "Section %zu | DELAY at start %+.3f s") \
 X("TIMELINE_DELAY_BOUNDARY", "DELAY %+.3f s | cumulative %+.3f s") \
-X("TIMELINE_DELAY_WAIT", "DELAY wait: %.3f / %.3f s") \
+X("TIMELINE_DELAY_WAIT", "DELAY wait (BM/HB stop): %.3f / %.3f s") \
+X("TIMELINE_DELAY_STOP", "DELAY +%.3f s") \
+X("TIMELINE_DELAY_STOP_TOOLTIP", "DELAY: %.3f s -> %.3f s\nBMSCROLL/HBSCROLL stops here while the music continues. NMSCROLL keeps moving.") \
 X("EVENT_SUDDEN",									"Sudden") \
 X("EVENT_SUDDEN_HIDE_ROLL",							"Hide Rolls") \
 X("EVENT_PROP_JPOS_SCROLL_MOVE",					"JPOS Scroll Move") \

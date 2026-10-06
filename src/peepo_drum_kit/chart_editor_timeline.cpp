@@ -1530,11 +1530,11 @@ namespace PeepoDrumKit
 		}
 		BuildPlaybackTimelineLayout(PlaybackData, PlaybackHiddenSections, PlaybackLayout);
 
-		for (size_t index = 1; index < PlaybackData.Sections.size(); ++index)
+		for (const auto& stop : PlaybackData.Stops)
 		{
-			const Time before = PlaybackData.Sections[index - 1].EndTime;
-			const Time after = PlaybackData.Sections[index].StartTime;
-			if (after <= before || cursorTime < before || cursorTime >= after || context.GetCursorBeat() != PlaybackData.Sections[index].StartBeat) continue;
+			const Time before = stop.StartTime;
+			const Time after = stop.EndTime;
+			if (cursorTime < before || cursorTime >= after || context.GetCursorBeat() != stop.BeatTime) continue;
 			char text[96]; sprintf_s(text, UI_Str("TIMELINE_DELAY_WAIT"), (cursorTime - before).ToSec(), (after - before).ToSec());
 			if (Regions.Playback.BR.x - toolbarEnd.x > Gui::CalcTextSize(text).x + Gui::GetStyle().ItemSpacing.x + GuiScale(4.0f))
 			{
@@ -1543,7 +1543,7 @@ namespace PeepoDrumKit
 			}
 			const f32 progress = static_cast<f32>((cursorTime - before).ToSec() / (after - before).ToSec());
 			Gui::GetWindowDrawList()->AddRectFilled(Regions.Playback.TL + vec2(0.0f, headerHeight - 3.0f),
-				Regions.Playback.TL + vec2(Regions.Playback.GetWidth() * progress, headerHeight), PlaybackTimelineSectionColor(index));
+				Regions.Playback.TL + vec2(Regions.Playback.GetWidth() * progress, headerHeight), PlaybackTimelineSectionColor(stop.SectionIndex));
 			break;
 		}
 		const f32 axisHeight = GuiScale(20.0f);
@@ -1666,6 +1666,25 @@ namespace PeepoDrumKit
 			parentDrawList->AddText(vec2(x + 2.0f, Regions.Playback.TL.y + headerHeight), TimelineItemTextColor, text);
 		}
 		b8 sectionControlsHovered = false;
+		const PlaybackTimelineStop* hoveredStop = nullptr;
+		for (const auto& stop : PlaybackData.Stops)
+		{
+			const size_t lane = PlaybackLayout.SectionLanes[stop.SectionIndex];
+			if (lane == PlaybackTimelineLayout::HiddenLane) continue;
+			const f32 left = screenX(stop.StartTime), right = screenX(stop.EndTime);
+			const f32 y = rowsTL.y + static_cast<f32>(lane) * rowHeight;
+			if (right < viewport.TL.x || left > viewport.BR.x || y + rowHeight < viewport.TL.y || y > viewport.BR.y) continue;
+			const u32 color = PlaybackTimelineSectionColor(stop.SectionIndex);
+			drawList->AddRectFilled(vec2(left, y), vec2(right, y + rowHeight), Gui::ColorU32WithAlpha(color, 0.22f));
+			drawList->AddLine(vec2(left, y), vec2(left, y + rowHeight), color);
+			drawList->AddLine(vec2(right, y), vec2(right, y + rowHeight), color);
+			char text[96]; sprintf_s(text, UI_Str("TIMELINE_DELAY_STOP"), (stop.EndTime - stop.StartTime).ToSec());
+			drawList->PushClipRect(vec2(Max(left, viewport.TL.x), Max(y, viewport.TL.y)), vec2(Min(right, viewport.BR.x), Min(y + rowHeight, viewport.BR.y)), true);
+			drawList->AddText(vec2(Max(left, viewport.TL.x) + 3.0f, y + 3.0f), color, text);
+			drawList->PopClipRect();
+			const vec2 mouse = Gui::GetMousePos();
+			if (hovered && mouse.x >= left && mouse.x < right && mouse.y >= y && mouse.y < y + rowHeight) hoveredStop = &stop;
+		}
 		for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
 		{
 			const auto& section = PlaybackData.Sections[index];
@@ -1679,7 +1698,8 @@ namespace PeepoDrumKit
 			drawList->AddRectFilled(vec2(left, y), vec2(right, y + rowHeight), Gui::ColorU32WithAlpha(color, 0.10f));
 			drawList->AddLine(vec2(left, y + 2.0f), vec2(right, y + 2.0f), color, 2.0f);
 			char text[96]; sprintf_s(text, UI_Str("TIMELINE_PLAYBACK_SECTION"), index + 1, section.Offset.ToSec());
-			f32 labelX = Max(left + 3.0f, viewport.TL.x + 3.0f);
+			const Time labelTime = course.TempoMap.BeatToTime(section.StartBeat) + section.Offset;
+			f32 labelX = Max(screenX(labelTime) + 3.0f, viewport.TL.x + 3.0f);
 			if (Min(right, viewport.BR.x) - labelX > Gui::GetFrameHeight() + GuiScale(3.0f))
 			{
 				Gui::SetCursorScreenPos(vec2(labelX, y + 2.0f));
@@ -1741,7 +1761,10 @@ namespace PeepoDrumKit
 		if (PlaybackLayout.LaneCount == 0) drawList->AddText(viewport.TL + GuiScale(vec2(8.0f)), TimelineItemTextColor, UI_Str("TIMELINE_PLAYBACK_SECTIONS_HIDDEN"));
 		const b8 canUseCanvas = hovered && !sectionControlsHovered && (Gui::GetActiveID() == 0 || Gui::GetActiveID() == canvasID);
 		if (hoveredNote && canUseCanvas)
-			Gui::SetTooltip(UI_Str("TIMELINE_PLAYBACK_NOTE"), (hoveredNote->HeadTime - displayOffset).ToSec(), hoveredNote->OriginalNote->BeatTime.BeatsFraction(), hoveredNote->SectionIndex + 1, PlaybackData.Sections[hoveredNote->SectionIndex].Offset.ToSec());
+			Gui::SetTooltip(UI_Str("TIMELINE_PLAYBACK_NOTE"), (hoveredNote->HeadTime - displayOffset).ToSec(), hoveredNote->OriginalNote->BeatTime.BeatsFraction(), hoveredNote->SectionIndex + 1,
+				(hoveredNote->HeadTime - course.TempoMap.BeatToTime(hoveredNote->OriginalNote->BeatTime) - hoveredNote->OriginalNote->TimeOffset).ToSec());
+		else if (hoveredStop && canUseCanvas)
+			Gui::SetTooltip(UI_Str("TIMELINE_DELAY_STOP_TOOLTIP"), (hoveredStop->StartTime - displayOffset).ToSec(), (hoveredStop->EndTime - displayOffset).ToSec());
 		else if (canUseCanvas && !Gui::IsMouseDown(ImGuiMouseButton_Left)) Gui::SetTooltip("%s", UI_Str("TIMELINE_PLAYBACK_HELP"));
 		if (canUseCanvas && Gui::IsMouseClicked(ImGuiMouseButton_Left))
 		{
@@ -1754,7 +1777,7 @@ namespace PeepoDrumKit
 					if (!Gui::GetIO().KeyShift) ExecuteSelectionAction(context, SelectionAction::UnselectAll, {});
 					hoveredNote->OriginalNote->IsSelected = Gui::GetIO().KeyShift ? !hoveredNote->OriginalNote->IsSelected : true;
 					context.SetCursorTimeAtBeat(hoveredNote->HeadTime, hoveredNote->OriginalNote->BeatTime);
-					ScrollToBeat(context, hoveredNote->OriginalNote->BeatTime);
+					ScrollToTimelinePosition(Camera, Regions, context, context.BeatToTime(hoveredNote->OriginalNote->BeatTime));
 				}
 				IsPlaybackTimelineScrubbing = false;
 			}
@@ -1769,17 +1792,23 @@ namespace PeepoDrumKit
 			{
 				const f32 mouseY = Gui::GetMousePos().y - rowsTL.y;
 				std::optional<Beat> sourceBeat;
+				if (hoveredStop) sourceBeat = hoveredStop->BeatTime;
 				for (size_t index = 0; index < PlaybackData.Sections.size(); ++index)
 				{
+					if (sourceBeat.has_value()) break;
 					const auto& section = PlaybackData.Sections[index];
 					const size_t lane = PlaybackLayout.SectionLanes[index];
 					if (lane == PlaybackTimelineLayout::HiddenLane) continue;
 					if (time >= section.StartTime && time < section.EndTime && mouseY >= static_cast<f32>(lane) * rowHeight && mouseY < static_cast<f32>(lane + 1) * rowHeight)
-						{ sourceBeat = course.TempoMap.TimeToBeat(time - section.Offset); break; }
+					{
+						for (Beat candidate : course.GetPlaybackTiming(context.ChartSelectedBranch).FindBeatCandidates(time))
+							if (candidate >= section.StartBeat && candidate < section.EndBeat) { sourceBeat = candidate; break; }
+						break;
+					}
 				}
 				if (sourceBeat.has_value()) context.SetCursorTimeAtBeat(time, *sourceBeat);
 				else context.SetCursorTime(time);
-				ScrollToBeat(context, context.GetCursorBeat());
+				ScrollToTimelinePosition(Camera, Regions, context, context.BeatToTime(context.GetCursorBeat()));
 			}
 		}
 		if (context.TestPlayActive && context.TestPlaySeekTime) context.TestPlaySmoothCursor = context.TestPlayFollowCursor = true;
@@ -1825,9 +1854,16 @@ namespace PeepoDrumKit
 		const b8 heightHasValue = Settings.General.TimelinePlaybackTimeHeight.HasValue;
 		defer { Settings_Mutable.General.TimelinePlaybackTimeHeight.Value = heightSetting; Settings_Mutable.General.TimelinePlaybackTimeHeight.HasValue = heightHasValue; };
 		std::vector<std::string> fixtures = { "1000,\n#DELAY 1\n2000,", "0001,\n#DELAY -2\n2000,",
-			"#DELAY -1\n1000,", "1000,\n#DELAY -2\n2000,\n#DELAY -2\n3000," };
+			"#DELAY -1\n1000,", "#DELAY 0.5\n1000,", "1000,\n#DELAY -2\n2000,\n#DELAY -2\n3000,",
+			"#HBSCROLL\n1000,\n#DELAY 0.5\n#BPMCHANGE 240\n#DELAY 0.25\n2000,",
+			"1000,\n#DELAY 0.5\n#DELAY -0.5\n2000,",
+			"1000,\n#DELAY 1\n2000,\n#DELAY -2\n3000,\n#DELAY 0.5\n4000,",
+			"1000,\n#DELAY -0.5\n#DELAY 0.5\n2000,", "#DELAY -0.5\n#DELAY 0.5\n1000," };
 		std::string manySections;
 		for (i32 index = 0; index < 32; ++index) manySections += "1000,\n#DELAY -2\n";
+		fixtures.push_back(manySections);
+		manySections.clear();
+		for (i32 index = 0; index < 32; ++index) manySections += "1000,\n#DELAY 0.5\n";
 		fixtures.push_back(manySections);
 		struct ViewCase { f32 Height, Width; b8 Expanded; i32 HiddenMode; };
 		std::vector<ViewCase> viewCases;
@@ -1839,6 +1875,9 @@ namespace PeepoDrumKit
 					viewCases.push_back({ height, width, false, hiddenMode });
 				}
 		viewCases.push_back({ 200.0f, 960.0f, true, 4 });
+		viewCases.push_back({ 200.0f, 960.0f, true, 5 });
+		viewCases.push_back({ 200.0f, 960.0f, true, 6 });
+		viewCases.push_back({ 200.0f, 960.0f, true, 7 });
 		for (const auto& body : fixtures)
 		{
 			ChartContext context;
@@ -1848,11 +1887,13 @@ namespace PeepoDrumKit
 			if (!parseErrors.Errors.empty() || !CreateChartProjectFromTJA(parsed, context.Chart) || context.Chart.Courses.empty())
 				{ outError = "Unable to import timeline test chart"; return false; }
 			context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
+			context.ChartSelectedCourse->Notes_Normal[0].TimeOffset = Time::FromSec(0.125);
 			ChartTimeline timeline;
 			BuildPlaybackTimelineData(*context.ChartSelectedCourse, BranchType::Normal, Beat::FromBars(4), timeline.PlaybackData);
 			timeline.UpdatePlaybackTimelineVisibility(context);
 			for (const auto& view : viewCases)
 			{
+				if ((view.HiddenMode == 5 || view.HiddenMode == 6) && timeline.PlaybackData.Stops.empty()) continue;
 				timeline.PlaybackHiddenSections.clear();
 				if (view.HiddenMode == 1)
 					for (const auto& section : timeline.PlaybackData.Sections)
@@ -1864,12 +1905,34 @@ namespace PeepoDrumKit
 				const Beat originalBeat = context.GetCursorBeat();
 				const Time originalTime = context.GetCursorTime();
 				vec2 closeButtonPosition;
-				io.AddMousePosEvent(-F32Max, -F32Max);
-				for (i32 frame = 0; frame < (view.HiddenMode == 4 ? 5 : 2); ++frame)
+				vec2 scrubPosition;
+				Time scrubTime;
+				Beat scrubBeat;
+				if (view.HiddenMode >= 5)
 				{
-					if (view.HiddenMode == 4)
+					if (view.HiddenMode == 7)
 					{
-						if (frame == 1) io.AddMousePosEvent(closeButtonPosition.x, closeButtonPosition.y);
+						const auto& note = timeline.PlaybackData.Notes[0];
+						scrubTime = note.HeadTime;
+						scrubBeat = note.OriginalNote->BeatTime;
+					}
+					else
+					{
+						const auto& stop = timeline.PlaybackData.Stops[0];
+						scrubTime = view.HiddenMode == 5 ? (stop.StartTime + stop.EndTime) * 0.5 : stop.EndTime + Time::FromSec(0.25);
+						scrubBeat = stop.BeatTime;
+					}
+					timeline.PlaybackCamera.ZoomCurrent.x = timeline.PlaybackCamera.ZoomTarget.x = 0.1f;
+					timeline.PlaybackCamera.PositionCurrent.x = timeline.PlaybackCamera.PositionTarget.x =
+						timeline.PlaybackCamera.TimeToWorldSpaceX(Min(timeline.PlaybackData.MinTime, context.Chart.SongOffset)) * 0.1f - GuiScale(8.0f);
+				}
+				io.AddMousePosEvent(-F32Max, -F32Max);
+				for (i32 frame = 0; frame < (view.HiddenMode >= 4 ? 5 : 2); ++frame)
+				{
+					if (view.HiddenMode >= 4)
+					{
+						const vec2 position = view.HiddenMode == 4 ? closeButtonPosition : scrubPosition;
+						if (frame == 1) io.AddMousePosEvent(position.x, position.y);
 						if (frame == 2) io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
 						if (frame == 3) io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
 					}
@@ -1899,13 +1962,46 @@ namespace PeepoDrumKit
 								const auto section = std::find_if(timeline.PlaybackData.Sections.begin(), timeline.PlaybackData.Sections.end(), [](const PlaybackTimelineSection& section) { return section.StartBeat != section.EndBeat; });
 								const size_t index = static_cast<size_t>(section - timeline.PlaybackData.Sections.begin());
 								const vec2 rowsTL = window->DC.CursorStartPos;
-								closeButtonPosition = rowsTL + vec2(Max(timeline.PlaybackCamera.TimeToLocalSpaceX(section->StartTime) + 3.0f, 3.0f) + Gui::GetFrameHeight() * 0.5f,
+								const Time labelTime = context.ChartSelectedCourse->TempoMap.BeatToTime(section->StartBeat) + section->Offset;
+								closeButtonPosition = rowsTL + vec2(Max(timeline.PlaybackCamera.TimeToLocalSpaceX(labelTime) + 3.0f, 3.0f) + Gui::GetFrameHeight() * 0.5f,
 									static_cast<f32>(timeline.PlaybackLayout.SectionLanes[index]) * GuiScale(44.0f) + 2.0f + Gui::GetFrameHeight() * 0.5f);
+							}
+					}
+					if (view.HiddenMode >= 5 && frame == 0)
+					{
+						for (ImGuiWindow* window : testContext->Windows)
+							if (window->Active && std::string_view(window->Name).find("PlaybackTimelineCanvas") != std::string_view::npos)
+							{
+								const size_t sectionIndex = view.HiddenMode == 7 ? timeline.PlaybackData.Notes[0].SectionIndex : timeline.PlaybackData.Stops[0].SectionIndex;
+								const size_t lane = timeline.PlaybackLayout.SectionLanes[sectionIndex];
+								const vec2 rowsTL = window->DC.CursorStartPos;
+								scrubPosition = rowsTL + vec2(timeline.PlaybackCamera.TimeToLocalSpaceX(scrubTime),
+									(static_cast<f32>(lane) + (view.HiddenMode == 7 ? 0.72f : 0.97f)) * GuiScale(44.0f));
+								if (view.HiddenMode != 7)
+								{
+									scrubPosition.x = std::floor(scrubPosition.x);
+									scrubTime = timeline.PlaybackCamera.LocalSpaceXToTime(scrubPosition.x - rowsTL.x);
+								}
+								if (view.HiddenMode == 6)
+								{
+									const auto& section = timeline.PlaybackData.Sections[timeline.PlaybackData.Stops[0].SectionIndex];
+									for (Beat candidate : context.ChartSelectedCourse->GetPlaybackTiming().FindBeatCandidates(scrubTime))
+										if (candidate >= section.StartBeat && candidate < section.EndBeat) { scrubBeat = candidate; break; }
+								}
 							}
 					}
 				}
 				if (view.HiddenMode == 4 && (timeline.PlaybackHiddenSections.empty() || timeline.IsPlaybackTimelineScrubbing || context.GetCursorBeat() != originalBeat || context.GetCursorTime() != originalTime))
 					{ outError = "Closing a playback section failed or changed the chart cursor"; return false; }
+				if (view.HiddenMode >= 5 && (context.GetCursorBeat() != scrubBeat || Absolute((context.GetCursorTime() - scrubTime).ToSec()) > 0.0001))
+				{
+					char error[256]; sprintf_s(error, "DELAY seek mode %d: expected tick %d at %.6f s, got tick %d at %.6f s",
+						view.HiddenMode, scrubBeat.Ticks, scrubTime.ToSec(), context.GetCursorBeat().Ticks, context.GetCursorTime().ToSec());
+					outError = std::string(error) + '\n' + body;
+					return false;
+				}
+				if (view.HiddenMode == 7 && (!timeline.PlaybackData.Notes[0].OriginalNote->IsSelected || timeline.IsPlaybackTimelineScrubbing))
+					{ outError = "Selecting a playback note did not preserve its selection"; return false; }
 			}
 		}
 		ChartTimeline resizeTimeline;
@@ -1956,12 +2052,68 @@ namespace PeepoDrumKit
 		if (Absolute(drawResizeFrame() - (Gui::GetFrameHeight() + GuiScale(8.0f))) > 1.0f || resizeTimeline.Regions.PlaybackSplitter.GetHeight() != 0.0f)
 			{ outError = "Collapsing the playback view left an active divider"; return false; }
 		if (drawResizeFrame(false) != 0.0f) { outError = "Hidden playback view still occupies space"; return false; }
+		const auto conversionBinding = Settings.Input.Timeline_ConvertRangeToDelay;
+		defer { Settings_Mutable.Input.Timeline_ConvertRangeToDelay = conversionBinding; };
+		Settings_Mutable.Input.Timeline_ConvertRangeToDelay.Value = KeyBinding(ImGuiKey_F24);
+		defer { i18n::InitBuiltinLocale(); };
+		for (i32 scenarioIndex = 0; scenarioIndex < 10; scenarioIndex++)
+		{
+			const i32 scenario = scenarioIndex % 5;
+			if (scenarioIndex == 5)
+			{
+				i18n::ReloadLocaleFile("ja");
+				if (std::string_view(UI_Str("DELAY_CONVERSION_TITLE")) != u8"\u9078\u629e\u7bc4\u56f2\u3092DELAY\u306b\u5909\u63db"
+					|| std::string_view(UI_Str("DELAY_CONVERSION_DESCRIPTION")).find("\\n") != std::string_view::npos)
+					{ outError = "Japanese DELAY conversion labels were not loaded correctly"; return false; }
+			}
+			ChartContext context;
+			TJA::ErrorList errors;
+			const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines("TITLE:Conversion\nBPM:120\nCOURSE:Oni\n#START\n1000,\n0000,\n0000,\n2000,\n#END\n")), errors);
+			if (!CreateChartProjectFromTJA(parsed, context.Chart)) { outError = "Cannot import DELAY conversion UI fixture"; return false; }
+			context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
+			context.RangeSelection = { Beat::FromBeats(7), Beat::FromBeats(9), true, true };
+			if (scenario == 2) context.ChartSelectedCourse->ScrollChanges_Normal.InsertOrUpdate({ Beat::FromBeats(9), Complex(2.0f, 0.0f) });
+			ChartTimeline timeline;
+			for (i32 frame = 0; frame < 4; frame++)
+			{
+				if (scenario == 4) io.AddKeyEvent(ImGuiKey_F24, frame == 0);
+				Gui::NewFrame();
+				Gui::Begin("DELAY conversion self-test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+				if (frame == 0)
+				{
+					if (!testContext->OpenPopupStack.empty()) Gui::ClosePopupToLevel(0, true);
+					if (scenario == 4) { timeline.Regions.Window.IsFocused = true; timeline.UpdateInputAtStartOfFrame(context); }
+					else timeline.OpenDelayConversionPopup(context);
+				}
+				if (auto* window = Gui::FindWindowByName(UI_WindowName("DELAY_CONVERSION_TITLE")); window && frame > 0)
+				{
+					cstr action = frame == 1 && scenario == 1 ? UI_Str("DELAY_CONVERSION_MERGE_BARS")
+						: frame == 2 && (scenario == 2 || scenario == 3) ? UI_Str("ACT_MSGBOX_CANCEL") : UI_Str("DELAY_CONVERSION_APPLY");
+					if (frame == 1 || frame == 2)
+					{
+						const ImGuiID id = window->GetID(action);
+						testContext->NavId = testContext->NavActivateId = testContext->NavActivateDownId = testContext->NavActivatePressedId = id;
+					}
+				}
+				// Cancel scenario leaves the first frame untouched; the invalid case tries its disabled Convert button.
+				if (scenario == 3 && frame == 1) testContext->NavActivateId = testContext->NavActivateDownId = testContext->NavActivatePressedId = 0;
+				timeline.DrawDelayConversionPopup(context);
+				Gui::End(); Gui::Render();
+				if (frame == 0 && !timeline.DelayConversionPopup.IsOpen) { outError = "DELAY conversion menu or shortcut did not open its preview"; return false; }
+			}
+			const b8 converted = scenario == 0 || scenario == 1 || scenario == 4;
+			if (context.Undo.UndoStack.size() != (converted ? 1 : 0) || timeline.DelayConversionPopup.IsOpen)
+				{ outError = "DELAY conversion preview did not apply, cancel or block an invalid range correctly"; return false; }
+			if (converted && context.ChartSelectedCourse->TempoMap.Signature.TryFindLastAtBeat(Beat::FromBeats(4))->Signature != TimeSignature(scenario == 1 ? 6 : 3, 4))
+				{ outError = "DELAY conversion measure merge option did not update its plan"; return false; }
+		}
 		return outError.empty();
 	}
 
 	void ChartTimeline::DrawGui(ChartContext& context, b8 hasGamePreviewFocus)
 	{
-		UpdateInputAtStartOfFrame(context, hasGamePreviewFocus);
+		DrawDelayConversionPopup(context);
+		if (!DelayConversionPopup.IsOpen) UpdateInputAtStartOfFrame(context, hasGamePreviewFocus);
 		UpdateAllAnimationsAfterUserInput(context);
 
 #if PEEPO_DEBUG // DEBUG: Submit empty window first for more natural tab order sorting
@@ -2073,6 +2225,102 @@ namespace PeepoDrumKit
 				IsPlaybackTimelineScrubbing = IsPlaybackTimelinePanning = false;
 		}
 		timelineRegionEnd();
+	}
+
+	void ChartTimeline::OpenDelayConversionPopup(ChartContext& context)
+	{
+		if (!context.RangeSelection.IsActiveAndHasEnd() || context.GetIsPlayback() || context.TestPlayActive) return;
+		DelayConversionPopup.Course = context.ChartSelectedCourse;
+		DelayConversionPopup.MergePartialBars = false;
+		DelayConversionPopup.Plan = BuildDelayConversionPlan(*context.ChartSelectedCourse, context.RangeSelection.GetMin(), context.RangeSelection.GetMax());
+		DelayConversionPopup.OpenOnNextFrame = DelayConversionPopup.IsOpen = true;
+	}
+
+	void ChartTimeline::DrawDelayConversionPopup(ChartContext& context)
+	{
+		auto& popup = DelayConversionPopup;
+		const auto titleBuffer = i18n::ToStableName("DELAY_CONVERSION_TITLE", i18n::CompileTimeValidate<i18n::Hash("DELAY_CONVERSION_TITLE")>());
+		const cstr title = titleBuffer.Data;
+		if (popup.OpenOnNextFrame) { Gui::OpenPopup(title); popup.OpenOnNextFrame = false; }
+		if (Gui::BeginPopupModal(title, &popup.IsOpen, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+		{
+			if (context.ChartSelectedCourse != popup.Course || context.GetIsPlayback() || context.TestPlayActive)
+			{
+				popup.IsOpen = false;
+				Gui::CloseCurrentPopup();
+			}
+			else
+			{
+				auto& plan = popup.Plan;
+				Gui::PushTextWrapPos(Gui::GetCursorPosX() + GuiScale(560.0f));
+				Gui::TextUnformatted(UI_Str("DELAY_CONVERSION_DESCRIPTION"));
+				if (Gui::Checkbox(UI_Str("DELAY_CONVERSION_MERGE_BARS"), &popup.MergePartialBars))
+					plan = BuildDelayConversionPlan(*popup.Course, plan.Start, plan.End, popup.MergePartialBars);
+				Gui::Separator();
+				if (plan.Error == DelayConversionError::None)
+				{
+					Gui::Text(UI_Str("DELAY_CONVERSION_DURATION"), plan.Duration.ToSec());
+					Gui::Text(UI_Str("DELAY_CONVERSION_BEATS"), (plan.End - plan.Start).BeatsFraction());
+					Gui::TextUnformatted(UI_Str("DELAY_CONVERSION_SIGNATURES"));
+					if (plan.Signatures.empty()) Gui::TextUnformatted(UI_Str("DELAY_CONVERSION_NO_SIGNATURES"));
+					for (const auto& signature : plan.Signatures)
+						Gui::Text(UI_Str("DELAY_CONVERSION_SIGNATURE"), signature.Beat.BeatsFraction(), signature.Signature.Numerator, signature.Signature.Denominator);
+				}
+				else
+				{
+					cstr reason = UI_Str("DELAY_CONVERSION_INVALID_RANGE");
+					switch (plan.Error)
+					{
+					case DelayConversionError::InvalidTime: reason = UI_Str("DELAY_CONVERSION_INVALID_TIME"); break;
+					case DelayConversionError::Branches: reason = UI_Str("DELAY_CONVERSION_BRANCHES"); break;
+					case DelayConversionError::Note: reason = UI_Str("DELAY_CONVERSION_NOTE"); break;
+					case DelayConversionError::LongNote: reason = UI_Str("DELAY_CONVERSION_LONG_NOTE"); break;
+					case DelayConversionError::Event: reason = UI_Str("DELAY_CONVERSION_EVENT"); break;
+					case DelayConversionError::ActiveJPOS: reason = UI_Str("DELAY_CONVERSION_ACTIVE_JPOS"); break;
+					case DelayConversionError::NegativeDelay: reason = UI_Str("DELAY_CONVERSION_NEGATIVE_DELAY"); break;
+					case DelayConversionError::Signature: reason = UI_Str("DELAY_CONVERSION_INVALID_SIGNATURE"); break;
+					default: break;
+					}
+					Gui::TextUnformatted(reason);
+					if (plan.Error == DelayConversionError::Event)
+					{
+						cstr eventName = UI_Str("EVENT_SCROLL_SPEED");
+						switch (plan.ErrorList)
+						{
+						case GenericList::BarLineChanges: eventName = UI_Str("EVENT_BAR_LINE_VISIBILITY"); break;
+						case GenericList::GoGoRanges: eventName = UI_Str("SELECTED_EVENTS_GO_GO_RANGES"); break;
+						case GenericList::Lyrics: eventName = UI_Str("EVENT_LYRICS"); break;
+						case GenericList::Comments: eventName = UI_Str("EVENT_COMMENTS"); break;
+						case GenericList::ScrollType: eventName = UI_Str("EVENT_SCROLL_TYPE"); break;
+						case GenericList::JPOSScroll: eventName = UI_Str("EVENT_JPOS_SCROLL"); break;
+						case GenericList::Sudden: eventName = UI_Str("EVENT_SUDDEN"); break;
+						default: break;
+						}
+						Gui::BulletText("%s", eventName);
+					}
+					Gui::Text(UI_Str("DELAY_CONVERSION_ERROR_BEAT"), plan.ErrorBeat.BeatsFraction());
+				}
+				Gui::Separator();
+				Gui::BeginDisabled(plan.Error != DelayConversionError::None);
+				if (Gui::Button(UI_Str("DELAY_CONVERSION_APPLY")))
+				{
+					plan = BuildDelayConversionPlan(*popup.Course, plan.Start, plan.End, popup.MergePartialBars);
+					if (plan.Error == DelayConversionError::None)
+					{
+						context.Undo.Execute<Commands::ConvertRangeToDelay>(&context, std::move(plan));
+						context.Undo.DisallowMergeForLastCommand();
+						popup.IsOpen = false;
+						Gui::CloseCurrentPopup();
+					}
+				}
+				Gui::EndDisabled();
+				Gui::SameLine();
+				if (Gui::Button(UI_Str("ACT_MSGBOX_CANCEL"))) { popup.IsOpen = false; Gui::CloseCurrentPopup(); }
+				Gui::PopTextWrapPos();
+			}
+			Gui::EndPopup();
+		}
+		if (!Gui::IsPopupOpen(title)) { popup.IsOpen = false; popup.Plan = {}; popup.Course = nullptr; }
 	}
 
 	void ChartTimeline::StartEndRangeSelectionAtCursor(ChartContext& context)
@@ -4485,6 +4733,12 @@ namespace PeepoDrumKit
 					*Settings_Mutable.General.TransformScale_QuantizeToGrid = wasQuantizing;
 				}
 
+				if (Gui::IsAnyPressed(*Settings.Input.Timeline_ConvertRangeToDelay, false))
+				{
+					OpenDelayConversionPopup(context);
+					if (DelayConversionPopup.IsOpen) return;
+				}
+
 				// NOTE: tentatively use the same set of keybinds for item and range scale
 				TransformAction scaleAction = context.RangeSelection.IsActiveAndHasEnd() ? TransformAction::ScaleRangeTime : TransformAction::ScaleItemTime;;
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_ExpandItemTime_2To1, false)) ExecuteTransformAction(context, scaleAction, param.SetTimeRatio(2, 1));
@@ -5334,8 +5588,9 @@ namespace PeepoDrumKit
 					LocalToScreenSpace_ContentHeader(vec2(right, Regions.ContentHeader.GetHeight())), color);
 				if (index == 0) continue;
 				DrawListContent->AddLine(LocalToScreenSpace(vec2(left, 0.0f)), LocalToScreenSpace(vec2(left, Regions.Content.GetHeight())), Gui::ColorU32WithAlpha(color, 0.6f), 2.0f);
-				if (Regions.ContentHeader.IsHovered && Absolute(MousePosThisFrame.x - LocalToScreenSpace(vec2(left, 0.0f)).x) < GuiScale(5.0f))
-					Gui::SetTooltip(UI_Str("TIMELINE_DELAY_BOUNDARY"), (section.Offset - PlaybackData.Sections[index - 1].Offset).ToSec(), section.Offset.ToSec());
+				if (const auto* delay = context.ChartSelectedCourse->GetDelayChanges(context.ChartSelectedBranch).TryFindExactAtBeat(section.StartBeat);
+					delay && Regions.ContentHeader.IsHovered && Absolute(MousePosThisFrame.x - LocalToScreenSpace(vec2(left, 0.0f)).x) < GuiScale(5.0f))
+					Gui::SetTooltip(UI_Str("TIMELINE_DELAY_BOUNDARY"), delay->Duration.ToSec(), section.Offset.ToSec());
 			}
 		}
 

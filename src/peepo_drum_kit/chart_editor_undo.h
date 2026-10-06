@@ -674,7 +674,7 @@ namespace PeepoDrumKit
 	{
 		struct AddMultipleGenericItems : Undo::Command
 		{
-			AddMultipleGenericItems(ChartCourse* course, std::vector<GenericListStructWithType> newData) : Course(course), UpdateTempoMap(false)
+			AddMultipleGenericItems(ChartCourse* course, std::vector<GenericListStructWithType> newData) : Course(course), UpdateTempoMap(false), UpdateNotes(false)
 			{
 				for (const auto& data : newData) {
 					NewData[static_cast<size_t>(data.List)].InsertOrUpdate(data); // merge new data
@@ -723,7 +723,7 @@ namespace PeepoDrumKit
 
 		struct RemoveMultipleGenericItems : Undo::Command
 		{
-			RemoveMultipleGenericItems(ChartCourse* course, std::vector<GenericListStructWithType> oldData) : Course(course), OldData(std::move(oldData)), UpdateTempoMap(false)
+			RemoveMultipleGenericItems(ChartCourse* course, std::vector<GenericListStructWithType> oldData) : Course(course), OldData(std::move(oldData)), UpdateTempoMap(false), UpdateNotes(false)
 			{
 				for (const auto& data : OldData)
 				{

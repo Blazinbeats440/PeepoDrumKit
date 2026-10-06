@@ -18,10 +18,18 @@ namespace PeepoDrumKit
 		size_t SectionIndex;
 	};
 
+	struct PlaybackTimelineStop
+	{
+		Beat BeatTime;
+		Time StartTime, EndTime;
+		size_t SectionIndex;
+	};
+
 	struct PlaybackTimelineData
 	{
 		std::vector<PlaybackTimelineSection> Sections;
 		std::vector<PlaybackTimelineNote> Notes;
+		std::vector<PlaybackTimelineStop> Stops;
 		Time MinTime = {}, MaxTime = {};
 		size_t LaneCount = 1;
 	};
@@ -61,29 +69,44 @@ namespace PeepoDrumKit
 	{
 		out.Sections.clear();
 		out.Notes.clear();
+		out.Stops.clear();
 		out.MinTime = out.MaxTime = Time::Zero();
 		out.LaneCount = 1;
 		const auto& delays = course.GetDelayChanges(branch);
 		if (!delays.empty()) endBeat = Max(endBeat, delays.Sorted.back().BeatTime + Beat::FromTicks(1));
+		const auto& timing = course.GetPlaybackTiming(branch);
+		const b8 canUseSourceTiming = course.CanUseSourceTiming();
+		Beat sectionStart = Beat::Zero();
+		Time sectionStartTime = course.TempoMap.BeatToTime(sectionStart);
 		Time offset = {};
-		for (size_t index = 0; index <= delays.size(); ++index)
+		auto appendSection = [&](Beat end)
 		{
-			const Beat start = index == 0 ? Beat::Zero() : delays[index - 1].BeatTime;
-			const Beat end = index == delays.size() ? Max(start, endBeat) : delays[index].BeatTime;
-			PlaybackTimelineSection section { start, end, course.TempoMap.BeatToTime(start) + offset, course.TempoMap.BeatToTime(end) + offset, offset };
-			std::vector<b8> occupied(out.LaneCount, false);
-			for (const auto& previous : out.Sections)
-			{
-				if (section.StartTime < section.EndTime && previous.StartTime < previous.EndTime && section.StartTime < previous.EndTime && previous.StartTime < section.EndTime)
-					occupied[previous.Lane] = true;
-			}
-			while (section.Lane < occupied.size() && occupied[section.Lane]) ++section.Lane;
-			out.LaneCount = Max(out.LaneCount, section.Lane + 1);
+			PlaybackTimelineSection section { sectionStart, end, sectionStartTime, course.TempoMap.BeatToTime(end) + offset, timing.GetDelayOffset(sectionStart) };
 			out.MinTime = Min(out.MinTime, Min(section.StartTime, section.EndTime));
 			out.MaxTime = Max(out.MaxTime, Max(section.StartTime, section.EndTime));
 			out.Sections.push_back(section);
-			if (index < delays.size()) offset += delays[index].Duration;
+		};
+		for (const DelayChange& delay : delays)
+		{
+			const b8 useSource = canUseSourceTiming && delay.BeatTime == delay.SourceBeat && delay.Duration == delay.SourceDuration && !delay.SourceCommands.empty();
+			const b8 rewinds = useSource
+				? std::any_of(delay.SourceCommands.begin(), delay.SourceCommands.end(), [](const auto& command) { return command.Delay < Time::Zero(); })
+				: delay.Duration < Time::Zero();
+			if (rewinds) appendSection(delay.BeatTime);
+			offset += delay.Duration;
+			if (rewinds)
+			{
+				sectionStart = delay.BeatTime;
+				sectionStartTime = course.TempoMap.BeatToTime(sectionStart) + offset;
+			}
 		}
+		appendSection(Max(sectionStart, endBeat));
+		auto sectionIndexAtBeat = [&](Beat beat)
+		{
+			const auto after = std::upper_bound(out.Sections.begin(), out.Sections.end(), beat,
+				[](Beat beat, const PlaybackTimelineSection& section) { return beat < section.StartBeat; });
+			return after == out.Sections.begin() ? size_t(0) : static_cast<size_t>(after - out.Sections.begin() - 1);
+		};
 		auto isBranchedBeat = [&](Beat beat)
 		{
 			return std::any_of(course.Branches.begin(), course.Branches.end(), [&](const BranchRange& range)
@@ -91,11 +114,25 @@ namespace PeepoDrumKit
 				return beat >= range.GetStart() && beat < GetBranchRangeEnd(course.Branches, range);
 			});
 		};
-		const auto& timing = course.GetPlaybackTiming(branch);
+		for (const auto& stop : timing.ScrollStops)
+		{
+			const Time end = Min(stop.EndTime, timing.ConvertBeatToTimeUsingLookupTableIndexing(stop.BeatTime));
+			if (end <= stop.StartTime) continue;
+			const size_t sectionIndex = sectionIndexAtBeat(stop.BeatTime);
+			out.Stops.push_back({ stop.BeatTime, stop.StartTime, end, sectionIndex });
+			out.Sections[sectionIndex].StartTime = Min(out.Sections[sectionIndex].StartTime, stop.StartTime);
+			out.Sections[sectionIndex].EndTime = Max(out.Sections[sectionIndex].EndTime, end);
+			out.MinTime = Min(out.MinTime, stop.StartTime);
+			out.MaxTime = Max(out.MaxTime, end);
+		}
+		PlaybackTimelineLayout layout;
+		BuildPlaybackTimelineLayout(out, {}, layout);
+		out.LaneCount = Max(layout.LaneCount, size_t(1));
+		for (size_t index = 0; index < out.Sections.size(); ++index)
+			out.Sections[index].Lane = layout.SectionLanes[index] == PlaybackTimelineLayout::HiddenLane ? 0 : layout.SectionLanes[index];
 		auto appendNote = [&](Note& note)
 		{
-			const size_t sectionIndex = static_cast<size_t>(std::upper_bound(delays.Sorted.begin(), delays.Sorted.end(), note.BeatTime,
-				[](Beat beat, const DelayChange& delay) { return beat < delay.BeatTime; }) - delays.Sorted.begin());
+			const size_t sectionIndex = sectionIndexAtBeat(note.BeatTime);
 			const Time head = timing.ConvertBeatToTimeUsingLookupTableIndexing(note.GetStart()) + note.TimeOffset;
 			const Time tail = timing.ConvertBeatToTimeUsingLookupTableIndexing(note.GetEnd()) + note.TimeOffset;
 			out.Notes.push_back({ &note, head, tail, sectionIndex });

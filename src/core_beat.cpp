@@ -8,6 +8,16 @@ Time TempoMapAccelerationStructure::GetDelayOffset(Beat beat) const
 	return after == DelayPoints.begin() ? Time::Zero() : (after - 1)->Offset;
 }
 
+const TempoMapAccelerationStructure::ScrollStop* TempoMapAccelerationStructure::TryFindScrollStop(Beat beat, Time time) const
+{
+	if (ScrollStops.empty() || time >= ConvertBeatToTimeUsingLookupTableIndexing(beat)) return nullptr;
+	auto stop = std::lower_bound(ScrollStops.begin(), ScrollStops.end(), beat,
+		[](const ScrollStop& value, Beat beat) { return value.BeatTime < beat; });
+	for (; stop != ScrollStops.end() && stop->BeatTime == beat; ++stop)
+		if (time >= stop->StartTime && time < stop->EndTime) return &*stop;
+	return nullptr;
+}
+
 std::vector<Beat> TempoMapAccelerationStructure::FindBeatCandidates(Time time, bool truncTo0) const
 {
 	if (BaseTiming == nullptr)
@@ -29,6 +39,10 @@ std::vector<Beat> TempoMapAccelerationStructure::FindBeatCandidates(Time time, b
 		}
 		if (index < DelayPoints.size()) offset = DelayPoints[index].Offset;
 	}
+	for (const ScrollStop& stop : ScrollStops)
+		if (time >= stop.StartTime && time < stop.EndTime && time < ConvertBeatToTimeUsingLookupTableIndexing(stop.BeatTime)
+			&& (candidates.empty() || candidates.back() != stop.BeatTime))
+			candidates.push_back(stop.BeatTime);
 	return candidates;
 }
 
@@ -147,20 +161,11 @@ f64 TempoMapAccelerationStructure::ConvertBeatAndTimeToHBScrollBeatTickUsingLook
 {
 	if (BaseTiming != nullptr)
 	{
-		Time offset = {};
-		f64 scrollOffset = 0.0;
-		for (const DelayPoint& point : DelayPoints)
-		{
-			const Time before = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + offset;
-			const Time after = BaseTiming->ConvertBeatToTimeUsingLookupTableIndexing(point.BeatTime) + point.Offset;
-			if (after > before && time >= before && time < after && beat == point.BeatTime &&
-				time < ConvertBeatToTimeUsingLookupTableIndexing(beat))
-				return BaseTiming->ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(point.BeatTime, before - offset)
-					+ scrollOffset + (time - before).ToSec() * point.BPM / 60.0 * Beat::TicksPerBeat;
-			if (point.BeatTime > beat) break;
-			offset = point.Offset;
-			scrollOffset = point.ScrollOffset;
-		}
+		if (const ScrollStop* stop = TryFindScrollStop(beat, time)) return stop->HBScrollBeatTick;
+		const auto after = std::upper_bound(DelayPoints.begin(), DelayPoints.end(), beat,
+			[](Beat value, const DelayPoint& point) { return value < point.BeatTime; });
+		const Time offset = after == DelayPoints.begin() ? Time::Zero() : (after - 1)->Offset;
+		const f64 scrollOffset = after == DelayPoints.begin() ? 0.0 : (after - 1)->ScrollOffset;
 		return BaseTiming->ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(beat, time - offset) + scrollOffset;
 	}
 	const i32 beatTickToTimesCount = static_cast<i32>(BeatTickToTimes.size());
@@ -220,6 +225,7 @@ void TempoMapAccelerationStructure::Rebuild(const TempoChange* inTempoChanges, s
 {
 	BaseTiming = nullptr;
 	DelayPoints.clear();
+	ScrollStops.clear();
 	const TempoChange* tempoChanges = inTempoChanges;
 	size_t tempoCount = inTempoCount;
 

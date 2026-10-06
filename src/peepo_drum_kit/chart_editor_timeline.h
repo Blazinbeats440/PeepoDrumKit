@@ -6,6 +6,7 @@
 #include "chart_editor_playback_timeline.h"
 #include "chart_editor_sound.h"
 #include "chart_editor_undo.h"
+#include "chart_editor_delay_conversion.h"
 #include "imgui/imgui_include.h"
 
 namespace PeepoDrumKit
@@ -347,6 +348,12 @@ namespace PeepoDrumKit
 
 		f32 RangeSelectionExpansionAnimationCurrent = 0.0f;
 		f32 RangeSelectionExpansionAnimationTarget = 0.0f;
+		struct DelayConversionPopupData
+		{
+			b8 OpenOnNextFrame = false, IsOpen = false, MergePartialBars = false;
+			ChartCourse* Course = nullptr;
+			DelayConversionPlan Plan;
+		} DelayConversionPopup;
 
 		f32 WorldSpaceCursorXAnimationCurrent = 0.0f;
 		f32 GridSnapLineAnimationCurrent = 1.0f;
@@ -421,9 +428,11 @@ namespace PeepoDrumKit
 		void ExecuteClipboardAction(ChartContext& context, ClipboardAction action);
 		void ExecuteSelectionAction(ChartContext& context, SelectionAction action, const SelectionActionParam& param);
 		void ExecuteTransformAction(ChartContext& context, TransformAction action, const TransformActionParam& param);
+		void OpenDelayConversionPopup(ChartContext& context);
 		template <GenericList List> void ExecuteConvertSelectionToEvents(ChartContext& context);
 
 	private:
+		void DrawDelayConversionPopup(ChartContext& context);
 		struct TimelineRegionDrawers {
 			std::function<void(std::function<void(ImDrawList* drawList)> drawRemaining)>
 				DrawTimelineSideBarHeader,

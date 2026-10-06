@@ -291,6 +291,15 @@ namespace PeepoDrumKit
 			return JPOSScrollToLaneSpace(GetHitCircleCoordinatesJPOSScroll(jposScrollChanges, timeStamp, accelerationStructure));
 		}
 
+		f64 GetCursorHBScrollBeatTick(Beat beat, Time time, const TempoMapAccelerationStructure& accelerationStructure) const
+		{
+			// A rewind can leave several beat candidates, but a stop pauses the entire lane in real time.
+			for (const auto& stop : accelerationStructure.ScrollStops)
+				if (time >= stop.StartTime && time < stop.EndTime && time < accelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(stop.BeatTime))
+					return stop.HBScrollBeatTick;
+			return accelerationStructure.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(beat, time);
+		}
+
 		vec2 GetNoteCoordinatesLane(
 			vec2 originLane,
 			Time cursorTime,

@@ -1703,7 +1703,7 @@ namespace PeepoDrumKit
 			const b8 useExactCursor = isPlayback || (IsTestPlaying && !context.TestPlaySmoothCursor);
 			const Time cursorTimeOrAnimated = useExactCursor ? exactCursorBeatAndTime.Time : animatedCursorTime;
 			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : tempoChanges.ConvertTimeToBeatWithHint(animatedCursorTime, context.PlaybackBeatHint, true);
-			const f64 cursorHBScrollBeatOrAnimated = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated);
+			const f64 cursorHBScrollBeatOrAnimated = Camera.GetCursorHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated, tempoChanges);
 			const Beat chartBeatDuration = context.GetUsedBeatDurationFast(*course);
 
 			const auto* lastGogo = gogoRanges.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
@@ -1941,7 +1941,7 @@ namespace PeepoDrumKit
 						const f32 nextScreenX = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + nextLaneX, 0.0f)).x;
 						const Time laterTime = cursorTimeOrAnimated + fadeDuration;
 						const Beat laterBeat = tempoChanges.ConvertTimeToBeatWithHint(laterTime, comment.BeatTime);
-						const f64 laterHBBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(laterBeat, laterTime);
+						const f64 laterHBBeat = Camera.GetCursorHBScrollBeatTick(laterBeat, laterTime, tempoChanges);
 						const f32 laterLaneX = Camera.TimeToLaneSpace(laterTime, laterHBBeat,
 							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
 							pxWorldPer4Beats, tempoChanges);
@@ -2128,11 +2128,11 @@ namespace PeepoDrumKit
 				b8 isPreMoveTail = !(cursorTimeOrAnimated >= suddenMoveTimeTail);
 				if (isPreMoveHead) {
 					positionTime = suddenMoveTimeHead;
-					positionHBScrollBeat = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(tempoChanges.ConvertTimeToBeatWithHint(positionTime, it.Beat, true), positionTime);
+					positionHBScrollBeat = Camera.GetCursorHBScrollBeatTick(tempoChanges.ConvertTimeToBeatWithHint(positionTime, it.Beat, true), positionTime, tempoChanges);
 				}
 				if (isPreMoveTail) {
 					positionTimeEnd = suddenMoveTimeTail;
-					positionHBScrollBeatEnd = tempoChanges.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(tempoChanges.ConvertTimeToBeatWithHint(positionTimeEnd, it.Tail.Beat, true), positionTimeEnd);
+					positionHBScrollBeatEnd = Camera.GetCursorHBScrollBeatTick(tempoChanges.ConvertTimeToBeatWithHint(positionTimeEnd, it.Tail.Beat, true), positionTimeEnd, tempoChanges);
 				}
 				vec2 laneHeadMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTime, positionHBScrollBeat, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
 				vec2 laneTailMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTimeEnd, positionHBScrollBeatEnd, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
@@ -2252,8 +2252,8 @@ namespace PeepoDrumKit
 			auto nextBarLine = reverseBarLineDrawBuffer.rbegin();
 			for (auto it = ReverseNoteDrawBuffer.rbegin(); it != ReverseNoteDrawBuffer.rend(); it++)
 			{
-				// Bar lines precede notes at the same beat, so draw them after those notes.
-				while (nextBarLine != reverseBarLineDrawBuffer.rend() && nextBarLine->BeatTime > it->Beat)
+				// Draw bar lines before notes at the same beat so the notes appear in front.
+				while (nextBarLine != reverseBarLineDrawBuffer.rend() && nextBarLine->BeatTime >= it->Beat)
 				{
 					drawBarLine(*nextBarLine);
 					++nextBarLine;
