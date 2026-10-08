@@ -140,7 +140,7 @@ namespace PeepoDrumKit
 		videoSettings.TailSeconds = videoExport.TailSeconds;
 		videoSettings.AudioFade = videoExport.AudioFade;
 		videoSettings.ExcerptSeconds = videoExport.ExcerptSeconds;
-		videoSettings.Branch = static_cast<i32>(videoExport.Branch == VideoBranchMode::TestPlay ? VideoBranchMode::Auto : videoExport.Branch);
+		videoSettings.Branch = static_cast<i32>(videoExport.Branch >= VideoBranchMode::TestPlay ? VideoBranchMode::Auto : videoExport.Branch);
 		videoSettings.ShowTitle = videoExport.ShowTitle;
 		videoSettings.ShowSubtitle = videoExport.ShowSubtitle;
 		videoSettings.ShowDifficulty = videoExport.ShowDifficulty;
@@ -1377,6 +1377,7 @@ namespace PeepoDrumKit
 			if (Path::HasAnyExtension(droppedFilePath, TJA::Extension)) { CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = droppedFilePath] { StartAsyncImportingChartFile(pathCopy); }); break; }
 			if (Path::HasAnyExtension(droppedFilePath, Audio::SupportedFileFormatExtensionsPacked)) { SetAndStartLoadingChartSongFileName(droppedFilePath, context.Undo); break; }
 			if (Path::HasAnyExtension(droppedFilePath, TJA::PreimageExtensions)) { SetAndStartLoadingSongJacketFileName(droppedFilePath, context.Undo); break; }
+			if (Path::HasAnyExtension(droppedFilePath, BackgroundMovieExtensions)) { SetChartBackgroundMovieFileName(droppedFilePath, context.Undo); break; }
 		}
 		if (Gui::BeginPopupModal(UI_WindowName("FOLDER_DROP_TITLE"), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
 		{
@@ -1655,6 +1656,11 @@ namespace PeepoDrumKit
 				SetAndStartLoadingSongJacketFileName(out.NewJacketFilePath, context.Undo);
 			else if (out.BrowseOpenJacket)
 				OpenLoadJacketFileDialog(context.Undo);
+
+			if (out.LoadNewMovie)
+				SetChartBackgroundMovieFileName(out.NewMovieFilePath, context.Undo);
+			else if (out.BrowseOpenMovie)
+				OpenLoadBackgroundMovieFileDialog(context.Undo);
 			}
 		}
 		Gui::End();
@@ -1729,8 +1735,8 @@ namespace PeepoDrumKit
 							ChartProject convertedChart {};
 							CreateChartProjectFromTJA(tjaTestWindow.LoadedTJAFile.Parsed, convertedChart);
 							createBackupOfOriginalTJABeforeOverwriteSave = false;
-							gamePreview.RecordedVideoRoute = {};
-							videoExport.RouteCourse = nullptr;
+							gamePreview.RecordedVideoRoutes = {};
+							videoExport.Selections = {};
 							context.Chart = std::move(convertedChart);
 							context.ChartFilePath = tjaTestWindow.LoadedTJAFile.FilePath;
 							context.ResetChartsCompared();
@@ -1923,9 +1929,10 @@ namespace PeepoDrumKit
 		DrawVideoExportWindow();
 		DrawScreenshotPreview();
 		context.Undo.FlushAndExecuteEndOfFrameCommands();
-		if (gamePreview.RecordedVideoRoute.Course && (gamePreview.RecordedVideoRoute.Changes != context.Undo.NumberOfChangesMade
-			|| std::none_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& course) { return course.get() == gamePreview.RecordedVideoRoute.Course; })))
-			gamePreview.RecordedVideoRoute = {};
+		for (auto& recording : gamePreview.RecordedVideoRoutes)
+			if (recording.Course && (recording.Changes != context.Undo.NumberOfChangesMade
+				|| std::none_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& course) { return course.get() == recording.Course; })))
+				recording = {};
 	}
 
 	void ChartEditor::RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID)
@@ -2009,8 +2016,8 @@ namespace PeepoDrumKit
 		InternalUpdateAsyncLoading();
 
 		createBackupOfOriginalTJABeforeOverwriteSave = false;
-		gamePreview.RecordedVideoRoute = {};
-		videoExport.RouteCourse = nullptr;
+		gamePreview.RecordedVideoRoutes = {};
+		videoExport.Selections = {};
 		context.Chart = {};
 		context.Marker = {};
 		context.ChartFilePath.clear();
@@ -2209,10 +2216,10 @@ namespace PeepoDrumKit
 			File::WriteAllBytes(filePath, tjaText);
 
 			context.ChartFilePath = filePath;
-			if (gamePreview.RecordedVideoRoute.Course)
+			for (auto& recording : gamePreview.RecordedVideoRoutes)
 			{
-				if (gamePreview.RecordedVideoRoute.Changes == context.Undo.NumberOfChangesMade) gamePreview.RecordedVideoRoute.Changes = 0;
-				else gamePreview.RecordedVideoRoute = {};
+				if (recording.Course && recording.Changes == context.Undo.NumberOfChangesMade) recording.Changes = 0;
+				else recording = {};
 			}
 			context.Undo.ClearChangesWereMade();
 
@@ -2406,6 +2413,12 @@ namespace PeepoDrumKit
 		StartAsyncLoadingSongJacketFile(Path::TryMakeAbsolute(context.Chart.SongJacket, context.ChartFilePath));
 	}
 
+	void ChartEditor::SetChartBackgroundMovieFileName(std::string_view relativeOrAbsoluteMovieFilePath, Undo::UndoHistory& undo)
+	{
+		SetBackgroundMovieFileName(context.Chart.OtherMetadata, relativeOrAbsoluteMovieFilePath, context.ChartFilePath);
+		undo.NotifyChangesWereMade();
+	}
+
 	b8 ChartEditor::OpenLoadChartFileDialog(ChartContext& context)
 	{
 		Shell::FileDialog fileDialog {};
@@ -2448,6 +2461,20 @@ namespace PeepoDrumKit
 		return true;
 	}
 
+	b8 ChartEditor::OpenLoadBackgroundMovieFileDialog(Undo::UndoHistory& undo)
+	{
+		Shell::FileDialog fileDialog {};
+		fileDialog.InTitle = "Open Video File";
+		fileDialog.InFilters = { { "Video Files", BackgroundMovieFilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
+		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+
+		if (fileDialog.OpenRead() != Shell::FileDialogResult::OK)
+			return false;
+
+		SetChartBackgroundMovieFileName(fileDialog.OutFilePath, undo);
+		return true;
+	}
+
 	void ChartEditor::CheckOpenSaveConfirmationPopupThenCall(std::function<void()> onSuccess)
 	{
 		if (context.Undo.HasPendingChanges)
@@ -2475,8 +2502,8 @@ namespace PeepoDrumKit
 			// TODO: Maybe also do date version check (?)
 			createBackupOfOriginalTJABeforeOverwriteSave = !loadResult.TJA.Parsed.HasPeepoDrumKitComment;
 
-			gamePreview.RecordedVideoRoute = {};
-			videoExport.RouteCourse = nullptr;
+			gamePreview.RecordedVideoRoutes = {};
+			videoExport.Selections = {};
 			context.Chart = std::move(loadResult.Chart);
 			context.Marker = {};
 			context.ChartFilePath = std::move(loadResult.ChartFilePath);

@@ -3465,6 +3465,33 @@ namespace PeepoDrumKit
 							out.BrowseOpenJacket = true;
 						}
 					});
+				const auto movieDefinition = ReadBackgroundMovieDefinition(chart.OtherMetadata);
+				Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_MOVIE_FILE_NAME"), [&]
+				{
+					MovieFileNameInputBuffer = movieDefinition.FileName;
+					const auto result = Gui::PathInputTextWithHintAndBrowserDialogButton("##MovieFileName", "...##MovieFileName",
+						"background.mp4", &MovieFileNameInputBuffer, ImGuiInputTextFlags_EnterReturnsTrue);
+					if (result.InputTextEdited)
+					{
+						out.LoadNewMovie = true;
+						out.NewMovieFilePath = MovieFileNameInputBuffer;
+					}
+					else if (result.BrowseButtonClicked)
+						out.BrowseOpenMovie = true;
+				});
+				if (!movieDefinition.FileName.empty())
+				{
+					Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_MOVIE_OFFSET"), [&]
+					{
+						Gui::SetNextItemWidth(-1.0f);
+						f32 offsetMS = std::isfinite(movieDefinition.Offset.Seconds) ? movieDefinition.Offset.ToMS_F32() : 0.0f;
+						if (Gui::SpinFloat("##MovieOffset", &offsetMS, 1.0f, 10.0f, "%.3f ms", ImGuiInputTextFlags_None) && std::isfinite(offsetMS))
+						{
+							SetBackgroundMovieOffset(chart.OtherMetadata, Time::FromMS(offsetMS));
+							context.Undo.NotifyChangesWereMade();
+						}
+					});
+				}
 				Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_SONG_VOLUME"), [&]
 				{
 					Gui::SetNextItemWidth(-1.0f);

@@ -505,6 +505,39 @@ namespace PeepoDrumKit
 		route.Branches[0] = BranchType::Normal;
 		if (!recording.IsValid(&course, 7) || recording.IsValid(&course, 8) || recording.Route.Branches[0] != BranchType::Master)
 			return fail("Recorded route was not an independent snapshot");
+		ChartCourse otherCourse;
+		std::array<VideoBranchRecording, 2> recordings = { recording, recording };
+		if (!CanUseVideoBranchMode(course, VideoBranchMode::TestPlay, recordings, 7)
+			|| !CanUseVideoBranchMode(course, VideoBranchMode::TestPlay2, recordings, 7)
+			|| CanUseVideoBranchMode(otherCourse, VideoBranchMode::TestPlay, recordings, 7)
+			|| CanUseVideoBranchMode(course, VideoBranchMode::TestPlay2, recordings, 8))
+			return fail("Recording slots accepted a different course or stale edits");
+		recordings[0] = {};
+		if (CanUseVideoBranchMode(course, VideoBranchMode::TestPlay, recordings, 7)
+			|| !CanUseVideoBranchMode(course, VideoBranchMode::TestPlay2, recordings, 7))
+			return fail("Clearing one recording slot affected the other slot");
+		VideoBranchRoute normalRoute = BuildFixedVideoBranchRoute(course, BranchType::Normal);
+		VideoBranchRoute masterRoute = BuildFixedVideoBranchRoute(course, BranchType::Master);
+		VideoExportLaneState upperLane, lowerLane;
+		upperLane.Route = &normalRoute; lowerLane.Route = &masterRoute;
+		ChartGamePreview dualPreview;
+		dualPreview.UpdateVideoScrolls(course, Time::FromSec(100.0), &upperLane);
+		if (lowerLane.ScrollDecisionCount != SIZE_MAX) return fail("Upper lane modified the lower lane's scroll cache");
+		dualPreview.UpdateVideoScrolls(course, Time::FromSec(100.0), &lowerLane);
+		upperLane.Combos.Rebuild(course, normalRoute);
+		lowerLane.Combos.Rebuild(course, masterRoute);
+		if (upperLane.Combos.GetCurrentCombo(Time::FromSec(4.5)) == lowerLane.Combos.GetCurrentCombo(Time::FromSec(4.5)))
+			return fail("Dual combo fixture did not distinguish routes");
+		const i32 lowerCombo = lowerLane.Combos.GetMaxCombo();
+		upperLane.Combos.Rebuild(otherCourse, BranchType::Normal);
+		if (lowerLane.Combos.GetMaxCombo() != lowerCombo) return fail("Upper combo rebuild changed the lower lane");
+		VideoExportSoundTimeline upperSounds, lowerSounds;
+		upperSounds.Rebuild(course, normalRoute, 4.0f, -1.0f);
+		lowerSounds.Rebuild(course, masterRoute, 4.0f, 1.0f);
+		if (upperSounds.Events.empty() || lowerSounds.Events.empty()
+			|| std::any_of(upperSounds.Events.begin(), upperSounds.Events.end(), [](const auto& event) { return event.Pan != -1.0f; })
+			|| std::any_of(lowerSounds.Events.begin(), lowerSounds.Events.end(), [](const auto& event) { return event.Pan != 1.0f; }))
+			return fail("Dual sound timelines did not retain their side");
 		course.Notes_Normal.Sorted.insert(course.Notes_Normal.Sorted.begin() + 1, makeNote(2, NoteType::Ka));
 		VideoBranchTestPlayResult partialResult;
 		partialResult.Judgements.emplace_back(&course.Notes_Normal.Sorted[0], 1);
@@ -542,6 +575,145 @@ namespace PeepoDrumKit
 		return true;
 	}
 
+	b8 RunVideoLayoutSelfTest(std::string& error)
+	{
+		error.clear();
+		ImGuiContext* previousContext = Gui::GetCurrentContext();
+		ImGuiContext* testContext = Gui::CreateContext();
+		Gui::SetCurrentContext(testContext);
+		ImFont* previousFont = FontMain;
+		defer { FontMain = previousFont; Gui::DestroyContext(testContext); Gui::SetCurrentContext(previousContext); };
+		auto& io = Gui::GetIO();
+		io.IniFilename = io.LogFilename = nullptr;
+		io.DeltaTime = 1.0f / 60.0f;
+		io.ConfigErrorRecoveryEnableAssert = io.ConfigErrorRecoveryEnableDebugLog = io.ConfigErrorRecoveryEnableTooltip = false;
+		testContext->ErrorCallbackUserData = &error;
+		testContext->ErrorCallback = [](ImGuiContext*, void* userData, cstr message) { *static_cast<std::string*>(userData) += message; };
+		unsigned char* pixels;
+		i32 atlasWidth, atlasHeight;
+		io.Fonts->GetTexDataAsRGBA32(&pixels, &atlasWidth, &atlasHeight);
+		FontMain = io.Fonts->Fonts[0];
+		ChartContext context;
+		context.Gfx.StartAsyncLoading();
+		defer { while (context.Gfx.IsAsyncLoading()) context.Gfx.UpdateAsyncLoading(); };
+		TJA::ErrorList parseErrors;
+		const std::string source = "TITLE:Video layout test\nBPM:120\nCOURSE:Oni\nLEVEL:10\n#START\n1111,\n"
+			"#BRANCHSTART p,70,80\n#N\n1111,\n#E\n2222,\n#M\n11111111,\n#BRANCHEND\n1000,\n#END\n"
+			"COURSE:Hard\nLEVEL:8\n#START\n#DELAY 1\n1010,\n#END\n";
+		const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(source)), parseErrors);
+		if (!parseErrors.Errors.empty() || !CreateChartProjectFromTJA(parsed, context.Chart) || context.Chart.Courses.size() != 2)
+			{ error = "Unable to import dual layout fixture"; return false; }
+		context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
+		for (vec2 resolution : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f) })
+		for (auto layout : { ChartGamePreview::VideoLayout::Original, ChartGamePreview::VideoLayout::Taiko })
+		for (b8 sameCourse : { false, true })
+		{
+			io.DisplaySize = resolution;
+			ChartGamePreview preview;
+			preview.VideoExportLayout = layout;
+			preview.VideoExportResolutionWidth = static_cast<u32>(resolution.x);
+			preview.VideoExportPixelAligned = true;
+			std::array<VideoBranchRoute, 2> routes;
+			std::array<VideoExportLaneState, 2> lanes;
+			for (size_t lane = 0; lane < lanes.size(); ++lane)
+			{
+				lanes[lane].Course = context.Chart.Courses[sameCourse ? 0 : lane].get();
+				lanes[lane].Branch = lane == 0 ? BranchType::Master : sameCourse ? BranchType::Expert : BranchType::Normal;
+				routes[lane] = BuildFixedVideoBranchRoute(*lanes[lane].Course, lanes[lane].Branch);
+				lanes[lane].Route = &routes[lane];
+				lanes[lane].Combos.Rebuild(*lanes[lane].Course, routes[lane]);
+				preview.VideoExportLanes[lane] = &lanes[lane];
+			}
+			f32 singleWidth = 0.0f, singleScale = 0.0f;
+			for (i32 frame = 0; frame < 5; ++frame)
+			{
+				preview.VideoExportLaneCount = frame < 2 ? 1 : 2;
+				preview.VideoExportTime = Time::FromSec(frame == 4 ? 1.0 : 3.0);
+				Gui::NewFrame();
+				Gui::SetNextWindowPos(vec2(0.0f));
+				Gui::SetNextWindowSize(resolution);
+				Gui::Begin("Video layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				preview.DrawGui(context, *preview.VideoExportTime);
+				Gui::End();
+				Gui::Render();
+				if (!error.empty()) return false;
+				if (frame == 1) { singleWidth = preview.Camera.LaneWidth(); singleScale = preview.Camera.WorldToScreenScaleFactor; }
+				if (frame >= 2 && (std::abs(singleWidth - preview.Camera.LaneWidth()) > 0.001f ||
+					std::abs(singleScale - preview.Camera.WorldToScreenScaleFactor) > 0.001f ||
+					std::abs(preview.Camera.LaneRect.TL.y - preview.Camera.WorldSpaceSize.y * 0.5f) > 0.001f))
+					{ error = "Dual lanes changed scale or did not meet at the vertical center"; return false; }
+				if (preview.VideoExportDrawList == nullptr || preview.VideoExportDrawList->VtxBuffer.empty())
+					{ error = "Video layout produced no draw data"; return false; }
+				for (const auto& vertex : preview.VideoExportDrawList->VtxBuffer)
+					if (!std::isfinite(vertex.pos.x) || !std::isfinite(vertex.pos.y))
+						{ error = "Video layout produced an invalid vertex"; return false; }
+			}
+		}
+		while (context.Gfx.IsAsyncLoading()) context.Gfx.UpdateAsyncLoading();
+		if (context.Gfx.GetInfo(SprID::Game_Font_Combo).SourceSize.x <= 0.0f)
+			{ error = "Unable to load combo digits for the layout test"; return false; }
+		for (vec2 resolution : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f) })
+		for (i32 laneCount : { 1, 2 })
+		{
+			io.DisplaySize = resolution;
+			ChartGamePreview preview;
+			preview.VideoExportLayout = ChartGamePreview::VideoLayout::Taiko;
+			preview.VideoExportResolutionWidth = static_cast<u32>(resolution.x);
+			preview.VideoExportLaneCount = laneCount;
+			preview.VideoExportTime = Time::FromSec(3.0);
+			preview.VideoShowTitle = preview.VideoShowDifficulty = preview.VideoShowMaxCombo = false;
+			std::array<VideoBranchRoute, 2> routes;
+			std::array<VideoExportLaneState, 2> lanes;
+			for (i32 lane = 0; lane < laneCount; ++lane)
+			{
+				lanes[lane].Course = context.Chart.Courses[lane].get();
+				routes[lane] = BuildFixedVideoBranchRoute(*lanes[lane].Course, BranchType::Normal);
+				lanes[lane].Route = &routes[lane];
+				preview.VideoExportLanes[lane] = &lanes[lane];
+			}
+			f32 fourDigitWidth = 0.0f;
+			for (i32 combo : { 1, 12, 999, 1000, 1111, 8888, 10000, 100000 })
+			{
+				for (i32 lane = 0; lane < laneCount; ++lane) lanes[lane].Combos.HitTimes.assign(combo, Time::Zero());
+				Gui::NewFrame();
+				Gui::SetNextWindowPos(vec2(0.0f));
+				Gui::SetNextWindowSize(resolution);
+				Gui::Begin("Video layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+				preview.DrawGui(context, *preview.VideoExportTime);
+				Gui::End();
+				Gui::Render();
+				if (!error.empty()) return false;
+				for (i32 lane = 0; lane < laneCount; ++lane)
+				{
+					const f32 laneTop = preview.Camera.LaneRect.TL.y - (laneCount - 1 - lane) * GameLaneSlice.TotalHeight();
+					const vec2 expectedCenter = preview.Camera.WorldToScreenSpace(vec2(368.5f, laneTop + 107.0f));
+					Rect bounds = { vec2(F32Max), vec2(-F32Max) };
+					i32 vertexCount = 0;
+					for (const auto& vertex : preview.VideoExportDrawList->VtxBuffer)
+					{
+						if (vertex.col != IM_COL32(255, 255, 255, 63) ||
+							std::abs(vertex.pos.y - expectedCenter.y) > preview.Camera.WorldToScreenScale(75.0f)) continue;
+						bounds.TL = Min(bounds.TL, vec2(vertex.pos));
+						bounds.BR = Max(bounds.BR, vec2(vertex.pos));
+						++vertexCount;
+					}
+					if (vertexCount != static_cast<i32>(std::to_string(combo).size()) * 4)
+						{ error = "Combo digits produced an unexpected number of vertices"; return false; }
+					if (std::abs(bounds.GetCenter().x - expectedCenter.x) > 0.001f ||
+						std::abs(bounds.GetCenter().y - expectedCenter.y) > 0.001f ||
+						bounds.GetWidth() > preview.Camera.WorldToScreenScale(243.0f) + 0.001f ||
+						bounds.GetHeight() > preview.Camera.WorldToScreenScale(75.0f) + 0.001f ||
+						bounds.BR.x > preview.Camera.WorldToScreenSpace(vec2(490.0f, laneTop)).x + 0.001f)
+						{ error = "Combo digits changed center or exceeded the four-digit display area"; return false; }
+					if (combo == 1000) fourDigitWidth = bounds.GetWidth();
+					if (combo >= 10000 && std::abs(bounds.GetWidth() - fourDigitWidth) > 0.001f)
+						{ error = "Five or more combo digits did not fit the four-digit width"; return false; }
+				}
+			}
+		}
+		return true;
+	}
+
 	static f32 SampleChannel(const Audio::PCMSampleBuffer* source, i64 frame, u32 channel)
 	{
 		if (!source || !source->InterleavedSamples || source->SampleRate != Audio::Engine.OutputSampleRate ||
@@ -570,9 +742,10 @@ namespace PeepoDrumKit
 			const i64 lastOverlap = std::min(firstOutputFrame + outputFrameCount, eventFrame + source->FrameCount);
 			if (firstOverlap >= lastOverlap) continue;
 			const f32 volume = event.Sound == SoundEffectType::Balloon ? sources.BalloonVolume : sources.DrumVolume;
+			const auto panGain = event.Pan == 0.0f ? std::array{ 1.0f, 1.0f } : Audio::GetPanGain(event.Pan, Audio::AudioEngine::PanLaw);
 			for (i64 frame = firstOverlap; frame < lastOverlap; ++frame)
 				for (u32 channel = 0; channel < 2; ++channel)
-					mixed[static_cast<size_t>(frame - firstOutputFrame) * 2 + channel] += SampleChannel(source, frame - eventFrame, channel) * volume;
+					mixed[static_cast<size_t>(frame - firstOutputFrame) * 2 + channel] += SampleChannel(source, frame - eventFrame, channel) * volume * panGain[channel];
 		}
 
 		outInterleavedStereo.resize(mixed.size());

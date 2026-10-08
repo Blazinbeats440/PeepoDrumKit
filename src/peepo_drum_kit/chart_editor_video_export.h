@@ -16,7 +16,7 @@ namespace PeepoDrumKit
 		{ "1080p (1920 x 1080)", 1920, 1080, 12000000 },
 	};
 
-	enum class VideoBranchMode { Normal, Expert, Master, Auto, TestPlay };
+	enum class VideoBranchMode { Normal, Expert, Master, Auto, TestPlay, TestPlay2 };
 	struct VideoBranchVisualState
 	{
 		BranchType Branch = BranchType::Normal, From = BranchType::Normal;
@@ -47,6 +47,17 @@ namespace PeepoDrumKit
 		VideoBranchRoute Route;
 		b8 IsValid(const ChartCourse* course, i32 changes) const { return Course != nullptr && Course == course && Changes == changes; }
 	};
+	inline b8 CanUseVideoBranchMode(const ChartCourse& course, VideoBranchMode mode,
+		const std::array<VideoBranchRecording, 2>& recordings, i32 changes)
+	{
+		if (mode >= VideoBranchMode::TestPlay)
+		{
+			const size_t slot = static_cast<size_t>(mode) - static_cast<size_t>(VideoBranchMode::TestPlay);
+			return slot < recordings.size() && recordings[slot].IsValid(&course, changes);
+		}
+		return mode != VideoBranchMode::Auto || std::none_of(course.Branches.begin(), course.Branches.end(),
+			[](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
+	}
 	struct VideoBranchTestPlayResult
 	{
 		std::vector<std::pair<const Note*, i32>> Judgements;
@@ -58,6 +69,7 @@ namespace PeepoDrumKit
 	b8 BuildAutoVideoBranchRoute(const ChartCourse& course, f32 rollsPerSecond, VideoBranchRoute& out);
 	b8 BuildTestPlayVideoBranchRoute(const ChartCourse& course, const VideoBranchTestPlayResult& result, VideoBranchRoute& out);
 	b8 RunVideoBranchSelfTest(std::string& error);
+	b8 RunVideoLayoutSelfTest(std::string& error);
 
 	template <typename Func>
 	void ForEachVideoRollHit(const ChartCourse& course, const Note& note, f32 rollsPerSecond, Func callback, BranchType branch = BranchType::Normal)
@@ -102,6 +114,7 @@ namespace PeepoDrumKit
 	{
 		Time HitTime;
 		SoundEffectType Sound;
+		f32 Pan = 0.0f;
 	};
 
 	struct VideoExportSoundTimeline
@@ -112,7 +125,7 @@ namespace PeepoDrumKit
 		{
 			Rebuild(course, BuildFixedVideoBranchRoute(course, branch), rollsPerSecond);
 		}
-		void Rebuild(const ChartCourse& course, const VideoBranchRoute& route, f32 rollsPerSecond)
+		void Rebuild(const ChartCourse& course, const VideoBranchRoute& route, f32 rollsPerSecond, f32 pan = 0.0f)
 		{
 			Events.clear();
 			for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
@@ -124,13 +137,13 @@ namespace PeepoDrumKit
 				{
 					ForEachVideoRollHit(course, note, rollsPerSecond, [&](Time time, b8 pop)
 					{
-						Events.push_back({ time, pop ? SoundEffectType::Balloon : SoundEffectType::TaikoDon });
+						Events.push_back({ time, pop ? SoundEffectType::Balloon : SoundEffectType::TaikoDon, pan });
 					}, branch);
 				}
 				else if (IsComboNote(note.Type))
 				{
-					if (!IsKaNote(note.Type)) Events.push_back({ head, SoundEffectType::TaikoDon });
-					if (IsKaNote(note.Type) || IsKaDonNote(note.Type)) Events.push_back({ head, SoundEffectType::TaikoKa });
+					if (!IsKaNote(note.Type)) Events.push_back({ head, SoundEffectType::TaikoDon, pan });
+					if (IsKaNote(note.Type) || IsKaDonNote(note.Type)) Events.push_back({ head, SoundEffectType::TaikoKa, pan });
 				}
 			}
 			std::sort(Events.begin(), Events.end(), [](const VideoExportSoundEvent& left, const VideoExportSoundEvent& right) { return left.HitTime < right.HitTime; });

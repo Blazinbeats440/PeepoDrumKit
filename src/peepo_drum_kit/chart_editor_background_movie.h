@@ -6,6 +6,9 @@
 
 namespace PeepoDrumKit
 {
+	inline constexpr std::string_view BackgroundMovieExtensions = ".mp4;.m4v;.mov;.wmv;.avi;.mpg;.mpeg;.m2v;.m2ts;.mts;.ts;.asf;.mkv;.webm";
+	inline constexpr std::string_view BackgroundMovieFilterSpec = "*.mp4;*.m4v;*.mov;*.wmv;*.avi;*.mpg;*.mpeg;*.m2v;*.m2ts;*.mts;*.ts;*.asf;*.mkv;*.webm";
+
 	struct BackgroundMovieDefinition
 	{
 		std::string FileName;
@@ -14,6 +17,8 @@ namespace PeepoDrumKit
 	};
 
 	BackgroundMovieDefinition ReadBackgroundMovieDefinition(const std::map<std::string, std::string>& metadata);
+	void SetBackgroundMovieFileName(std::map<std::string, std::string>& metadata, std::string_view filePath, std::string_view chartFilePath);
+	void SetBackgroundMovieOffset(std::map<std::string, std::string>& metadata, Time offset);
 	inline Time GetBackgroundMovieTime(Time chartTime, Time songOffset, Time movieOffset)
 	{
 		return chartTime - songOffset - movieOffset;

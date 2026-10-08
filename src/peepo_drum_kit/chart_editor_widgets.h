@@ -183,6 +183,9 @@ namespace PeepoDrumKit
 		b8 BrowseOpenJacket;
 		b8 LoadNewJacket;
 		std::string NewJacketFilePath;
+		b8 BrowseOpenMovie;
+		b8 LoadNewMovie;
+		std::string NewMovieFilePath;
 	};
 	struct ChartPropertiesWindow
 	{
@@ -192,6 +195,7 @@ namespace PeepoDrumKit
 		std::array<b8, 2> DifficultySliderStarsWasHoveredLastFrame = InitializedArray<b8, 2>(false);
 		std::string JacketFileNameInputBuffer;
 		LoadingTextAnimation JacketLoadingTextAnimation{};
+		std::string MovieFileNameInputBuffer;
 
 		enum class EFocus: u8 { None, Focus, Scroll };
 		EFocus FocusCoursePropertyHeaderNextFrame = EFocus::None;
@@ -364,6 +368,16 @@ namespace PeepoDrumKit
 		constexpr b8 IsRangeVisibleOnLane(f32 laneHeadX, f32 laneTailX, f32 threshold = 280.0f) const { return (laneTailX >= -threshold) && (laneHeadX <= (LaneWidth() + threshold)); }
 	};
 
+	struct VideoExportLaneState
+	{
+		ChartCourse* Course = nullptr;
+		BranchType Branch = BranchType::Normal;
+		const VideoBranchRoute* Route = nullptr;
+		VideoExportComboTimeline Combos;
+		std::array<PlaybackScrollTimeline, EnumCount<BranchType>> Scrolls, TransitionScrolls;
+		size_t ScrollDecisionCount = SIZE_MAX;
+	};
+
 	struct ChartGamePreview
 	{
 		~ChartGamePreview();
@@ -392,9 +406,11 @@ namespace PeepoDrumKit
 		const VideoBranchRoute* VideoExportRoute = nullptr;
 		f32 VideoRollsPerSecond = 0.0f;
 		VideoExportComboTimeline VideoExportCombos;
+		std::array<VideoExportLaneState*, 2> VideoExportLanes = {};
+		i32 VideoExportLaneCount = 0;
 		std::array<PlaybackScrollTimeline, EnumCount<BranchType>> VideoExportScrolls, VideoExportTransitionScrolls;
 		size_t VideoScrollDecisionCount = SIZE_MAX;
-		void UpdateVideoScrolls(const ChartCourse& course, Time time);
+		void UpdateVideoScrolls(const ChartCourse& course, Time time, VideoExportLaneState* lane = nullptr);
 		b8 VideoShowTitle = true, VideoShowSubtitle = false, VideoShowDifficulty = true, VideoShowMaxCombo = true, VideoShowCurrentCombo = true;
 		f32 VideoTitleScale = 1.0f, VideoTitlePaddingScale = 1.0f;
 		i32 VideoTitleAlignment = 0, VideoTitleVerticalPosition = 0;
@@ -434,7 +450,7 @@ namespace PeepoDrumKit
 		Time TestPlayEndTime = Time::Zero();
 		Time TestPlayAttemptStartTime = Time::Zero();
 		Time TestPlayRecordedThrough = Time::Zero();
-		VideoBranchRecording RecordedVideoRoute;
+		std::array<VideoBranchRecording, 2> RecordedVideoRoutes;
 		size_t VideoRecordingVersion = 0;
 		TestPlayInterval<Time> GetTestPlaySelectedRange(const ChartContext& context) const;
 		TestPlayInterval<Time> GetTestPlayInterval(const ChartContext& context) const;
