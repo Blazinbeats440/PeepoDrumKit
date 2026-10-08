@@ -3,12 +3,14 @@
 #endif
 #include "chart_editor_background_movie.h"
 #include "core_string.h"
+#include "core_io.h"
 #include <Windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <wrl/client.h>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -26,6 +28,31 @@ namespace PeepoDrumKit
 				result.Error = "Invalid MOVIEOFFSET";
 		}
 		return result;
+	}
+
+	static void SetBackgroundMovieMetadata(std::map<std::string, std::string>& metadata, std::string_view key, std::string value)
+	{
+		for (auto entry = metadata.begin(); entry != metadata.end();)
+		{
+			if (ASCII::MatchesInsensitive(entry->first, key)) entry = metadata.erase(entry);
+			else ++entry;
+		}
+		if (!value.empty()) metadata.emplace(key, std::move(value));
+	}
+
+	void SetBackgroundMovieFileName(std::map<std::string, std::string>& metadata, std::string_view filePath, std::string_view chartFilePath)
+	{
+		std::string path { ASCII::Trim(filePath) };
+		if (!path.empty() && !chartFilePath.empty() && !Path::IsRelative(path))
+		{
+			if (auto relativePath = Path::TryMakeRelative(path, chartFilePath); !relativePath.empty()) path = std::move(relativePath);
+		}
+		SetBackgroundMovieMetadata(metadata, "BGMOVIE", Path::NormalizeInPlace(path));
+	}
+
+	void SetBackgroundMovieOffset(std::map<std::string, std::string>& metadata, Time offset)
+	{
+		if (std::isfinite(offset.Seconds)) SetBackgroundMovieMetadata(metadata, "MOVIEOFFSET", ASCII::ToString(offset.Seconds));
 	}
 
 	using Microsoft::WRL::ComPtr;
@@ -198,7 +225,7 @@ namespace PeepoDrumKit
 			}
 			if (Current && (target < CurrentTime || target - CurrentTime > 2 * MovieTicksPerSecond))
 				if (!Seek(target)) return BackgroundMovieStatus::Failed;
-			b8 retriedFromStart = false;
+			LONGLONG seekBackoff = static_cast<LONGLONG>(MovieTicksPerSecond);
 			for (;;)
 			{
 				if (canceled()) return BackgroundMovieStatus::Pending;
@@ -209,10 +236,11 @@ namespace PeepoDrumKit
 					CurrentSize = Size; CurrentStride = Stride;
 					CurrentDisplaySize = DisplaySize; CurrentCropOrigin = CropOrigin;
 					if (!Current) continue;
-					if (CurrentTime > target && target > 0 && !retriedFromStart)
+					if (CurrentTime > target && target > 0 && seekBackoff > 0)
 					{
-						if (!Seek(0)) return BackgroundMovieStatus::Failed;
-						retriedFromStart = true;
+						const LONGLONG earlier = std::max<LONGLONG>(0, target - seekBackoff);
+						if (!Seek(earlier)) return BackgroundMovieStatus::Failed;
+						seekBackoff = earlier == 0 ? 0 : seekBackoff + std::min(seekBackoff, target - seekBackoff);
 						continue;
 					}
 				}
@@ -245,6 +273,8 @@ namespace PeepoDrumKit
 
 	struct BackgroundMovieReader::Impl
 	{
+		static constexpr size_t MaxCachedFrames = 16, MaxCachedBytes = 64 * 1024 * 1024;
+		static constexpr LONGLONG ReadAheadTicks = 2500000;
 		std::mutex Mutex;
 		std::condition_variable Changed;
 		std::thread Worker;
@@ -253,7 +283,30 @@ namespace PeepoDrumKit
 		LONGLONG Target = 0, PublishedTarget = 0, Duration = -1;
 		u64 RequestRevision = 0, PathRevision = 0, Sequence = 0;
 		BackgroundMovieStatus Status = BackgroundMovieStatus::Inactive;
-		BackgroundMovieFrame Frame;
+		std::deque<BackgroundMovieFrame> Frames;
+		size_t CachedBytes = 0;
+
+		const BackgroundMovieFrame* FindFrame(LONGLONG target) const
+		{
+			const f64 time = target / MovieTicksPerSecond;
+			for (const auto& frame : Frames)
+				if (time >= frame.Start.Seconds && time < frame.End.Seconds) return &frame;
+			return nullptr;
+		}
+
+		void CacheFrame(BackgroundMovieFrame frame)
+		{
+			if (FindFrame(static_cast<LONGLONG>(std::llround(frame.Start.Seconds * MovieTicksPerSecond)))) return;
+			// A frame larger than the cache budget is retained on its own.
+			while (!Frames.empty() && (Frames.size() >= MaxCachedFrames || CachedBytes + frame.Pixels.size() > MaxCachedBytes))
+			{
+				CachedBytes -= Frames.front().Pixels.size();
+				Frames.pop_front();
+			}
+			frame.Sequence = ++Sequence;
+			CachedBytes += frame.Pixels.size();
+			Frames.push_back(std::move(frame));
+		}
 
 		~Impl()
 		{
@@ -279,6 +332,7 @@ namespace PeepoDrumKit
 				const LONGLONG target = Target;
 				const u64 revision = RequestRevision;
 				const u64 pathRevision = PathRevision;
+				const b8 cached = FindFrame(target) != nullptr;
 				lock.unlock();
 				BackgroundMovieFrame frame;
 				BackgroundMovieStatus status = BackgroundMovieStatus::Inactive;
@@ -291,10 +345,10 @@ namespace PeepoDrumKit
 						if (FAILED(mediaResult)) decoder.Check(mediaResult, "Initialize video decoder");
 						else decoder.Open(path);
 					}
-					status = decoder.Decode(target, frame, [&]
+					status = cached ? BackgroundMovieStatus::Ready : decoder.Decode(target, frame, [&]
 					{
 						std::lock_guard<std::mutex> requestLock(Mutex);
-						return Stopping || PathRevision != pathRevision || InvalidTime || Target < target || Target - target > 2 * MovieTicksPerSecond;
+						return Stopping || PathRevision != pathRevision || InvalidTime || Target < target || Target - target > ReadAheadTicks;
 					});
 				}
 				lock.lock();
@@ -305,10 +359,39 @@ namespace PeepoDrumKit
 				PublishedPath = path;
 				PublishedTarget = target;
 				Duration = decoder.Duration;
-				if (status == BackgroundMovieStatus::Ready)
+				if (status == BackgroundMovieStatus::Ready && !frame.Pixels.empty()) CacheFrame(std::move(frame));
+
+				// Publish the requested frame first, then fill a bounded buffer ahead of the current cursor.
+				while (!Stopping && !InvalidTime && PathRevision == pathRevision && status == BackgroundMovieStatus::Ready)
 				{
-					frame.Sequence = ++Sequence;
-					Frame = std::move(frame);
+					const auto* current = FindFrame(Target);
+					if (!current) break;
+					LONGLONG nextTarget = static_cast<LONGLONG>(std::llround(current->End.Seconds * MovieTicksPerSecond));
+					while (const auto* next = FindFrame(nextTarget))
+						nextTarget = static_cast<LONGLONG>(std::llround(next->End.Seconds * MovieTicksPerSecond));
+					if (nextTarget - Target > ReadAheadTicks || (Duration >= 0 && nextTarget >= Duration)) break;
+					const size_t frameBytes = current->Pixels.size();
+					while (!Frames.empty() && (Frames.size() >= MaxCachedFrames || CachedBytes + frameBytes > MaxCachedBytes) &&
+						Frames.front().End.Seconds <= Target / MovieTicksPerSecond)
+					{
+						CachedBytes -= Frames.front().Pixels.size();
+						Frames.pop_front();
+					}
+					if (Frames.size() >= MaxCachedFrames || CachedBytes + frameBytes > MaxCachedBytes) break;
+					lock.unlock();
+					BackgroundMovieFrame ahead;
+					const auto aheadStatus = decoder.Decode(nextTarget, ahead, [&]
+					{
+						std::lock_guard<std::mutex> requestLock(Mutex);
+						return Stopping || InvalidTime || PathRevision != pathRevision ||
+							(!FindFrame(Target) && (Target < nextTarget || Target - nextTarget > ReadAheadTicks));
+					});
+					lock.lock();
+					if (PathRevision != pathRevision || InvalidTime || aheadStatus == BackgroundMovieStatus::Pending) break;
+					Duration = decoder.Duration;
+					if (aheadStatus != BackgroundMovieStatus::Ready) break;
+					if (CachedBytes + ahead.Pixels.size() > MaxCachedBytes) break;
+					CacheFrame(std::move(ahead));
 				}
 			}
 		}
@@ -330,20 +413,16 @@ namespace PeepoDrumKit
 		if (recovering)
 		{
 			impl->InvalidTime = false; impl->PublishedPath.clear(); impl->Error.clear();
+			impl->Frames.clear(); impl->CachedBytes = 0;
 			++impl->PathRevision;
 		}
 		const LONGLONG target = static_cast<LONGLONG>(std::llround(time.Seconds * MovieTicksPerSecond));
 		if (!recovering && impl->Path == path && impl->Target == target) return;
-		if (impl->Path == path && impl->PublishedPath == path && impl->Status == BackgroundMovieStatus::Ready &&
-			target / MovieTicksPerSecond >= impl->Frame.Start.Seconds && target / MovieTicksPerSecond < impl->Frame.End.Seconds)
-		{
-			impl->Target = target;
-			return;
-		}
 		if (impl->Path != path)
 		{
 			++impl->PathRevision;
 			impl->PublishedPath.clear(); impl->Error.clear(); impl->Duration = -1;
+			impl->Frames.clear(); impl->CachedBytes = 0;
 			impl->Status = BackgroundMovieStatus::Pending;
 		}
 		impl->Path = path;
@@ -366,10 +445,9 @@ namespace PeepoDrumKit
 		if (impl->PublishedPath != impl->Path) return BackgroundMovieStatus::Pending;
 		if (impl->Status == BackgroundMovieStatus::Failed) return BackgroundMovieStatus::Failed;
 		if (impl->Target < 0 || (impl->Duration >= 0 && impl->Target >= impl->Duration)) return BackgroundMovieStatus::Inactive;
-		const f64 time = impl->Target / MovieTicksPerSecond;
-		if (impl->Status == BackgroundMovieStatus::Ready && time >= impl->Frame.Start.Seconds && time < impl->Frame.End.Seconds)
+		if (const auto* cached = impl->FindFrame(impl->Target))
 		{
-			if (frame.Sequence != impl->Frame.Sequence) frame = impl->Frame;
+			if (frame.Sequence != cached->Sequence) frame = *cached;
 			return BackgroundMovieStatus::Ready;
 		}
 		return impl->Status == BackgroundMovieStatus::Inactive && impl->Target == impl->PublishedTarget

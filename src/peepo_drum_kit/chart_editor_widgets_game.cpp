@@ -710,8 +710,12 @@ namespace PeepoDrumKit
 		}
 	}
 
-	void ChartGamePreview::UpdateVideoScrolls(const ChartCourse& course, Time time)
+	void ChartGamePreview::UpdateVideoScrolls(const ChartCourse& course, Time time, VideoExportLaneState* lane)
 	{
+		const VideoBranchRoute* VideoExportRoute = lane ? lane->Route : this->VideoExportRoute;
+		auto& VideoScrollDecisionCount = lane ? lane->ScrollDecisionCount : this->VideoScrollDecisionCount;
+		auto& VideoExportScrolls = lane ? lane->Scrolls : this->VideoExportScrolls;
+		auto& VideoExportTransitionScrolls = lane ? lane->TransitionScrolls : this->VideoExportTransitionScrolls;
 		if (VideoExportRoute == nullptr) return;
 		const auto& route = *VideoExportRoute;
 		size_t decided = route.Branches.size();
@@ -1244,7 +1248,7 @@ namespace PeepoDrumKit
 			}
 		}
 		MovieVisible = MovieTexture.IsValid() && (MovieStatus == BackgroundMovieStatus::Ready ||
-			(MovieStatus == BackgroundMovieStatus::Pending && time >= MovieFrame.Start && time < MovieFrame.End + Time::FromSec(0.25)));
+			(MovieStatus == BackgroundMovieStatus::Pending && !VideoExportTime.has_value() && time >= Time::Zero()));
 	}
 
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
@@ -1290,20 +1294,26 @@ namespace PeepoDrumKit
 			{
 				if (!context.GetIsPlayback())
 				{
-					if (Gui::Button(UI_Str("TEST_PLAY_RECORD_VIDEO_ROUTE")))
+					for (size_t slot = 0; slot < RecordedVideoRoutes.size(); ++slot)
 					{
-						VideoBranchTestPlayResult result;
-						for (const auto& item : TestPlayAttemptJudgements) result.Judgements.emplace_back(item.first, item.second.Judgement);
-						for (const auto& note : TestPlayLongNotes) result.LongNoteHitTimes.emplace_back(note.Source, note.HitTimes);
-						result.Decisions = TestPlayBranchDecisions;
-						RecordedVideoRoute = {};
-						RecordedVideoRoute.Course = TestPlayCourse;
-						RecordedVideoRoute.Changes = context.Undo.NumberOfChangesMade;
-						if (!BuildTestPlayVideoBranchRoute(*TestPlayCourse, result, RecordedVideoRoute.Route)) RecordedVideoRoute = {};
-						++VideoRecordingVersion;
+						if (slot != 0) Gui::SameLine();
+						if (Gui::Button(slot == 0 ? UI_Str("TEST_PLAY_RECORD_VIDEO_ROUTE_1P") : UI_Str("TEST_PLAY_RECORD_VIDEO_ROUTE_2P")))
+						{
+							VideoBranchTestPlayResult result;
+							for (const auto& item : TestPlayAttemptJudgements) result.Judgements.emplace_back(item.first, item.second.Judgement);
+							for (const auto& note : TestPlayLongNotes) result.LongNoteHitTimes.emplace_back(note.Source, note.HitTimes);
+							result.Decisions = TestPlayBranchDecisions;
+							auto& recording = RecordedVideoRoutes[slot];
+							recording = {};
+							recording.Course = TestPlayCourse;
+							recording.Changes = context.Undo.NumberOfChangesMade;
+							if (!BuildTestPlayVideoBranchRoute(*TestPlayCourse, result, recording.Route)) recording = {};
+							++VideoRecordingVersion;
+						}
 					}
-					if (RecordedVideoRoute.IsValid(TestPlayCourse, context.Undo.NumberOfChangesMade))
-						Gui::TextUnformatted(UI_Str("TEST_PLAY_VIDEO_ROUTE_RECORDED"));
+					for (size_t slot = 0; slot < RecordedVideoRoutes.size(); ++slot)
+						if (RecordedVideoRoutes[slot].IsValid(TestPlayCourse, context.Undo.NumberOfChangesMade))
+							Gui::TextUnformatted(slot == 0 ? UI_Str("TEST_PLAY_VIDEO_ROUTE_RECORDED_1P") : UI_Str("TEST_PLAY_VIDEO_ROUTE_RECORDED_2P"));
 					i32 playbackSpeedPercent = static_cast<i32>(std::round(TestPlayPlaybackSpeed * 100.0f));
 					if (Gui::SliderInt(UI_Str("SETTINGS_TEST_PLAY_PLAYBACK_SPEED"), &playbackSpeedPercent, 25, 100))
 					{
@@ -1433,7 +1443,12 @@ namespace PeepoDrumKit
 		};
 		std::vector<std::pair<ChartCourse*, BranchType>> comparedLanes;
 		if (isVideoExport)
-			comparedLanes.emplace_back(context.ChartSelectedCourse, VideoExportBranch);
+		{
+			if (VideoExportLaneCount > 0)
+				for (i32 lane = 0; lane < VideoExportLaneCount; ++lane)
+					comparedLanes.emplace_back(VideoExportLanes[lane]->Course, VideoExportLanes[lane]->Branch);
+			else comparedLanes.emplace_back(context.ChartSelectedCourse, VideoExportBranch);
+		}
 		else
 		for (const auto& course : context.Chart.Courses)
 		{
@@ -1487,7 +1502,8 @@ namespace PeepoDrumKit
 			// 1280x720 reference, shifted 25 pixels up at 1920x1080.
 			Camera.WorldSpaceSize = vec2(1920.0f, 1080.0f);
 			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / Camera.WorldSpaceSize.x;
-			laneRectBase = Rect::FromTLSize(vec2(498.0f, 251.0f), vec2(GameLaneStandardWidth, GameLaneSlice.TotalHeight()));
+			laneRectBase = Rect::FromTLSize(vec2(498.0f, nLanes == 2 ? (1080.0f - 2.0f * GameLaneSlice.TotalHeight()) * 0.5f : 251.0f),
+				vec2(GameLaneStandardWidth, GameLaneSlice.TotalHeight()));
 		}
 		else if (viewportAspectRatio <= standardAspectRatio) // NOTE: Standard case of (<= 16:9) with a fixed sized lane being centered
 		{
@@ -1495,6 +1511,11 @@ namespace PeepoDrumKit
 			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / standardSize.x;
 			laneRectBase = Rect::FromTLSize(vec2(GameLanePaddingL, GameLanePaddingTop), vec2(GameLaneStandardWidth, GameLaneSlice.TotalHeight()));
 			laneRectBase += vec2(0.0f, (Camera.WorldSpaceSize.y * 0.5f) - (standardSize.y * 0.5f));
+			if (isVideoExport && nLanes == 2)
+			{
+				laneRectBase.TL.y = (Camera.WorldSpaceSize.y - 2.0f * GameLaneSlice.TotalHeight()) * 0.5f;
+				laneRectBase.BR.y = laneRectBase.TL.y + GameLaneSlice.TotalHeight();
+			}
 		}
 		else // NOTE: Ultra wide case of (> 16:9) with the lane being extended further to the right
 		{
@@ -1613,8 +1634,27 @@ namespace PeepoDrumKit
 		if (isTaikoVideo)
 		{
 			drawList->ChannelsSetCurrent(4);
-			drawList->AddRectFilled(Camera.WorldToScreenSpace(vec2(0.0f, 251.0f)),
-				Camera.WorldToScreenSpace(vec2(498.0f, 515.0f)), 0xE0282525);
+			drawList->AddRectFilled(Camera.WorldToScreenSpace(vec2(0.0f, laneRectBase.TL.y)),
+				Camera.WorldToScreenSpace(vec2(498.0f, laneRectBase.TL.y + nLanes * GameLaneSlice.TotalHeight())), 0xE0282525);
+			for (i32 lane = 0; lane < nLanes; ++lane)
+			{
+				const f32 laneTop = laneRectBase.TL.y + lane * GameLaneSlice.TotalHeight();
+				const SprID preferredBackground = lane == 0 ? SprID::Game_Combo_Background_1P : SprID::Game_Combo_Background_2P;
+				const SprID fallbackBackground = lane == 0 ? SprID::Game_Combo_Background_2P : SprID::Game_Combo_Background_1P;
+				for (SprID background : { preferredBackground, fallbackBackground })
+				{
+					const SprInfo backgroundInfo = context.Gfx.GetInfo(background);
+					if (backgroundInfo.SourceSize.x <= 0.0f || backgroundInfo.SourceSize.y <= 0.0f) continue;
+					ImImageQuad backgroundQuad;
+					if (context.Gfx.GetImageQuad(backgroundQuad, background,
+						Camera.WorldToScreenSpace(vec2(0.0f, laneTop)),
+						Camera.WorldToScreenSpace(vec2(498.0f, laneTop + GameLaneSlice.TotalHeight())), vec2(0.0f), vec2(1.0f)) && backgroundQuad.TexID != 0)
+					{
+						context.Gfx.DrawSprite(drawList, backgroundQuad);
+						break;
+					}
+				}
+			}
 			drawList->ChannelsSetCurrent(0);
 		}
 
@@ -1681,13 +1721,16 @@ namespace PeepoDrumKit
 			}
 		};
 
+		std::vector<std::function<void(f32)>> videoComboDrawCalls;
 		i32 iLane = -1;
 		for (const auto& [course, branch] : comparedLanes) {
+			++iLane;
+			if (isVideoExport) Gui::PushID(iLane);
 			Gui::PushID(course);
 			Gui::PushID(EnumToIndex(branch));
-			defer { Gui::PopID(); Gui::PopID(); };
-			const b8 isFocusedLane = (context.CompareMode && course == context.ChartSelectedCourse && branch == context.ChartSelectedBranch);
-			++iLane;
+			defer { Gui::PopID(); Gui::PopID(); if (isVideoExport) Gui::PopID(); };
+			const b8 isFocusedLane = (!isVideoExport && context.CompareMode && course == context.ChartSelectedCourse && branch == context.ChartSelectedBranch);
+			VideoExportLaneState* videoLane = isVideoExport && VideoExportLaneCount > 0 ? VideoExportLanes[iLane] : nullptr;
 
 			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + commentLaneHeight) };
 
@@ -1713,10 +1756,10 @@ namespace PeepoDrumKit
 			const Time timeAfterGogo = (lastGogo == nullptr) ? Time::FromSec(F64Max)
 				: TimeSinceNoteHit(course->BeatToPlaybackTime(lastGogo->GetEnd(), branch), cursorTimeOrAnimated);
 			const auto [gogoFireZoom, gogoFireAlpha, gogoLaneZoom, gogoLaneAlpha] = getGogoTransition(isGogo, timeSinceGogo, timeAfterGogo);
-			const VideoBranchRoute* videoRoute = isVideoExport ? VideoExportRoute : nullptr;
-			if (videoRoute) UpdateVideoScrolls(*course, cursorTimeOrAnimated);
-			const auto* playbackScrolls = videoRoute ? &VideoExportScrolls : IsTestPlaying && course == TestPlayCourse ? &TestPlayScrolls : nullptr;
-			const auto* transitionScrolls = videoRoute ? &VideoExportTransitionScrolls : IsTestPlaying && course == TestPlayCourse ? &TestPlayTransitionScrolls : nullptr;
+			const VideoBranchRoute* videoRoute = isVideoExport ? (videoLane ? videoLane->Route : VideoExportRoute) : nullptr;
+			if (videoRoute) UpdateVideoScrolls(*course, cursorTimeOrAnimated, videoLane);
+			const auto* playbackScrolls = videoRoute ? (videoLane ? &videoLane->Scrolls : &VideoExportScrolls) : IsTestPlaying && course == TestPlayCourse ? &TestPlayScrolls : nullptr;
+			const auto* transitionScrolls = videoRoute ? (videoLane ? &videoLane->TransitionScrolls : &VideoExportTransitionScrolls) : IsTestPlaying && course == TestPlayCourse ? &TestPlayTransitionScrolls : nullptr;
 			const VideoBranchVisualState videoState = videoRoute ? videoRoute->GetVisualState(*course, cursorTimeOrAnimated) : VideoBranchVisualState {};
 			const b8 autoBranchLane = videoRoute != nullptr || (IsTestPlaying && TestPlayAutoBranchActive && course == TestPlayCourse);
 			const BranchType visualBranch = videoRoute ? videoState.Branch : TestPlayVisualBranch;
@@ -1818,7 +1861,7 @@ namespace PeepoDrumKit
 				Camera.WorldToScreenSpace(stdLaneRectBR.GetBL() + vec2(Camera.LaneWidth(), 0) + vec2(GameLanePaddingR, 0.0f)),
 			};
 			Gui::SetCursorScreenPos(laneRectScreen.TL);
-			if (Gui::InvisibleButton("##GamePreviewLane", laneRectScreen.GetSize(), ImGuiButtonFlags_AllowOverlap) && !IsTestPlaying)
+			if (Gui::InvisibleButton("##GamePreviewLane", laneRectScreen.GetSize(), ImGuiButtonFlags_AllowOverlap) && !IsTestPlaying && !isVideoExport)
 				context.SetSelectedChart(course, branch);
 			Gui::SetItemAllowOverlap();
 
@@ -2500,7 +2543,7 @@ namespace PeepoDrumKit
 			{
 				const SortedNotesList& notes = course->GetNotes(branch);
 				const Note* lastHitNote = notes.TryFindLastAtBeat(cursorBeatOrAnimatedTrunc);
-				const i32 displayedCombo = isVideoExport ? (VideoShowCurrentCombo ? VideoExportCombos.GetCurrentCombo(*VideoExportTime) : 0)
+				const i32 displayedCombo = isVideoExport ? (VideoShowCurrentCombo ? (videoLane ? videoLane->Combos : VideoExportCombos).GetCurrentCombo(*VideoExportTime) : 0)
 					: IsTestPlaying ? TestPlayCombo : (lastHitNote != nullptr ? lastHitNote->TempComboCount : 0);
 				if (displayedCombo > 0 && !(nLanes > 2 && balloonPopCountDrawn))
 				{
@@ -2516,46 +2559,87 @@ namespace PeepoDrumKit
 
 						const auto& display = GetGameComboDisplay(nLanes);
 						const f32 digitScale = Camera.WorldToScreenScaleFactor * display.DigitScale / sprBaseScale;
-						const vec2 digitSize = digitSrcSize * digitScale;
+						vec2 digitSize = digitSrcSize * digitScale;
 
-						const vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
-						const vec2 digitStep = digitSize + padding;
+						constexpr i32 taikoComboReferenceDigits = 4;
+						constexpr vec2 taikoComboDigitSize = vec2(66.0f, 75.0f);
+						const f32 taikoComboReferenceWidth = taikoComboDigitSize.x * taikoComboReferenceDigits + display.PaddingX * (taikoComboReferenceDigits - 1);
+						vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
+						if (isTaikoVideo && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
+						{
+							const f32 fitScale = std::min(taikoComboDigitSize.x / digitSrcSize.x, taikoComboDigitSize.y / digitSrcSize.y);
+							digitSize = digitSrcSize * (fitScale * Camera.WorldToScreenScaleFactor);
+							padding.x = display.PaddingX * digitSize.x / taikoComboDigitSize.x;
+						}
+						vec2 digitStep = digitSize + padding;
 						const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
 							: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
 							: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
-						const vec2 comboWorldPos = isTaikoVideo ? vec2(399.0f, 358.0f)
+						const vec2 comboWorldPos = isTaikoVideo ? vec2(Camera.LaneRect.TL.x - 8.0f - taikoComboReferenceWidth * 0.5f, Camera.LaneRect.TL.y + 107.0f)
 							: Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
-						const vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
+						vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
+						if (isTaikoVideo && comboLen > taikoComboReferenceDigits && totalSize.x > 0.0f)
+						{
+							const f32 referenceWidth = digitStep.x * taikoComboReferenceDigits - padding.x;
+							const f32 horizontalScale = referenceWidth / totalSize.x;
+							digitSize.x *= horizontalScale;
+							digitStep.x *= horizontalScale;
+							totalSize.x = referenceWidth;
+						}
 
 						vec2 comboScreenPos = Camera.WorldToScreenSpace(comboWorldPos);
-						vec2 marginTL = totalSize * vec2{ (nLanes > 2) ? 0.5f : 0.5f, 0.5f };
-						vec2 marginBR = totalSize - marginTL;
-						comboScreenPos = Max(Camera.ScreenSpaceViewportRect.TL + marginTL, Min(comboScreenPos, Camera.ScreenSpaceViewportRect.BR - marginBR));
-						const vec2 startPos = comboScreenPos - marginTL;
-
-						for (i32 i = 0; i < comboLen; i++)
+						const Rect viewport = Camera.ScreenSpaceViewportRect;
+						const f32 comboMargin = Camera.WorldToScreenScale(8.0f);
+						auto drawCombo = [=, &context](f32 titleBandHeight) mutable
 						{
-							const i32 digit = comboStr[i] - '0';
-							const f32 u0 = (digit * digitSrcSize.x) / sheetW;
-							const f32 u1 = ((digit + 1) * digitSrcSize.x) / sheetW;
-							const vec2 p0 = startPos + vec2(digitStep.x * i, 0.0f);
-							const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
+							if (sheetW <= 0.0f) return;
+							Rect comboBounds = viewport;
+							if (isVideoExport && !isTaikoVideo && nLanes == 2)
+							{
+								comboBounds.TL.y = iLane == 0 ? viewport.TL.y + (VideoTitleVerticalPosition == 0 ? titleBandHeight : 0.0f) : laneRectScreen.BR.y;
+								comboBounds.BR.y = iLane == 0 ? laneRectScreen.TL.y : viewport.BR.y - (VideoTitleVerticalPosition == 1 ? titleBandHeight : 0.0f);
+								comboBounds.TL.y += comboMargin;
+								comboBounds.BR.y -= comboMargin;
+								const f32 availableHeight = comboBounds.GetHeight();
+								if (availableHeight <= 0.0f) return;
+								const f32 fitScale = std::min(1.0f, availableHeight / totalSize.y);
+								digitSize *= fitScale;
+								digitStep *= fitScale;
+								totalSize *= fitScale;
+								comboScreenPos.y = iLane == 0 ? comboBounds.BR.y - totalSize.y * 0.5f : comboBounds.TL.y + totalSize.y * 0.5f;
+							}
+							const vec2 marginTL = totalSize * 0.5f;
+							const vec2 marginBR = totalSize - marginTL;
+							comboScreenPos = Max(comboBounds.TL + marginTL, Min(comboScreenPos, comboBounds.BR - marginBR));
+							const vec2 startPos = comboScreenPos - marginTL;
 
-							const float foreOpacity = 63.0f / 255;
-							drawList->ChannelsSetCurrent(isTaikoVideo ? 4 : 2);
-							context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
-							drawList->ChannelsSetCurrent(4);
-							context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
-						}
+							for (i32 i = 0; i < comboLen; i++)
+							{
+								const i32 digit = comboStr[i] - '0';
+								const f32 u0 = (digit * digitSrcSize.x) / sheetW;
+								const f32 u1 = ((digit + 1) * digitSrcSize.x) / sheetW;
+								const vec2 p0 = startPos + vec2(digitStep.x * i, 0.0f);
+								const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
+
+								const float foreOpacity = 63.0f / 255;
+								drawList->ChannelsSetCurrent(isTaikoVideo ? 4 : 2);
+								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
+								drawList->ChannelsSetCurrent(4);
+								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
+							}
+						};
+						if (isVideoExport && !isTaikoVideo && nLanes == 2) videoComboDrawCalls.push_back(drawCombo);
+						else drawCombo(0.0f);
 				}
 			}
 		}
 
 		drawList->PopClipRect();
 
+		f32 titleBandHeight = 0.0f;
 		if (isVideoExport && (VideoShowTitle || VideoShowDifficulty || VideoShowMaxCombo))
 		{
-			const ChartCourse& course = *context.ChartSelectedCourse;
+			const ChartCourse& course = *comparedLanes.front().first;
 			const f32 infoFontSize = Camera.WorldToScreenScale(34.0f) * VideoTitleScale;
 			const f32 titleFontSize = Camera.WorldToScreenScale(34.0f) * VideoTitleScale;
 			const f32 horizontalMargin = Camera.WorldToScreenScale(26.0f) * VideoTitlePaddingScale;
@@ -2563,28 +2647,49 @@ namespace PeepoDrumKit
 			const vec2 topLeft = Camera.ScreenSpaceViewportRect.TL;
 			const vec2 bottomRight = Camera.ScreenSpaceViewportRect.BR;
 			const f32 fullTextWidth = std::max(1.0f, bottomRight.x - topLeft.x - horizontalMargin * 2.0f);
-			std::string maxCombo = std::to_string(VideoExportCombos.GetMaxCombo());
-			for (i32 digit = static_cast<i32>(maxCombo.size()) - 3; digit > 0; digit -= 3)
-				maxCombo.insert(static_cast<size_t>(digit), ",");
-			std::string rightInfo;
-			if (VideoShowDifficulty)
+			const b8 sameDifficulty = nLanes == 2 && course.Type == comparedLanes[1].first->Type &&
+				course.Level == comparedLanes[1].first->Level && course.LevelDecimalPlaces == comparedLanes[1].first->LevelDecimalPlaces;
+			const auto displayedBranch = [&](i32 lane)
 			{
-				const i32 difficultyIndex = EnumToIndex(course.Type);
-				rightInfo = difficultyIndex < EnumCount<DifficultyType>
-					? UI_StrRuntime(DifficultyTypeNames[difficultyIndex]) : "?";
-				rightInfo += " \xE2\x98\x85";
-				char levelText[32];
-				sprintf_s(levelText, "%.0f", std::floor(course.Level));
-				rightInfo += levelText;
-				if (course.LevelDecimalPlaces > 0 && 10.0 * (course.Level - std::floor(course.Level)) >= DifficultyLevelDecimal::PlusThreshold)
-					rightInfo += "+";
-			}
-			if (VideoShowMaxCombo)
+				const auto* state = VideoExportLaneCount > 0 ? VideoExportLanes[lane] : nullptr;
+				return state && state->Route && !state->Route->Branches.empty() ? state->Route->Branches.front() : comparedLanes[lane].second;
+			};
+			const b8 showBranch = sameDifficulty && course.Branches.size() == 1 && comparedLanes[1].first->Branches.size() == 1 &&
+				displayedBranch(0) != displayedBranch(1);
+			std::string laneInfo[2];
+			for (i32 lane = 0; lane < nLanes; ++lane)
 			{
-				if (!rightInfo.empty()) rightInfo += "  /  ";
-				rightInfo += maxCombo;
-				rightInfo += UI_Str("VIDEO_EXPORT_MAX_COMBO");
+				const ChartCourse& laneCourse = *comparedLanes[lane].first;
+				std::string& info = laneInfo[lane];
+				if (VideoShowDifficulty && (lane == 0 || !sameDifficulty))
+				{
+					const i32 difficultyIndex = EnumToIndex(laneCourse.Type);
+					info = difficultyIndex < EnumCount<DifficultyType> ? UI_StrRuntime(DifficultyTypeNames[difficultyIndex]) : "?";
+					info += " \xE2\x98\x85";
+					char levelText[32];
+					sprintf_s(levelText, "%.0f", std::floor(laneCourse.Level));
+					info += levelText;
+					if (laneCourse.LevelDecimalPlaces > 0 && 10.0 * (laneCourse.Level - std::floor(laneCourse.Level)) >= DifficultyLevelDecimal::PlusThreshold) info += "+";
+				}
+				if (VideoShowDifficulty && showBranch)
+				{
+					if (!info.empty()) info += "  ";
+					const char* names[] = { UI_Str("VIDEO_EXPORT_BRANCH_NAME_NORMAL"), UI_Str("VIDEO_EXPORT_BRANCH_NAME_EXPERT"), UI_Str("VIDEO_EXPORT_BRANCH_NAME_MASTER") };
+					info += names[EnumToIndex(displayedBranch(lane))];
+				}
+				if (VideoShowMaxCombo)
+				{
+					if (!info.empty()) info += nLanes == 1 ? "  /  " : "  ";
+					std::string maxCombo = std::to_string((VideoExportLaneCount > 0 ? VideoExportLanes[lane]->Combos : VideoExportCombos).GetMaxCombo());
+					for (i32 digit = static_cast<i32>(maxCombo.size()) - 3; digit > 0; digit -= 3) maxCombo.insert(static_cast<size_t>(digit), ",");
+					info += maxCombo;
+					info += UI_Str("VIDEO_EXPORT_MAX_COMBO");
+				}
 			}
+			std::string rightInfo = laneInfo[0];
+			if (nLanes == 2 && !laneInfo[1].empty()) rightInfo += (rightInfo.empty() ? "" : " / ") + laneInfo[1];
+			const b8 splitInfo = nLanes == 2 && !laneInfo[1].empty() && VideoTextWidth(FontMain, infoFontSize, rightInfo) > fullTextWidth;
+			const std::string infoLines[] = { splitInfo ? laneInfo[0] + " /" : rightInfo, splitInfo ? laneInfo[1] : std::string{} };
 			const f32 infoWidth = VideoTextWidth(FontMain, infoFontSize, rightInfo);
 			const std::string_view title = context.Chart.ChartTitle;
 			const std::string_view subtitle = VideoShowSubtitle ? std::string_view(context.Chart.ChartSubtitle) : std::string_view{};
@@ -2596,8 +2701,8 @@ namespace PeepoDrumKit
 			}
 			const b8 hasTitle = VideoShowTitle && !combinedTitle.empty();
 			const f32 sharedTitleWidth = std::max(1.0f, fullTextWidth - infoWidth - (rightInfo.empty() ? 0.0f : horizontalMargin));
-			const b8 infoOnSecondRow = hasTitle && !rightInfo.empty() &&
-				VideoTextWidth(FontMain, titleFontSize, combinedTitle) > sharedTitleWidth;
+			const b8 infoOnSecondRow = splitInfo || (hasTitle && !rightInfo.empty() &&
+				VideoTextWidth(FontMain, titleFontSize, combinedTitle) > sharedTitleWidth);
 			const f32 titleWidth = infoOnSecondRow || rightInfo.empty() ? fullTextWidth : sharedTitleWidth;
 			std::string titleLines[2];
 			i32 titleLineCount = 0;
@@ -2626,10 +2731,11 @@ namespace PeepoDrumKit
 			}
 			const f32 lineGap = titleFontSize * 0.15f;
 			const f32 titleBlockHeight = titleLineCount > 0 ? titleFontSize * titleLineCount + lineGap * (titleLineCount - 1) : 0.0f;
-			const f32 infoRowHeight = rightInfo.empty() ? 0.0f : infoFontSize;
+			const f32 infoRowHeight = rightInfo.empty() ? 0.0f : splitInfo ? infoFontSize * 2.0f + lineGap : infoFontSize;
 			const f32 rowGap = infoOnSecondRow ? verticalMargin * 0.3f : 0.0f;
 			const f32 contentHeight = infoOnSecondRow ? titleBlockHeight + rowGap + infoRowHeight : std::max(titleBlockHeight, infoRowHeight);
 			const f32 headerHeight = contentHeight + verticalMargin * 2.0f;
+			titleBandHeight = headerHeight;
 			const vec2 headerTopLeft = vec2(topLeft.x, VideoTitleVerticalPosition == 1 ? bottomRight.y - headerHeight : topLeft.y);
 			const f32 headerBottom = headerTopLeft.y + headerHeight;
 			drawList->ChannelsSetCurrent(4);
@@ -2647,11 +2753,16 @@ namespace PeepoDrumKit
 			if (!rightInfo.empty())
 			{
 				const f32 infoTop = headerTopLeft.y + verticalMargin + (infoOnSecondRow ? titleBlockHeight + rowGap : (contentHeight - infoFontSize) * 0.5f);
-				const std::string displayedInfo = EllipsizeVideoText(FontMain, infoFontSize, rightInfo, fullTextWidth);
-				const f32 infoLeft = bottomRight.x - horizontalMargin - VideoTextWidth(FontMain, infoFontSize, displayedInfo);
-				drawList->AddText(FontMain, infoFontSize, vec2(infoLeft, infoTop), 0xFFFFFFFF, displayedInfo.c_str());
+				for (i32 line = 0; line < (splitInfo ? 2 : 1); ++line)
+				{
+					const std::string displayedInfo = EllipsizeVideoText(FontMain, infoFontSize, infoLines[line], fullTextWidth);
+					const f32 infoLeft = bottomRight.x - horizontalMargin - VideoTextWidth(FontMain, infoFontSize, displayedInfo);
+					drawList->AddText(FontMain, infoFontSize, vec2(infoLeft, infoTop + line * (infoFontSize + lineGap)), 0xFFFFFFFF, displayedInfo.c_str());
+				}
 			}
 		}
+
+		for (auto& drawCombo : videoComboDrawCalls) drawCombo(titleBandHeight);
 
 		// NOTE: Mouse selection box, draw outside frame space
 		if (BoxSelection.IsActive)

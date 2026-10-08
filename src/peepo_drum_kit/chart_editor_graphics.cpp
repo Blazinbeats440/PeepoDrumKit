@@ -165,6 +165,8 @@ namespace PeepoDrumKit
 			for (const SprTypeDesc& it : SprDescTable)
 			{
 				auto [fileContent, extension] = File::ReadAllBytes(it.FilePath, SupportedSpriteFileFormatExtensions);
+				if (it.Optional && fileContent.Content == nullptr)
+					continue;
 #if PEEPO_DEBUG // DEBUG: ...
 				if (fileContent.Content == nullptr)
 					printf("Failed to read sprite file '%s'\n", it.FilePath);
@@ -199,6 +201,8 @@ namespace PeepoDrumKit
 			b8 allTexturesAreValid = true;
 			for (i32 sprIndex = 0; sprIndex < EnumCountI32<SprID>; sprIndex++)
 			{
+				if (SprDescTable[sprIndex].Optional && Data->PerSprSvg[sprIndex].PictureSize.x <= 0.0f)
+					continue;
 				if (GetSprGroup(static_cast<SprID>(sprIndex)) == group && !Data->PerSprTexture[sprIndex].IsValid())
 				{
 					allTexturesAreValid = false;
@@ -213,6 +217,8 @@ namespace PeepoDrumKit
 		for (i32 sprIndex = 0; sprIndex < EnumCountI32<SprID>; sprIndex++)
 		{
 			if (GetSprGroup(static_cast<SprID>(sprIndex)) != group)
+				continue;
+			if (SprDescTable[sprIndex].Optional && Data->PerSprSvg[sprIndex].PictureSize.x <= 0.0f)
 				continue;
 
 			PeepoDrumKit::Rasterize(Data->PerSprSvg[sprIndex], Data->PerSprTexture[sprIndex], currentRasterScale);

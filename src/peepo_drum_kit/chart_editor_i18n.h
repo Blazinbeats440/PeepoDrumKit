@@ -568,6 +568,11 @@ X("SCREENSHOT_SAVED", "Screenshot saved:") \
 X("SCREENSHOT_FAILED", "Could not save screenshot.") \
 X("VIDEO_EXPORT_AUDIO_FADE", "Fade audio with video") \
 X("VIDEO_EXPORT_WINDOW", "Export Chart Video") \
+X("VIDEO_EXPORT_TAB_CHART", "Chart") \
+X("VIDEO_EXPORT_TAB_DISPLAY", "Display") \
+X("VIDEO_EXPORT_TAB_BACKGROUND", "Background") \
+X("VIDEO_EXPORT_TAB_AUDIO", "Audio") \
+X("VIDEO_EXPORT_TAB_OUTPUT", "Output") \
 X("VIDEO_EXPORT_RANGE_MODE", "Export range") \
 X("VIDEO_EXPORT_RANGE_FULL", "Entire chart") \
 X("VIDEO_EXPORT_RANGE_SELECTED", "Selected range only") \
@@ -577,6 +582,21 @@ X("VIDEO_EXPORT_EXCERPT_SECONDS", "Duration") \
 X("VIDEO_EXPORT_BRANCH", "Branch route") \
 X("VIDEO_EXPORT_BRANCH_AUTO", "Auto") \
 X("VIDEO_EXPORT_BRANCH_TEST_PLAY", "Use test play result") \
+X("VIDEO_EXPORT_PLAYBACK_MODE", "Chart count") \
+X("VIDEO_EXPORT_PLAYBACK_SINGLE", "Single chart") \
+X("VIDEO_EXPORT_PLAYBACK_DUAL", "Two charts") \
+X("VIDEO_EXPORT_COURSE_SINGLE", "Chart") \
+X("VIDEO_EXPORT_COURSE_UPPER", "Upper chart") \
+X("VIDEO_EXPORT_COURSE_LOWER", "Lower chart") \
+X("VIDEO_EXPORT_BRANCH_TEST_PLAY_1P", "Test play recording (1P)") \
+X("VIDEO_EXPORT_BRANCH_TEST_PLAY_2P", "Test play recording (2P)") \
+X("VIDEO_EXPORT_BRANCH_NAME_NORMAL", "Normal") \
+X("VIDEO_EXPORT_BRANCH_NAME_EXPERT", "Expert") \
+X("VIDEO_EXPORT_BRANCH_NAME_MASTER", "Master") \
+X("TEST_PLAY_RECORD_VIDEO_ROUTE_1P", "Record for video (1P)") \
+X("TEST_PLAY_RECORD_VIDEO_ROUTE_2P", "Record for video (2P)") \
+X("TEST_PLAY_VIDEO_ROUTE_RECORDED_1P", "Video branch route recorded in the 1P slot.") \
+X("TEST_PLAY_VIDEO_ROUTE_RECORDED_2P", "Video branch route recorded in the 2P slot.") \
 X("VIDEO_EXPORT_BRANCH_SCORE_UNAVAILABLE", "Auto is unavailable for score (s) branches.") \
 X("VIDEO_EXPORT_BRANCH_RECORDING_INCOMPLETE", "The export range is outside the recorded attempt. Shorten the range or play and record that range again.") \
 X("TEST_PLAY_RECORD_VIDEO_ROUTE", "Record result for video") \
@@ -852,6 +872,8 @@ X("ACT_ADD_NEW_LOCALE",								"Add New Locale:") \
 X("CHART_PROP_CREATOR",								"Chart Creator") \
 X("CHART_PROP_SONG_FILE_NAME",						"Song File Name") \
 X("CHART_PROP_JACKET_FILE_NAME",					"Jacket File Name") \
+X("CHART_PROP_MOVIE_FILE_NAME", "Video File Name") \
+X("CHART_PROP_MOVIE_OFFSET", "Video Offset") \
 X("CHART_PROP_SONG_VOLUME",							"Song Volume") \
 X("CHART_PROP_SOUND_EFFECT_VOLUME",					"Sound Effect Volume") \
 X("DETAILS_CHART_PROP_OTHER_METADATA",				"Other Chart Metadata") \

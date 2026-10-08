@@ -77,10 +77,12 @@ namespace PeepoDrumKit
 		void StartAsyncLoadingSongJacketFile(std::string_view absoluteJacketFilePath);
 		void SetAndStartLoadingChartSongFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo);
 		void SetAndStartLoadingSongJacketFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo);
+		void SetChartBackgroundMovieFileName(std::string_view relativeOrAbsoluteMovieFilePath, Undo::UndoHistory& undo);
 
 		b8 OpenLoadChartFileDialog(ChartContext& context);
 		b8 OpenLoadAudioFileDialog(Undo::UndoHistory& undo);
 		b8 OpenLoadJacketFileDialog(Undo::UndoHistory& undo);
+		b8 OpenLoadBackgroundMovieFileDialog(Undo::UndoHistory& undo);
 
 		void CheckOpenSaveConfirmationPopupThenCall(std::function<void()> onSuccess);
 		void InternalUpdateAsyncLoading();
@@ -134,12 +136,21 @@ namespace PeepoDrumKit
 			f32 SongVolume = 1.0f, DrumVolume = 1.0f;
 			f32 LeadInSeconds = 1.0f, TailSeconds = 2.0f;
 			VideoBranchMode Branch = VideoBranchMode::Normal;
-			VideoBranchRoute Route;
-			const ChartCourse* RouteCourse = nullptr;
-			i32 RouteChanges = -1;
-			VideoBranchMode RouteMode = VideoBranchMode::Normal;
+			struct CourseSelection
+			{
+				VideoExportLaneState Lane;
+				VideoBranchMode Branch = VideoBranchMode::Normal;
+				VideoBranchRoute Route;
+				const ChartCourse* RouteCourse = nullptr;
+				i32 RouteChanges = -1;
+				VideoBranchMode RouteMode = VideoBranchMode::Normal;
+				f32 RouteRollSpeed = -1.0f;
+				size_t RouteRecordingVersion = 0;
+				b8 RouteReady = false;
+			};
+			std::array<CourseSelection, 3> Selections;
+			b8 Dual = false;
 			f32 RouteRollSpeed = -1.0f;
-			size_t RouteRecordingVersion = 0;
 			b8 RouteReady = false;
 			ChartCourse* Course = nullptr;
 			Audio::SourceHandle SongSource = Audio::SourceHandle::Invalid;

@@ -1,0 +1,26 @@
+<div id="arcade-two-chart-layout">
+  <style>
+    #arcade-two-chart-layout { color: var(--foreground); }
+    #arcade-two-chart-layout .dimensions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    #arcade-two-chart-layout .stage { aspect-ratio: 16 / 9; display: grid; grid-template-rows: 276fr 264fr 264fr 276fr; outline: 1px solid var(--border); background: var(--background); }
+    #arcade-two-chart-layout .space { display: flex; align-items: center; justify-content: center; flex-direction: column; background: var(--muted); }
+    #arcade-two-chart-layout .lane-row { display: grid; grid-template-columns: 498fr 1422fr; min-height: 0; }
+    #arcade-two-chart-layout .lane-row + .lane-row { box-shadow: 0 -1px var(--border); }
+    #arcade-two-chart-layout .panel, #arcade-two-chart-layout .lane { display: flex; align-items: center; justify-content: center; flex-direction: column; min-width: 0; }
+    #arcade-two-chart-layout .panel { background: var(--secondary); color: var(--secondary-foreground); }
+    #arcade-two-chart-layout .lane { background: var(--accent); color: var(--accent-foreground); box-shadow: inset 1px 0 var(--border); }
+  </style>
+  <div class="dimensions tabular-nums"><span>アーケード配置案</span><span>1920 × 1080 px</span></div>
+  <div class="stage" role="img" aria-label="1920×1080のアーケード配置案。上の空き276ピクセル、上段264ピクセル、下段264ピクセル、下の空き276ピクセル。上下の段は隙間なく接し、境界は画面中央のy540。各段は左パネル幅498ピクセル、レーン幅1422ピクセル。">
+    <div class="space"><span>上の空き領域</span><span class="text-small tabular-nums">276 px</span></div>
+    <div class="lane-row" data-tooltip="上段：y = 276〜540 px">
+      <div class="panel"><span>左パネル</span><span class="text-small tabular-nums">498 × 264</span></div>
+      <div class="lane"><span>上段レーン</span><span class="text-small tabular-nums">1422 × 264 · y 276〜540</span></div>
+    </div>
+    <div class="lane-row" data-tooltip="下段：y = 540〜804 px。上下のレーン間隔は0。">
+      <div class="panel"><span>左パネル</span><span class="text-small tabular-nums">498 × 264</span></div>
+      <div class="lane"><span>下段レーン</span><span class="text-small tabular-nums">1422 × 264 · y 540〜804</span></div>
+    </div>
+    <div class="space"><span>下の空き領域</span><span class="text-small tabular-nums">276 px</span></div>
+  </div>
+</div>

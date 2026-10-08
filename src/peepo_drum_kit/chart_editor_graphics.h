@@ -73,6 +73,8 @@ namespace PeepoDrumKit
 		Game_NoteTxt_Adlib,
 		Game_NoteTxt_Fuse,
 		Game_Lane_GogoFire,
+		Game_Combo_Background_1P,
+		Game_Combo_Background_2P,
 		
 		// TODO: Split into individual sprites to correctly handle padding (?)
 		Game_Font_Numerical,
@@ -82,7 +84,7 @@ namespace PeepoDrumKit
 	};
 
 	constexpr cstr SupportedSpriteFileFormatExtensions[] = { ".svg", ".png", ".jpg", ".jpeg" };
-	struct SprTypeDesc { SprID Spr; SprGroup Group; cstr FilePath; f32 BaseScale; };
+	struct SprTypeDesc { SprID Spr; SprGroup Group; cstr FilePath; f32 BaseScale; b8 Optional = false; };
 	constexpr SprTypeDesc SprDescTable[] =
 	{
 		{ SprID::Timeline_Note_Don,					SprGroup::Timeline, u8"assets/graphics/timeline_note_don" },
@@ -145,6 +147,8 @@ namespace PeepoDrumKit
 		{ SprID::Game_NoteTxt_Adlib,				SprGroup::Game, u8"assets/graphics/game_note_txt_adlib" },
 		{ SprID::Game_NoteTxt_Fuse,					SprGroup::Game, u8"assets/graphics/game_note_txt_fuse" },
 		{ SprID::Game_Lane_GogoFire,				SprGroup::Game, u8"assets/graphics/game_lane_gogo_fire" },
+		{ SprID::Game_Combo_Background_1P,			SprGroup::Game, u8"assets/graphics/game_combo_background_1P", 1.0f, true },
+		{ SprID::Game_Combo_Background_2P,			SprGroup::Game, u8"assets/graphics/game_combo_background_2P", 1.0f, true },
 		// TODO: ...
 		{ SprID::Game_Font_Numerical,				SprGroup::Game, u8"assets/graphics/game_font_numerical" },
 		{ SprID::Game_Font_Combo,					SprGroup::Game, u8"assets/graphics/game_combo_numerical", 1.5f }, // maximum GameComboDisplay scale

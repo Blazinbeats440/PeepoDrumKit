@@ -338,9 +338,20 @@ namespace PeepoDrumKit
 			exportData.ShowWindow = false;
 			return;
 		}
-		Gui::SetNextWindowSize(vec2(900.0f, 760.0f), ImGuiCond_FirstUseEver);
+		if ((exportData.Exporting || exportData.Preparing) && !exportData.Finalizing &&
+			(context.ChartSelectedCourse != exportData.Course || context.SongSource != exportData.SongSource ||
+				context.Undo.NumberOfChangesMade != exportData.ChartChanges))
+		{
+			if (exportData.Exporting) DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath);
+			exportData.Exporting = exportData.Preparing = false;
+			exportData.ExportStopwatch.Stop();
+			exportData.Status = UI_Str("VIDEO_EXPORT_SOURCE_CHANGED");
+		}
+		Gui::SetNextWindowSize(GuiScale(vec2(1000.0f, 600.0f)), ImGuiCond_FirstUseEver);
+		Gui::SetNextWindowSizeConstraints(GuiScale(vec2(800.0f, 460.0f)), vec2(F32Max));
 		Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
-		if (!Gui::Begin(UI_Str("VIDEO_EXPORT_WINDOW"), (exportData.Exporting || exportData.Preparing) ? nullptr : &exportData.ShowWindow,
+		const std::string windowTitle = std::string(UI_Str("VIDEO_EXPORT_WINDOW")) + "###VideoExportWindowHorizontal";
+		if (!Gui::Begin(windowTitle.c_str(), (exportData.Exporting || exportData.Preparing) ? nullptr : &exportData.ShowWindow,
 			ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse))
 		{
 			Gui::End();
@@ -350,9 +361,7 @@ namespace PeepoDrumKit
 		ConfigureVideoPreview(exportData.Preview);
 
 		const auto* song = context.SongSource == Audio::SourceHandle::Invalid ? nullptr : Audio::Engine.GetSourceSampleBufferView(context.SongSource);
-		const ChartCourse& course = *context.ChartSelectedCourse;
 		const Time songEnd = song && song->SampleRate > 0 ? context.Chart.SongOffset + Audio::FramesToTime(song->FrameCount, song->SampleRate) : Time::Zero();
-		const Time fullEnd = course.GetPlaybackTimeBounds(std::max(context.Chart.GetUsedDuration(course), songEnd)).second;
 		const b8 hasRange = context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero();
 		const b8 hasPreview = context.Chart.SongDemoStartTime > Time::Zero();
 		const b8 hasMarker = context.Marker.IsActive;
@@ -362,137 +371,298 @@ namespace PeepoDrumKit
 			(exportData.Range == RangeMode::Marker && !hasMarker))
 			exportData.Range = RangeMode::Full;
 
-		Gui::BeginChild("##VideoExportOptions", vec2(0.0f, std::min(360.0f, Gui::GetContentRegionAvail().y * 0.55f)), true);
-		Gui::BeginDisabled(exportData.Exporting || exportData.Preparing);
-		const char* rangeNames[4] = { UI_Str("VIDEO_EXPORT_RANGE_FULL") };
-		RangeMode rangeModes[4] = { RangeMode::Full };
-		i32 rangeCount = 1;
-		if (hasRange) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_SELECTED"); rangeModes[rangeCount++] = RangeMode::SelectedRange; }
-		if (hasPreview) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_PREVIEW"); rangeModes[rangeCount++] = RangeMode::Preview; }
-		if (hasMarker) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_MARKER"); rangeModes[rangeCount++] = RangeMode::Marker; }
-		i32 rangeIndex = 0;
-		for (i32 index = 0; index < rangeCount; ++index)
-			if (rangeModes[index] == exportData.Range) rangeIndex = index;
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_RANGE_MODE"), &rangeIndex, rangeNames, rangeCount))
-			exportData.Range = rangeModes[rangeIndex];
-		if (exportData.Range == RangeMode::Preview || exportData.Range == RangeMode::Marker)
+		for (auto& recording : gamePreview.RecordedVideoRoutes)
+			if (recording.Course && recording.Changes != context.Undo.NumberOfChangesMade) recording = {};
+		for (size_t index = 0; index < exportData.Selections.size(); ++index)
 		{
-			if (Gui::InputFloat(UI_Str("VIDEO_EXPORT_EXCERPT_SECONDS"), &exportData.ExcerptSeconds, 0.0f, 0.0f, "%.1f s"))
-				exportData.ExcerptSeconds = std::isfinite(exportData.ExcerptSeconds) ? Clamp(exportData.ExcerptSeconds, 0.1f, 3600.0f) : 15.0f;
-		}
-		if (gamePreview.RecordedVideoRoute.Course && gamePreview.RecordedVideoRoute.Changes != context.Undo.NumberOfChangesMade)
-			gamePreview.RecordedVideoRoute = {};
-		const b8 hasRecording = gamePreview.RecordedVideoRoute.IsValid(&course, context.Undo.NumberOfChangesMade);
-		const b8 hasScoreBranch = std::any_of(course.Branches.begin(), course.Branches.end(), [](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
-		if (exportData.Branch == VideoBranchMode::TestPlay && !hasRecording) exportData.Branch = VideoBranchMode::Auto;
-		const char* branchNames[] = { UI_Str("BRANCH_FORCED_NORMAL"), UI_Str("BRANCH_FORCED_EXPERT"), UI_Str("BRANCH_FORCED_MASTER"),
-			UI_Str("VIDEO_EXPORT_BRANCH_AUTO"), UI_Str("VIDEO_EXPORT_BRANCH_TEST_PLAY") };
-		if (!course.Branches.empty())
-		{
-			if (Gui::BeginCombo(UI_Str("VIDEO_EXPORT_BRANCH"), branchNames[static_cast<i32>(exportData.Branch)]))
+			auto& selection = exportData.Selections[index];
+			if (std::none_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& candidate) { return candidate.get() == selection.Lane.Course; }))
 			{
-				for (i32 index = 0; index < (hasRecording ? 5 : 4); ++index)
-				{
-					const VideoBranchMode mode = static_cast<VideoBranchMode>(index);
-					Gui::BeginDisabled(mode == VideoBranchMode::Auto && hasScoreBranch);
-					if (Gui::Selectable(branchNames[index], exportData.Branch == mode)) exportData.Branch = mode;
-					Gui::EndDisabled();
-				}
-				Gui::EndCombo();
+				const b8 initial = selection.Lane.Course == nullptr;
+				selection = {};
+				selection.Lane.Course = context.ChartSelectedCourse;
+				if (index == 0 && initial) selection.Branch = exportData.Branch;
+				if (index == 2)
+					for (const auto& candidate : context.Chart.Courses)
+						if (candidate.get() != exportData.Selections[1].Lane.Course) { selection.Lane.Course = candidate.get(); break; }
 			}
-			if (hasScoreBranch) Gui::TextWrapped("%s", UI_Str("VIDEO_EXPORT_BRANCH_SCORE_UNAVAILABLE"));
+			if (!CanUseVideoBranchMode(*selection.Lane.Course, selection.Branch, gamePreview.RecordedVideoRoutes, context.Undo.NumberOfChangesMade))
+				selection.Branch = VideoBranchMode::Normal;
 		}
-		const char* layoutNames[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
-		i32 layoutIndex = static_cast<i32>(exportData.Layout);
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_LAYOUT"), &layoutIndex, layoutNames, ArrayCountI32(layoutNames)))
-			exportData.Layout = static_cast<ChartGamePreview::VideoLayout>(layoutIndex);
-		const char* resolutionNames[] = { VideoResolutionPresets[0].Name, VideoResolutionPresets[1].Name,
-			VideoResolutionPresets[2].Name, VideoResolutionPresets[3].Name };
-		Gui::Combo(UI_Str("VIDEO_EXPORT_RESOLUTION"), &exportData.Resolution, resolutionNames, ArrayCountI32(resolutionNames));
-		const char* frameRateNames[] = { "15 fps", "30 fps", "60 fps", "120 fps" };
-		static constexpr i32 frameRates[] = { 15, 30, 60, 120 };
-		i32 frameRateIndex = 0;
-		for (i32 index = 0; index < ArrayCountI32(frameRates); ++index)
-			if (exportData.FramesPerSecond == frameRates[index]) frameRateIndex = index;
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_FPS"), &frameRateIndex, frameRateNames, ArrayCountI32(frameRateNames)))
-			exportData.FramesPerSecond = frameRates[frameRateIndex];
-		const char* audioBitRateNames[ArrayCountI32(VideoAudioBitRatePresets)];
-		i32 audioBitRateIndex = 0;
-		for (i32 index = 0; index < ArrayCountI32(VideoAudioBitRatePresets); ++index)
+		const char* branchNames[] = { UI_Str("BRANCH_FORCED_NORMAL"), UI_Str("BRANCH_FORCED_EXPERT"), UI_Str("BRANCH_FORCED_MASTER"),
+			UI_Str("VIDEO_EXPORT_BRANCH_AUTO"), UI_Str("VIDEO_EXPORT_BRANCH_TEST_PLAY_1P"), UI_Str("VIDEO_EXPORT_BRANCH_TEST_PLAY_2P") };
+		const auto settingLabel = [](cstr label) { Gui::TextUnformatted(label); Gui::SetNextItemWidth(-1.0f); };
+		const auto drawChartOptions = [&]()
 		{
-			audioBitRateNames[index] = VideoAudioBitRatePresets[index].Name;
-			if (exportData.AudioBitRate == VideoAudioBitRatePresets[index].BitRate) audioBitRateIndex = index;
-		}
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_AUDIO_BIT_RATE"), &audioBitRateIndex, audioBitRateNames, ArrayCountI32(audioBitRateNames)))
-			exportData.AudioBitRate = VideoAudioBitRatePresets[audioBitRateIndex].BitRate;
-		const char* backgroundNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), UI_Str("VIDEO_EXPORT_BACKGROUND_ASSET"),
-			UI_Str("VIDEO_EXPORT_BACKGROUND_CUSTOM"), UI_Str("VIDEO_EXPORT_BACKGROUND_JACKET"), UI_Str("VIDEO_EXPORT_BACKGROUND_MOVIE") };
+			const char* playbackNames[] = { UI_Str("VIDEO_EXPORT_PLAYBACK_SINGLE"), UI_Str("VIDEO_EXPORT_PLAYBACK_DUAL") };
+			i32 playbackIndex = exportData.Dual ? 1 : 0;
+			settingLabel(UI_Str("VIDEO_EXPORT_PLAYBACK_MODE"));
+			if (Gui::Combo("##PlaybackMode", &playbackIndex, playbackNames, ArrayCountI32(playbackNames)))
+				exportData.Dual = playbackIndex == 1;
+			const i32 laneCount = exportData.Dual ? 2 : 1;
+			const i32 firstSelection = exportData.Dual ? 1 : 0;
+			if (Gui::BeginTable("##VideoExportCourses", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings))
+			{
+				Gui::TableSetupColumn(UI_Str("VIDEO_EXPORT_COURSE_SINGLE"));
+				Gui::TableSetupColumn(UI_Str("VIDEO_EXPORT_BRANCH"));
+				Gui::TableHeadersRow();
+				for (i32 lane = 0; lane < laneCount; ++lane)
+				{
+					auto& selection = exportData.Selections[firstSelection + lane];
+					Gui::PushID(firstSelection + lane);
+					Gui::TableNextRow();
+					Gui::TableSetColumnIndex(0);
+					const char* courseLabel = exportData.Dual ? (lane == 0 ? UI_Str("VIDEO_EXPORT_COURSE_UPPER") : UI_Str("VIDEO_EXPORT_COURSE_LOWER")) : UI_Str("VIDEO_EXPORT_COURSE_SINGLE");
+					const std::string selectedName = selection.Lane.Course->ToString();
+					if (exportData.Dual) Gui::TextUnformatted(courseLabel);
+					Gui::SetNextItemWidth(-1.0f);
+					if (Gui::BeginCombo("##Course", selectedName.c_str()))
+					{
+						for (size_t index = 0; index < context.Chart.Courses.size(); ++index)
+						{
+							ChartCourse* candidate = context.Chart.Courses[index].get();
+							Gui::PushID(static_cast<i32>(index));
+							const std::string name = candidate->ToString();
+							if (Gui::Selectable(name.c_str(), selection.Lane.Course == candidate)) selection.Lane.Course = candidate;
+							Gui::PopID();
+						}
+						Gui::EndCombo();
+					}
+					if (Gui::IsItemHovered()) Gui::SetTooltip("%s", selectedName.c_str());
+					const b8 hasScoreBranch = std::any_of(selection.Lane.Course->Branches.begin(), selection.Lane.Course->Branches.end(),
+						[](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
+					const auto available = [&](VideoBranchMode mode)
+					{
+						return CanUseVideoBranchMode(*selection.Lane.Course, mode, gamePreview.RecordedVideoRoutes, context.Undo.NumberOfChangesMade);
+					};
+					if (!available(selection.Branch)) selection.Branch = VideoBranchMode::Normal;
+					Gui::TableSetColumnIndex(1);
+					if (exportData.Dual) Gui::Dummy(vec2(0.0f, Gui::GetTextLineHeight()));
+					Gui::SetNextItemWidth(-1.0f);
+					if (Gui::BeginCombo("##Branch", branchNames[static_cast<i32>(selection.Branch)]))
+					{
+						for (i32 index = 0; index < ArrayCountI32(branchNames); ++index)
+						{
+							Gui::BeginDisabled(!available(static_cast<VideoBranchMode>(index)));
+							if (Gui::Selectable(branchNames[index], static_cast<i32>(selection.Branch) == index)) selection.Branch = static_cast<VideoBranchMode>(index);
+							Gui::EndDisabled();
+						}
+						Gui::EndCombo();
+					}
+					if (Gui::IsItemHovered()) Gui::SetTooltip("%s", branchNames[static_cast<i32>(selection.Branch)]);
+					if (hasScoreBranch) Gui::TextWrapped("%s", UI_Str("VIDEO_EXPORT_BRANCH_SCORE_UNAVAILABLE"));
+					Gui::PopID();
+				}
+				Gui::EndTable();
+			}
+			Gui::Spacing();
+			const char* rangeNames[4] = { UI_Str("VIDEO_EXPORT_RANGE_FULL") };
+			RangeMode rangeModes[4] = { RangeMode::Full };
+			i32 rangeCount = 1;
+			if (hasRange) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_SELECTED"); rangeModes[rangeCount++] = RangeMode::SelectedRange; }
+			if (hasPreview) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_PREVIEW"); rangeModes[rangeCount++] = RangeMode::Preview; }
+			if (hasMarker) { rangeNames[rangeCount] = UI_Str("VIDEO_EXPORT_RANGE_MARKER"); rangeModes[rangeCount++] = RangeMode::Marker; }
+			i32 rangeIndex = 0;
+			for (i32 index = 0; index < rangeCount; ++index)
+				if (rangeModes[index] == exportData.Range) rangeIndex = index;
+			settingLabel(UI_Str("VIDEO_EXPORT_RANGE_MODE"));
+			if (Gui::Combo("##RangeMode", &rangeIndex, rangeNames, rangeCount))
+				exportData.Range = rangeModes[rangeIndex];
+			if (exportData.Range == RangeMode::Preview || exportData.Range == RangeMode::Marker)
+			{
+				settingLabel(UI_Str("VIDEO_EXPORT_EXCERPT_SECONDS"));
+				if (Gui::InputFloat("##ExcerptSeconds", &exportData.ExcerptSeconds, 0.0f, 0.0f, "%.1f s"))
+					exportData.ExcerptSeconds = std::isfinite(exportData.ExcerptSeconds) ? Clamp(exportData.ExcerptSeconds, 0.1f, 3600.0f) : 15.0f;
+			}
+			if (Gui::BeginTable("##VideoExportMargins", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings))
+			{
+				Gui::TableNextColumn();
+				settingLabel(UI_Str("VIDEO_EXPORT_LEAD_IN"));
+				Gui::SliderFloat("##LeadIn", &exportData.LeadInSeconds, 0.0f, 5.0f, "%.1f s");
+				Gui::TableNextColumn();
+				settingLabel(UI_Str("VIDEO_EXPORT_TAIL"));
+				Gui::SliderFloat("##Tail", &exportData.TailSeconds, 0.0f, 5.0f, "%.1f s");
+				Gui::EndTable();
+			}
+		};
+		const auto drawLayoutOptions = [&]()
+		{
+			const char* layoutNames[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
+			i32 layoutIndex = static_cast<i32>(exportData.Layout);
+			settingLabel(UI_Str("VIDEO_EXPORT_LAYOUT"));
+			if (Gui::Combo("##Layout", &layoutIndex, layoutNames, ArrayCountI32(layoutNames)))
+				exportData.Layout = static_cast<ChartGamePreview::VideoLayout>(layoutIndex);
+		};
+		const auto drawOutputOptions = [&]()
+		{
+			if (Gui::BeginTable("##VideoExportFormat", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings))
+			{
+				Gui::TableNextColumn();
+				const char* resolutionNames[] = { VideoResolutionPresets[0].Name, VideoResolutionPresets[1].Name,
+					VideoResolutionPresets[2].Name, VideoResolutionPresets[3].Name };
+				settingLabel(UI_Str("VIDEO_EXPORT_RESOLUTION"));
+				Gui::Combo("##Resolution", &exportData.Resolution, resolutionNames, ArrayCountI32(resolutionNames));
+				Gui::TableNextColumn();
+				const char* frameRateNames[] = { "15 fps", "30 fps", "60 fps", "120 fps" };
+				static constexpr i32 frameRates[] = { 15, 30, 60, 120 };
+				i32 frameRateIndex = 0;
+				for (i32 index = 0; index < ArrayCountI32(frameRates); ++index)
+					if (exportData.FramesPerSecond == frameRates[index]) frameRateIndex = index;
+				settingLabel(UI_Str("VIDEO_EXPORT_FPS"));
+				if (Gui::Combo("##FrameRate", &frameRateIndex, frameRateNames, ArrayCountI32(frameRateNames)))
+					exportData.FramesPerSecond = frameRates[frameRateIndex];
+				Gui::EndTable();
+			}
+			const char* audioBitRateNames[ArrayCountI32(VideoAudioBitRatePresets)];
+			i32 audioBitRateIndex = 0;
+			for (i32 index = 0; index < ArrayCountI32(VideoAudioBitRatePresets); ++index)
+			{
+				audioBitRateNames[index] = VideoAudioBitRatePresets[index].Name;
+				if (exportData.AudioBitRate == VideoAudioBitRatePresets[index].BitRate) audioBitRateIndex = index;
+			}
+			settingLabel(UI_Str("VIDEO_EXPORT_AUDIO_BIT_RATE"));
+			if (Gui::Combo("##AudioBitRate", &audioBitRateIndex, audioBitRateNames, ArrayCountI32(audioBitRateNames)))
+				exportData.AudioBitRate = VideoAudioBitRatePresets[audioBitRateIndex].BitRate;
+		};
 		const auto movieDefinition = ReadBackgroundMovieDefinition(context.Chart.OtherMetadata);
 		const b8 hasBackgroundMovie = !movieDefinition.FileName.empty();
 		if (!hasBackgroundMovie && exportData.BackgroundSource == 4) exportData.BackgroundSource = 0;
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND"), &exportData.BackgroundSource, backgroundNames, hasBackgroundMovie ? 5 : 4) &&
-			exportData.BackgroundSource == 1 && !exportData.DefaultBackgroundTexture.IsValid())
+		const auto drawBackgroundOptions = [&]()
 		{
-			if (!LoadVideoBackgroundImage("assets/background.png", exportData.DefaultBackgroundTexture))
+			const char* backgroundNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), UI_Str("VIDEO_EXPORT_BACKGROUND_ASSET"),
+				UI_Str("VIDEO_EXPORT_BACKGROUND_CUSTOM"), UI_Str("VIDEO_EXPORT_BACKGROUND_JACKET"), UI_Str("VIDEO_EXPORT_BACKGROUND_MOVIE") };
+			settingLabel(UI_Str("VIDEO_EXPORT_BACKGROUND"));
+			if (Gui::Combo("##Background", &exportData.BackgroundSource, backgroundNames, hasBackgroundMovie ? 5 : 4) &&
+				exportData.BackgroundSource == 1 && !exportData.DefaultBackgroundTexture.IsValid())
 			{
-				exportData.BackgroundSource = 0;
-				exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
-			}
-		}
-		if (exportData.BackgroundSource == 2)
-		{
-			if (Gui::Button(UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE")))
-			{
-				Shell::FileDialog fileDialog {};
-				fileDialog.InTitle = UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE");
-				fileDialog.InFilters = { { "Image Files", "*.jpg;*.jpeg;*.png" } };
-				fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
-				if (fileDialog.OpenRead() == Shell::FileDialogResult::OK)
+				if (!LoadVideoBackgroundImage("assets/background.png", exportData.DefaultBackgroundTexture))
 				{
-					CustomDraw::GPUTexture texture = {};
-					if (LoadVideoBackgroundImage(fileDialog.OutFilePath, texture))
-					{
-						exportData.CustomBackgroundTexture = std::move(texture);
-						exportData.BackgroundImagePath = fileDialog.OutFilePath;
-						exportData.BackgroundSource = 2;
-						exportData.Status.clear();
-					}
-					else exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
+					exportData.BackgroundSource = 0;
+					exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
 				}
 			}
-			if (!exportData.BackgroundImagePath.empty()) Gui::TextWrapped("%s", exportData.BackgroundImagePath.c_str());
+			if (exportData.BackgroundSource == 2)
+			{
+				if (Gui::Button(UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE")))
+				{
+					Shell::FileDialog fileDialog {};
+					fileDialog.InTitle = UI_Str("VIDEO_EXPORT_BACKGROUND_CHOOSE");
+					fileDialog.InFilters = { { "Image Files", "*.jpg;*.jpeg;*.png" } };
+					fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+					if (fileDialog.OpenRead() == Shell::FileDialogResult::OK)
+					{
+						CustomDraw::GPUTexture texture = {};
+						if (LoadVideoBackgroundImage(fileDialog.OutFilePath, texture))
+						{
+							exportData.CustomBackgroundTexture = std::move(texture);
+							exportData.BackgroundImagePath = fileDialog.OutFilePath;
+							exportData.BackgroundSource = 2;
+							exportData.Status.clear();
+						}
+						else exportData.Status = UI_Str("VIDEO_EXPORT_BACKGROUND_IMAGE_FAILED");
+					}
+				}
+				if (!exportData.BackgroundImagePath.empty()) Gui::TextWrapped("%s", exportData.BackgroundImagePath.c_str());
+			}
+			settingLabel(UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"));
+			Gui::ColorEdit3_U32("##BackgroundColor", &exportData.BackgroundColor);
+			settingLabel(UI_Str("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY"));
+			Gui::SliderFloat("##LaneBackgroundTransparency", &exportData.LaneBackgroundTransparency,
+				0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+			if (exportData.BackgroundSource != 0)
+			{
+				const char* backgroundFitNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_STRETCH"), UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN"),
+					UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_HEIGHT") };
+				i32 backgroundFitIndex = static_cast<i32>(exportData.BackgroundImageFit);
+				settingLabel(UI_Str("VIDEO_EXPORT_BACKGROUND_FIT"));
+				if (Gui::Combo("##BackgroundFit", &backgroundFitIndex, backgroundFitNames, ArrayCountI32(backgroundFitNames)))
+					exportData.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(backgroundFitIndex);
+			}
+		};
+		const auto drawAudioOptions = [&]()
+		{
+			settingLabel(UI_Str("VIDEO_EXPORT_SONG_VOLUME"));
+			Gui::SliderFloat("##SongVolume", &exportData.SongVolume, 0.0f, 2.0f, "%.2f");
+			settingLabel(UI_Str("VIDEO_EXPORT_DRUM_VOLUME"));
+			Gui::SliderFloat("##DrumVolume", &exportData.DrumVolume, 0.0f, 2.0f, "%.2f");
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_AUDIO_FADE"), &exportData.AudioFade);
+		};
+		const auto drawTitleOptions = [&]()
+		{
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_TITLE"), &exportData.ShowTitle); Gui::SameLine();
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_DIFFICULTY"), &exportData.ShowDifficulty);
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_SUBTITLE"), &exportData.ShowSubtitle);
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_MAX_COMBO"), &exportData.ShowMaxCombo); Gui::SameLine();
+			Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_CURRENT_COMBO"), &exportData.ShowCurrentCombo);
+			f32 titleSizePercent = exportData.TitleScale * 100.0f;
+			settingLabel(UI_Str("VIDEO_EXPORT_TITLE_SIZE"));
+			if (Gui::SliderFloat("##TitleSize", &titleSizePercent, 70.0f, 150.0f, "%.0f%%"))
+				exportData.TitleScale = titleSizePercent / 100.0f;
+			settingLabel(UI_Str("VIDEO_EXPORT_TITLE_PADDING"));
+			Gui::SliderFloat("##TitlePadding", &exportData.TitlePaddingScale, 0.5f, 2.0f, "%.2f");
+			if (Gui::BeginTable("##VideoExportTitlePosition", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings))
+			{
+				Gui::TableNextColumn();
+				const char* titleAlignmentNames[] = { UI_Str("VIDEO_EXPORT_TITLE_LEFT"), UI_Str("VIDEO_EXPORT_TITLE_CENTER") };
+				settingLabel(UI_Str("VIDEO_EXPORT_TITLE_ALIGNMENT"));
+				Gui::Combo("##TitleAlignment", &exportData.TitleAlignment, titleAlignmentNames, ArrayCountI32(titleAlignmentNames));
+				Gui::TableNextColumn();
+				const char* titlePositionNames[] = { UI_Str("VIDEO_EXPORT_TITLE_TOP"), UI_Str("VIDEO_EXPORT_TITLE_BOTTOM") };
+				settingLabel(UI_Str("VIDEO_EXPORT_TITLE_VERTICAL_POSITION"));
+				Gui::Combo("##TitlePosition", &exportData.TitleVerticalPosition, titlePositionNames, ArrayCountI32(titlePositionNames));
+				Gui::EndTable();
+			}
+			settingLabel(UI_Str("VIDEO_EXPORT_TITLE_COLOR"));
+			Gui::ColorEdit3_U32("##TitleColor", &exportData.TitleColor);
+			settingLabel(UI_Str("VIDEO_EXPORT_TITLE_BAND_COLOR"));
+			Gui::ColorEdit4_U32("##TitleBandColor", &exportData.TitleBandColor, ImGuiColorEditFlags_AlphaBar);
+		};
+		const vec2 contentSize = Gui::GetContentRegionAvail();
+		const f32 footerHeight = Gui::GetFrameHeightWithSpacing() * 5.0f;
+		const f32 bodyHeight = std::max(1.0f, contentSize.y - footerHeight - Gui::GetStyle().ItemSpacing.y * 2.0f);
+		const f32 settingsWidth = Clamp(contentSize.x * 0.38f, GuiScale(320.0f), GuiScale(420.0f));
+		Gui::BeginChild("##VideoExportOptions", vec2(settingsWidth, bodyHeight), true,
+			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		if (Gui::BeginTabBar("##VideoExportTabs", ImGuiTabBarFlags_FittingPolicyScroll))
+		{
+			const auto drawTab = [&](cstr name, const auto& drawOptions)
+			{
+				if (Gui::BeginTabItem(name))
+				{
+					Gui::BeginChild("##TabOptions", vec2(0.0f), false);
+					Gui::BeginDisabled(exportData.Exporting || exportData.Preparing);
+					Gui::PushID(name);
+					Gui::PushStyleVar(ImGuiStyleVar_ItemSpacing, vec2(Gui::GetStyle().ItemSpacing.x, GuiScale(6.0f)));
+					Gui::PushItemWidth(-1.0f);
+					drawOptions();
+					Gui::PopItemWidth();
+					Gui::PopStyleVar();
+					Gui::PopID();
+					Gui::EndDisabled();
+					Gui::EndChild();
+					Gui::EndTabItem();
+				}
+			};
+			drawTab(UI_Str("VIDEO_EXPORT_TAB_CHART"), drawChartOptions);
+			drawTab(UI_Str("VIDEO_EXPORT_TAB_DISPLAY"), [&]() { drawLayoutOptions(); Gui::Spacing(); drawTitleOptions(); });
+			drawTab(UI_Str("VIDEO_EXPORT_TAB_BACKGROUND"), drawBackgroundOptions);
+			drawTab(UI_Str("VIDEO_EXPORT_TAB_AUDIO"), drawAudioOptions);
+			drawTab(UI_Str("VIDEO_EXPORT_TAB_OUTPUT"), drawOutputOptions);
+			Gui::EndTabBar();
 		}
-		Gui::ColorEdit3_U32(UI_Str("VIDEO_EXPORT_BACKGROUND_COLOR"), &exportData.BackgroundColor);
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_LANE_BACKGROUND_TRANSPARENCY"), &exportData.LaneBackgroundTransparency,
-			0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
-		const char* backgroundFitNames[] = { UI_Str("VIDEO_EXPORT_BACKGROUND_STRETCH"), UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN"),
-			UI_Str("VIDEO_EXPORT_BACKGROUND_CONTAIN_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_WIDTH"), UI_Str("VIDEO_EXPORT_BACKGROUND_HEIGHT") };
-		i32 backgroundFitIndex = static_cast<i32>(exportData.BackgroundImageFit);
-		if (Gui::Combo(UI_Str("VIDEO_EXPORT_BACKGROUND_FIT"), &backgroundFitIndex, backgroundFitNames, ArrayCountI32(backgroundFitNames)))
-			exportData.BackgroundImageFit = static_cast<ChartGamePreview::VideoBackgroundFit>(backgroundFitIndex);
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_SONG_VOLUME"), &exportData.SongVolume, 0.0f, 2.0f, "%.2f");
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_DRUM_VOLUME"), &exportData.DrumVolume, 0.0f, 2.0f, "%.2f");
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_LEAD_IN"), &exportData.LeadInSeconds, 0.0f, 5.0f, "%.1f s");
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_TAIL"), &exportData.TailSeconds, 0.0f, 5.0f, "%.1f s");
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_AUDIO_FADE"), &exportData.AudioFade);
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_TITLE"), &exportData.ShowTitle); Gui::SameLine();
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_DIFFICULTY"), &exportData.ShowDifficulty);
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_SUBTITLE"), &exportData.ShowSubtitle);
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_MAX_COMBO"), &exportData.ShowMaxCombo); Gui::SameLine();
-		Gui::Checkbox(UI_Str("VIDEO_EXPORT_SHOW_CURRENT_COMBO"), &exportData.ShowCurrentCombo);
-		f32 titleSizePercent = exportData.TitleScale * 100.0f;
-		if (Gui::SliderFloat(UI_Str("VIDEO_EXPORT_TITLE_SIZE"), &titleSizePercent, 70.0f, 150.0f, "%.0f%%"))
-			exportData.TitleScale = titleSizePercent / 100.0f;
-		Gui::SliderFloat(UI_Str("VIDEO_EXPORT_TITLE_PADDING"), &exportData.TitlePaddingScale, 0.5f, 2.0f, "%.2f");
-		const char* titleAlignmentNames[] = { UI_Str("VIDEO_EXPORT_TITLE_LEFT"), UI_Str("VIDEO_EXPORT_TITLE_CENTER") };
-		Gui::Combo(UI_Str("VIDEO_EXPORT_TITLE_ALIGNMENT"), &exportData.TitleAlignment, titleAlignmentNames, ArrayCountI32(titleAlignmentNames));
-		const char* titlePositionNames[] = { UI_Str("VIDEO_EXPORT_TITLE_TOP"), UI_Str("VIDEO_EXPORT_TITLE_BOTTOM") };
-		Gui::Combo(UI_Str("VIDEO_EXPORT_TITLE_VERTICAL_POSITION"), &exportData.TitleVerticalPosition, titlePositionNames, ArrayCountI32(titlePositionNames));
-		Gui::ColorEdit3_U32(UI_Str("VIDEO_EXPORT_TITLE_COLOR"), &exportData.TitleColor);
-		Gui::ColorEdit4_U32(UI_Str("VIDEO_EXPORT_TITLE_BAND_COLOR"), &exportData.TitleBandColor, ImGuiColorEditFlags_AlphaBar);
-		Gui::EndDisabled();
 		Gui::EndChild();
-		Time selectedStart = course.GetPlaybackTimeBounds().first, selectedEnd = fullEnd;
+		exportData.Branch = exportData.Selections[0].Branch;
+		const i32 laneCount = exportData.Dual ? 2 : 1;
+		const i32 firstSelection = exportData.Dual ? 1 : 0;
+		Time selectedStart = exportData.Selections[firstSelection].Lane.Course->GetPlaybackTimeBounds().first;
+		Time selectedEnd = songEnd;
+		for (i32 lane = 0; lane < laneCount; ++lane)
+		{
+			const ChartCourse& course = *exportData.Selections[firstSelection + lane].Lane.Course;
+			const auto bounds = course.GetPlaybackTimeBounds(std::max(context.Chart.GetUsedDuration(course), songEnd));
+			selectedStart = Min(selectedStart, bounds.first);
+			selectedEnd = Max(selectedEnd, bounds.second);
+		}
 		if (exportData.Range == RangeMode::SelectedRange)
 		{
 			std::tie(selectedStart, selectedEnd) = context.GetRangePlaybackTimes();
@@ -506,28 +676,40 @@ namespace PeepoDrumKit
 
 		auto& preview = exportData.Preview;
 		const f32 rollsPerSecond = *Settings.General.DrumrollPreviewRollsPerSecond;
-		if (!exportData.Exporting && (exportData.RouteCourse != &course || exportData.RouteChanges != context.Undo.NumberOfChangesMade
-			|| exportData.RouteMode != exportData.Branch || exportData.RouteRollSpeed != rollsPerSecond
-			|| exportData.RouteRecordingVersion != gamePreview.VideoRecordingVersion))
+		exportData.RouteReady = true;
+		exportData.RouteRollSpeed = rollsPerSecond;
+		preview.VideoExportLaneCount = laneCount;
+		for (i32 lane = 0; lane < laneCount; ++lane)
 		{
-			exportData.RouteCourse = &course;
-			exportData.RouteChanges = context.Undo.NumberOfChangesMade;
-			exportData.RouteMode = exportData.Branch;
-			exportData.RouteRollSpeed = rollsPerSecond;
-			exportData.RouteRecordingVersion = gamePreview.VideoRecordingVersion;
-			exportData.RouteReady = true;
-			if (exportData.Branch == VideoBranchMode::Auto)
-				exportData.RouteReady = BuildAutoVideoBranchRoute(course, rollsPerSecond, exportData.Route);
-			else if (exportData.Branch == VideoBranchMode::TestPlay)
+			auto& selection = exportData.Selections[firstSelection + lane];
+			const ChartCourse& course = *selection.Lane.Course;
+			if (!exportData.Exporting && (selection.RouteCourse != &course || selection.RouteChanges != context.Undo.NumberOfChangesMade
+				|| selection.RouteMode != selection.Branch || selection.RouteRollSpeed != rollsPerSecond
+				|| selection.RouteRecordingVersion != gamePreview.VideoRecordingVersion))
 			{
-				exportData.RouteReady = hasRecording;
-				exportData.Route = gamePreview.RecordedVideoRoute.Route;
+				selection.RouteCourse = &course;
+				selection.RouteChanges = context.Undo.NumberOfChangesMade;
+				selection.RouteMode = selection.Branch;
+				selection.RouteRollSpeed = rollsPerSecond;
+				selection.RouteRecordingVersion = gamePreview.VideoRecordingVersion;
+				selection.RouteReady = true;
+				if (selection.Branch == VideoBranchMode::Auto)
+					selection.RouteReady = BuildAutoVideoBranchRoute(course, rollsPerSecond, selection.Route);
+				else if (selection.Branch >= VideoBranchMode::TestPlay)
+				{
+					const auto& recording = gamePreview.RecordedVideoRoutes[static_cast<size_t>(selection.Branch) - static_cast<size_t>(VideoBranchMode::TestPlay)];
+					selection.RouteReady = recording.IsValid(&course, context.Undo.NumberOfChangesMade);
+					selection.Route = recording.Route;
+				}
+				else selection.Route = BuildFixedVideoBranchRoute(course, VideoBranchForCourse(course, static_cast<BranchType>(selection.Branch)));
+				selection.Lane.Combos.Rebuild(course, selection.Route);
+				selection.Lane.ScrollDecisionCount = SIZE_MAX;
 			}
-			else exportData.Route = BuildFixedVideoBranchRoute(course, static_cast<BranchType>(exportData.Branch));
-			preview.VideoExportCombos.Rebuild(course, exportData.Route);
-			preview.VideoScrollDecisionCount = SIZE_MAX;
+			selection.Lane.Route = &selection.Route;
+			selection.Lane.Branch = selection.Branch <= VideoBranchMode::Master ? VideoBranchForCourse(course, static_cast<BranchType>(selection.Branch)) : BranchType::Normal;
+			preview.VideoExportLanes[lane] = &selection.Lane;
+			exportData.RouteReady &= selection.RouteReady;
 		}
-		preview.VideoExportRoute = &exportData.Route;
 		preview.VideoRollsPerSecond = exportData.RouteRollSpeed;
 		ConfigureVideoPreview(preview);
 		preview.VideoExportPixelAligned = true;
@@ -539,15 +721,28 @@ namespace PeepoDrumKit
 		preview.VideoExportTime = exportData.Exporting
 			? exportData.StartTime + Time::FromFrames(static_cast<f64>(std::min(exportData.FrameIndex, exportData.FrameCount - 1)), exportData.FramesPerSecond)
 			: Clamp(context.GetCursorTime(), selectedStart, selectedEnd);
+		Gui::SameLine();
+		Gui::BeginChild("##VideoExportRightPane", vec2(0.0f, bodyHeight), false,
+			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 		const vec2 availablePreviewSize = Gui::GetContentRegionAvail();
-		const f32 reservedRows = exportData.Exporting ? 8.0f : 5.0f;
+		const f32 summaryHeight = Gui::GetTextLineHeightWithSpacing() * 3.0f + Gui::GetStyle().ItemSpacing.y;
 		const f32 previewWidth = std::min(availablePreviewSize.x,
-			std::max(160.0f, availablePreviewSize.y - Gui::GetFrameHeightWithSpacing() * reservedRows) * 16.0f / 9.0f);
+			std::max(1.0f, availablePreviewSize.y - summaryHeight) * 16.0f / 9.0f);
 		const f32 previewHeight = previewWidth * 9.0f / 16.0f;
+		Gui::SetCursorPosX(Gui::GetCursorPosX() + (availablePreviewSize.x - previewWidth) * 0.5f);
 		if (Gui::BeginChild("##VideoExportPreview", vec2(previewWidth, previewHeight), false,
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
 			preview.DrawGui(context, *preview.VideoExportTime);
 		Gui::EndChild();
+		Gui::Text("%s / %d fps / %u kbps", VideoResolutionPresets[exportData.Resolution].Name,
+			exportData.FramesPerSecond, exportData.AudioBitRate / 1000);
+		const cstr rangeLabel = exportData.Range == RangeMode::SelectedRange ? UI_Str("VIDEO_EXPORT_RANGE_SELECTED")
+			: exportData.Range == RangeMode::Preview ? UI_Str("VIDEO_EXPORT_RANGE_PREVIEW")
+			: exportData.Range == RangeMode::Marker ? UI_Str("VIDEO_EXPORT_RANGE_MARKER") : UI_Str("VIDEO_EXPORT_RANGE_FULL");
+		Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_RANGE_MODE"), rangeLabel);
+		Gui::Text("%.2f s - %.2f s", selectedStart.ToSec(), selectedEnd.ToSec());
+		Gui::EndChild();
+		Gui::Separator();
 		const b8 movieFrameReady = !preview.VideoUseBackgroundMovie || preview.MovieStatus == BackgroundMovieStatus::Ready || preview.MovieStatus == BackgroundMovieStatus::Inactive;
 		exportData.FramePrepared = exportData.Exporting && !exportData.Finalizing && preview.VideoExportDrawList != nullptr && movieFrameReady;
 		if (preview.VideoUseBackgroundMovie && !preview.MovieError.empty() && !exportData.Exporting)
@@ -572,6 +767,7 @@ namespace PeepoDrumKit
 			Gui::Text("%s: %lld / %lld", UI_Str("VIDEO_EXPORT_FRAMES"), exportData.FrameIndex, exportData.FrameCount);
 			char elapsedText[32];
 			FormatVideoExportTime(elapsedText, exportData.ExportStopwatch.GetElapsed().ToSec());
+			Gui::SameLine();
 			Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_ELAPSED"), elapsedText);
 			if (!exportData.Finalizing)
 			{
@@ -582,6 +778,9 @@ namespace PeepoDrumKit
 					Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_REMAINING"), remainingText);
 				}
 				else Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_REMAINING"), UI_Str("VIDEO_EXPORT_CALCULATING"));
+				Gui::SameLine();
+				const f32 cancelWidth = Gui::CalcTextSize(UI_Str("VIDEO_EXPORT_CANCEL")).x + Gui::GetStyle().FramePadding.x * 2.0f;
+				Gui::SetCursorPosX(Gui::GetCursorPosX() + std::max(0.0f, Gui::GetContentRegionAvail().x - cancelWidth));
 				if (Gui::Button(UI_Str("VIDEO_EXPORT_CANCEL")))
 				{
 					exportData.Exporting = false;
@@ -594,8 +793,18 @@ namespace PeepoDrumKit
 		}
 		else
 		{
+			if (exportData.Finished)
+			{
+				if (Gui::Button(UI_Str("VIDEO_EXPORT_OPEN_VIDEO"))) Shell::OpenInExplorer(exportData.OutputPath);
+				Gui::SameLine();
+				if (Gui::Button(UI_Str("VIDEO_EXPORT_OPEN_FOLDER"))) Shell::OpenInExplorer(Path::GetDirectoryName(exportData.OutputPath));
+				Gui::SameLine();
+			}
+			if (!song) { Gui::TextUnformatted(UI_Str("VIDEO_EXPORT_NO_SONG")); Gui::SameLine(); }
+			const f32 startWidth = std::max(GuiScale(120.0f), Gui::CalcTextSize(UI_Str("VIDEO_EXPORT_START")).x + Gui::GetStyle().FramePadding.x * 2.0f);
+			Gui::SetCursorPosX(Gui::GetCursorPosX() + std::max(0.0f, Gui::GetContentRegionAvail().x - startWidth));
 			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady || !movieFrameReady);
-			if (Gui::Button(UI_Str("VIDEO_EXPORT_START")))
+			if (Gui::Button(UI_Str("VIDEO_EXPORT_START"), vec2(startWidth, 0.0f)))
 			{
 				exportData.OutputBasePath.clear();
 				exportData.OutputPath.clear();
@@ -613,8 +822,9 @@ namespace PeepoDrumKit
 				}
 				else
 				{
-					const std::string_view branchName = course.Branches.empty() ? std::string_view{}
-						: std::string_view(branchNames[EnumToIndex(exportData.Branch)]);
+					const auto& selection = exportData.Selections[firstSelection];
+					const std::string_view branchName = exportData.Dual ? std::string_view(UI_Str("VIDEO_EXPORT_PLAYBACK_DUAL"))
+						: selection.Lane.Course->Branches.empty() ? std::string_view{} : std::string_view(branchNames[EnumToIndex(selection.Branch)]);
 					exportData.OutputBasePath = MakeVideoOutputBasePath(outputDirectory, context.Chart.ChartTitle, branchName,
 						VideoResolutionPresets[exportData.Resolution].Height, exportData.FramesPerSecond);
 					exportData.OutputPath = MakeAvailableVideoOutputPath(exportData.OutputBasePath);
@@ -642,21 +852,20 @@ namespace PeepoDrumKit
 				}
 			}
 			Gui::EndDisabled();
-			if (!song) Gui::TextUnformatted(UI_Str("VIDEO_EXPORT_NO_SONG"));
 		}
-		if (!exportData.OutputPath.empty()) Gui::TextWrapped("%s: %s", UI_Str("VIDEO_EXPORT_OUTPUT"), exportData.OutputPath.c_str());
-		if (exportData.Finished)
+		Gui::BeginChild("##VideoExportDetails", vec2(0.0f), false);
+		if (!exportData.Preparing && !exportData.Exporting && !exportData.Status.empty()) Gui::TextWrapped("%s", exportData.Status.c_str());
+		if (!exportData.OutputPath.empty() && Gui::TreeNode(UI_Str("VIDEO_EXPORT_OUTPUT")))
 		{
-			if (Gui::Button(UI_Str("VIDEO_EXPORT_OPEN_VIDEO"))) Shell::OpenInExplorer(exportData.OutputPath);
-			Gui::SameLine();
-			if (Gui::Button(UI_Str("VIDEO_EXPORT_OPEN_FOLDER"))) Shell::OpenInExplorer(Path::GetDirectoryName(exportData.OutputPath));
+			Gui::TextWrapped("%s", exportData.OutputPath.c_str());
+			Gui::TreePop();
 		}
-		if (!exportData.Status.empty()) Gui::TextWrapped("%s", exportData.Status.c_str());
 		if (!exportData.ErrorDetails.empty() && Gui::TreeNode(UI_Str("VIDEO_EXPORT_ERROR_DETAILS")))
 		{
 			Gui::TextWrapped("%s", exportData.ErrorDetails.c_str());
 			Gui::TreePop();
 		}
+		Gui::EndChild();
 	}
 
 	void ChartEditor::OnAfterRender()
@@ -685,9 +894,19 @@ namespace PeepoDrumKit
 			context.SetIsPlayback(false);
 			exportData.LastFrameElapsedSeconds = exportData.SecondsPerFrame = 0.0;
 			exportData.ExportStopwatch.Restart();
-			exportData.Preview.VideoExportCombos.Rebuild(*exportData.Course, exportData.Route);
-			exportData.Preview.VideoScrollDecisionCount = SIZE_MAX;
-			exportData.Sounds.Rebuild(*exportData.Course, exportData.Route, exportData.RouteRollSpeed);
+			exportData.Sounds.Events.clear();
+			for (i32 lane = 0; lane < exportData.Preview.VideoExportLaneCount; ++lane)
+			{
+				auto& state = *exportData.Preview.VideoExportLanes[lane];
+				state.Combos.Rebuild(*state.Course, *state.Route);
+				state.ScrollDecisionCount = SIZE_MAX;
+				VideoExportSoundTimeline sounds;
+				sounds.Rebuild(*state.Course, *state.Route, exportData.RouteRollSpeed,
+					exportData.Preview.VideoExportLaneCount == 1 ? 0.0f : lane == 0 ? -1.0f : 1.0f);
+				exportData.Sounds.Events.insert(exportData.Sounds.Events.end(), sounds.Events.begin(), sounds.Events.end());
+			}
+			std::sort(exportData.Sounds.Events.begin(), exportData.Sounds.Events.end(),
+				[](const auto& left, const auto& right) { return left.HitTime < right.HitTime; });
 			exportData.Exporting = true;
 			exportData.Status.clear();
 			return;

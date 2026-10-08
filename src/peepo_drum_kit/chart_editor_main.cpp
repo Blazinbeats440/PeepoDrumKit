@@ -170,6 +170,18 @@ namespace PeepoDrumKit
 				Log::Write("Video branch self-test passed");
 				return 0;
 			}
+			if (argv[i] == "--test-video-layout")
+			{
+				i18n::InitBuiltinLocale();
+				std::string error;
+				if (!RunVideoLayoutSelfTest(error))
+				{
+					Log::Write("Video layout self-test failed: %s", error.c_str());
+					return 1;
+				}
+				Log::Write("Video layout self-test passed");
+				return 0;
+			}
 			if (argv[i] == "--test-screenshot-png")
 			{
 				const std::vector<u8> pixels = { 0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255 };
@@ -201,6 +213,26 @@ namespace PeepoDrumKit
 					mixedSamples[3 * 2] != 500 || mixedSamples[0] != 0 || mixedSamples[4 * 2] != 0)
 				{
 					Log::Write("Video writer self-test audio mixing failed");
+					return 1;
+				}
+				for (f32 pan : { -1.0f, 1.0f })
+				{
+					testSounds.Events[0].Pan = pan;
+					RenderVideoExportAudio(testSources, testSounds, Time::Zero(), 0, 5, mixedSamples);
+					const auto gain = Audio::GetPanGain(pan, Audio::AudioEngine::PanLaw);
+					for (u32 channel = 0; channel < 2; ++channel)
+						if (mixedSamples[4 + channel] != static_cast<i16>(std::round(1000.0f * gain[channel])))
+						{
+							Log::Write("Video writer self-test stereo balance failed");
+							return 1;
+						}
+				}
+				testSounds.Events[0].Pan = -1.0f;
+				testSounds.Events.push_back({ testSounds.Events[0].HitTime, SoundEffectType::TaikoDon, 1.0f });
+				RenderVideoExportAudio(testSources, testSounds, Time::Zero(), 0, 5, mixedSamples);
+				if (mixedSamples[4] != 1414 || mixedSamples[5] != 1414)
+				{
+					Log::Write("Video writer self-test simultaneous stereo hits failed");
 					return 1;
 				}
 				VideoExportAudioSources fadeSources;

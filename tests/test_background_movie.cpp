@@ -14,6 +14,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
 using namespace PeepoDrumKit;
@@ -36,15 +37,16 @@ static BackgroundMovieStatus WaitForFrame(BackgroundMovieReader& reader, Backgro
 	}
 }
 
-static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false)
+static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false, u32 frameRate = 5, u32 durationSeconds = 3)
 {
 	const std::string path = "build/bgmovie_test_" + std::to_string(GetCurrentProcessId()) + "_" +
 		std::to_string(GetTickCount64()) + u8"_\u80cc\u666f.mp4";
 	VideoExportWriter writer;
-	Check(writer.Start(path, width, height, 5, 500000, 192000), std::string(writer.GetError()).c_str());
+	Check(writer.Start(path, width, height, frameRate, 500000, 192000), std::string(writer.GetError()).c_str());
 	std::vector<u8> pixels(static_cast<size_t>(width) * height * 4);
-	std::vector<i16> silence(8820 * 2);
-	for (i64 index = 0; index < 15; ++index)
+	const u32 audioFrames = 44100 / frameRate;
+	std::vector<i16> silence(audioFrames * 2);
+	for (i64 index = 0; index < frameRate * durationSeconds; ++index)
 	{
 		for (u32 row = 0; row < height; ++row)
 			for (u32 column = 0; column < width; ++column)
@@ -56,11 +58,11 @@ static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false)
 				pixel[3] = 255;
 			}
 		Check(writer.WriteVideoFrame(pixels.data(), width * 4, index), std::string(writer.GetError()).c_str());
-		Check(writer.WriteAudioSamples(silence.data(), 8820, index * 8820), std::string(writer.GetError()).c_str());
+		Check(writer.WriteAudioSamples(silence.data(), audioFrames, index * audioFrames), std::string(writer.GetError()).c_str());
 	}
 	if (longAudio)
-		for (i64 index = 15; index < 25; ++index)
-			Check(writer.WriteAudioSamples(silence.data(), 8820, index * 8820), std::string(writer.GetError()).c_str());
+		for (i64 index = frameRate * durationSeconds; index < frameRate * (durationSeconds + 2); ++index)
+			Check(writer.WriteAudioSamples(silence.data(), audioFrames, index * audioFrames), std::string(writer.GetError()).c_str());
 	Check(writer.Finish(), std::string(writer.GetError()).c_str());
 	return path;
 }
@@ -173,6 +175,41 @@ int main()
 	Check(!ReadBackgroundMovieDefinition({ { "MOVIEOFFSET", "invalid" } }).Error.empty(), "Invalid movie offset must fail");
 
 	const std::string path = CreateMovie(64, 48);
+	const auto absoluteMoviePath = std::filesystem::absolute(std::filesystem::u8path(path));
+	const std::string chartPath = (absoluteMoviePath.parent_path() / "movie_properties.tja").u8string();
+	std::map<std::string, std::string> movieMetadata = { { "BGMOVIE", "old.mp4" }, { "bgmovie", "other.mp4" },
+		{ "MOVIEOFFSET", "invalid" }, { "movieoffset", "2" }, { "GENRE", "keep" } };
+	SetBackgroundMovieFileName(movieMetadata, absoluteMoviePath.u8string(), chartPath);
+	SetBackgroundMovieOffset(movieMetadata, Time::FromMS(-1250));
+	Check(ReadBackgroundMovieDefinition(movieMetadata).FileName == absoluteMoviePath.filename().u8string(),
+		"Movie beside chart must use only its filename");
+	Check(movieMetadata.count("bgmovie") == 0 && movieMetadata.count("movieoffset") == 0 && movieMetadata.at("GENRE") == "keep",
+		"Movie properties must update case-insensitive headers without duplicates or changing other metadata");
+	parsed.Metadata.Others = movieMetadata;
+	std::string propertySaved;
+	TJA::ConvertParsedToText(parsed, propertySaved, TJA::SaveFormat::Current);
+	TJA::ErrorList propertyErrors;
+	const std::string_view propertyText = UTF8::HasBOM(propertySaved) ? UTF8::TrimBOM(propertySaved) : std::string_view{ propertySaved };
+	const auto propertyReloaded = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(propertyText)), propertyErrors);
+	const auto propertyDefinition = ReadBackgroundMovieDefinition(propertyReloaded.Metadata.Others);
+	Check(propertyErrors.Errors.empty() && propertyDefinition.FileName == absoluteMoviePath.filename().u8string() && propertyDefinition.Offset.Seconds == -1.25,
+		"Edited movie properties must survive TJA serialization");
+	const std::string nestedChartPath = (absoluteMoviePath.parent_path() / "bin" / "movie_properties.tja").u8string();
+	SetBackgroundMovieFileName(movieMetadata, absoluteMoviePath.u8string(), nestedChartPath);
+	const auto relativeDefinition = ReadBackgroundMovieDefinition(movieMetadata);
+	Check(Path::IsRelative(relativeDefinition.FileName) &&
+		std::filesystem::u8path(Path::TryMakeAbsolute(relativeDefinition.FileName, nestedChartPath)).lexically_normal() == absoluteMoviePath.lexically_normal(),
+		"Movie in another directory must retain a resolvable relative path");
+	SetBackgroundMovieFileName(movieMetadata, absoluteMoviePath.u8string(), "");
+	Check(ReadBackgroundMovieDefinition(movieMetadata).FileName == Path::CopyAndNormalize(absoluteMoviePath.u8string()),
+		"Unsaved charts must retain the absolute movie path until saved");
+	SetBackgroundMovieFileName(movieMetadata, "", chartPath);
+	Check(ReadBackgroundMovieDefinition(movieMetadata).FileName.empty(), "Clearing movie filename must remove the movie header");
+	SetBackgroundMovieOffset(movieMetadata, Time::Zero());
+	Check(ReadBackgroundMovieDefinition(movieMetadata).Offset.Seconds == 0, "Movie offset must be resettable to zero");
+	for (std::string_view extension : { ".MP4", ".mov", ".wmv", ".avi", ".mkv", ".webm" })
+		Check(Path::HasAnyExtension(std::string("movie") + std::string(extension), BackgroundMovieExtensions), "Movie drop extensions must match case-insensitively");
+	Check(!Path::HasAnyExtension("song.ogg", BackgroundMovieExtensions), "Movie drops must not capture audio files");
 	BackgroundMovieReader reader, exportReader;
 	BackgroundMovieFrame frame, exportFrame;
 	for (const f64 time : { 0.0, 0.1999999, 0.2, 0.3999999, 0.4, 1.9, 2.0, 0.2, 2.8 })
@@ -193,6 +230,49 @@ int main()
 	exportReader.Request(path, Time::FromSec(0.8));
 	Check(WaitForFrame(exportReader, exportFrame) == BackgroundMovieStatus::Ready, exportReader.GetError().c_str());
 	Check(reader.Poll(frame) == BackgroundMovieStatus::Ready && frame.Sequence == pausedSequence, "Independent export reader must not seek preview");
+	reader.Request(path, Time::FromSec(0.2));
+	Check(reader.Poll(frame) == BackgroundMovieStatus::Ready, "Recently decoded frames must be available immediately when seeking back");
+	reader.Request(path, Time::FromSec(2.8));
+	Check(reader.Poll(frame) == BackgroundMovieStatus::Ready && frame.Sequence == pausedSequence, "Cached seek must preserve the original frame sequence");
+	for (i32 index = 0; index < 200; ++index)
+		reader.Request(path, Time::FromSec((index % 2 == 0 ? 2.4 : 0.6) + (index % 3) * 0.01));
+	reader.Request(path, Time::FromSec(1.4));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && frame.Start.Seconds <= 1.4 && frame.End.Seconds > 1.4,
+		"Rapid alternating seeks must settle on the latest requested frame");
+	const std::string playbackPath = CreateMovie(64, 48, false, 60, 8);
+	reader.Request(playbackPath, Time::Zero());
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready, "Open 60 fps playback fixture");
+	i32 readyFrames = 0;
+	for (i32 index = 0; index < 120; ++index)
+	{
+		const f64 time = index / 60.0;
+		reader.Request(playbackPath, Time::FromSec(time));
+		const auto status = reader.Poll(frame);
+		Check(status == BackgroundMovieStatus::Ready || status == BackgroundMovieStatus::Pending,
+			"Continuous playback requests must remain active");
+		if (status == BackgroundMovieStatus::Ready)
+		{
+			++readyFrames;
+			Check(time >= frame.Start.Seconds && time < frame.End.Seconds, "Buffered playback must select the requested timestamp");
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+	}
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready, "Continuous playback must catch up to the final request");
+	Check(readyFrames >= 90, "Read-ahead must keep most 60 fps playback frames immediately available");
+	reader.Request(playbackPath, Time::FromSec(0.01));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && frame.Start.Seconds <= 0.01 && frame.End.Seconds > 0.01,
+		"Seeking to an evicted frame must resume decoding");
+	for (i32 index = 0; index < 200; ++index)
+		reader.Request(playbackPath, Time::FromSec(index / 199.0 * 2.8));
+	reader.Request(playbackPath, Time::FromSec(2.8));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && frame.Start.Seconds <= 2.8 && frame.End.Seconds > 2.8,
+		"Rapid forward seeks must settle on the latest requested frame");
+	for (const f64 time : { 7.75, 0.123, 5.432, 2.345 })
+	{
+		reader.Request(playbackPath, Time::FromSec(time));
+		Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && time >= frame.Start.Seconds && time < frame.End.Seconds,
+			"Distant seeks between keyframes must return the exact requested timestamp");
+	}
 	for (i32 index = 0; index < 90; ++index)
 	{
 		const f64 time = index / 30.0;
