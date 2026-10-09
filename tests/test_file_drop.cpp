@@ -191,6 +191,10 @@ int main()
 	Require(FileDrop::ReadFolder(folder.u8string(), 2).ChartPaths.size() == 3, "depth two");
 	Require(FileDrop::ReadFolder(folder.u8string(), -1).ChartPaths.size() == 1, "negative depth clamps to zero");
 	Require(FileDrop::ReadFolder((root / "missing").u8string(), 1).Failure == FileDrop::Error::ReadFailed, "missing folder");
+	Write(folder / "import.MC", "{}");
+	Require(FileDrop::ReadFolder(folder.u8string(), 0).ChartPaths.size() == 2, "MC chart with uppercase extension");
+	Write(folder / "import.OSU", "osu file format v14");
+	Require(FileDrop::ReadFolder(folder.u8string(), 0).ChartPaths.size() == 3, "OSU chart with uppercase extension");
 
 	const fs::path extractionRoot = root / "Extracted zip";
 	auto extract = [&](const std::string& name, const std::string& bytes, i32 depth = 1)
@@ -213,6 +217,15 @@ int main()
 	Require(second.Failure == FileDrop::Error::None && second.ChartPaths.size() == 2 && second.DirectoryPath != result.DirectoryPath, "repeated ZIP gets unique directory");
 	Require(Read(fs::u8path(result.ChartPaths.front())) == chart, "existing extraction unchanged");
 	Require(extract("stored", Zip({ { "chart.tja", chart } })).ChartPaths.size() == 1, "Store ZIP");
+	const auto mcArchive = extract("malody", Zip({ { "chart.mc", "{}" }, { "song.wav", audio } }));
+	Require(mcArchive.Failure == FileDrop::Error::None && mcArchive.ChartPaths.size() == 1, "MC chart in ZIP");
+	Require(fs::u8path(mcArchive.ChartPaths.front()).extension() == ".mc", "MC extension preserved");
+	const fs::path oszPath = root / "beatmaps.OSZ";
+	Write(oszPath, Zip({ { "easy.osu", "osu file format v3" }, { "oni.OSU", "osu file format v128" }, { "song.ogg", audio } }));
+	Require(FileDrop::IsArchivePath(oszPath.u8string()), "OSZ is an archive");
+	const auto oszArchive = FileDrop::ExtractArchive(oszPath.u8string(), extractionRoot.u8string(), 1);
+	Require(oszArchive.Failure == FileDrop::Error::None && oszArchive.ChartPaths.size() == 2, "OSZ uses ZIP extraction and lists OSU charts");
+	Require(Read(fs::u8path(oszArchive.DirectoryPath) / "song.ogg") == audio, "OSZ audio extracted");
 	compressed.Flags |= 8;
 	Require(extract("descriptor", Zip({ compressed })).Failure == FileDrop::Error::None, "data descriptor");
 	Entry empty { "empty.tja", "", std::string("\x03\x00", 2), 8 };

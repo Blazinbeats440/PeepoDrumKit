@@ -508,6 +508,7 @@ namespace TJA
 				}
 			}
 			currentCourse = &outTJA.Courses.emplace_back(); // create from scratch;
+			currentCourse->Metadata.OmitLEVEL = true;
 		set_up_course:
 			currentCourse->HasChart = false;
 			b8 fromScratch = (idxLastCourses[EnumToIndex(currentCourseScope)] == -1);
@@ -663,6 +664,7 @@ namespace TJA
 							break;
 						} 
 						out.LEVEL = _level;
+						out.OmitLEVEL = false;
 						out.LEVEL_DECIMALPLACES = 0;
 						auto [pSign, pWhole, pPoint, pExp, pEnd] = ASCII::DecomposeCharsFloating(in.data(), in.data() + in.size());
 						if (pSign == pEnd) // non-digit
@@ -1234,13 +1236,13 @@ namespace TJA
 			for (const auto& [locale, val] : inContent.Metadata.SUBTITLE_localized)
 				appendSuffixedPropertyLine(out, Key::Main_SUBTITLE_localized, locale, val);
 		}
-		appendProperyLine(out, Key::Main_BPM, std::string_view(buffer, sprintf_s(buffer, "%g", inContent.Metadata.BPM.BPM))); // Better to be explicit
+		appendProperyLine(out, Key::Main_BPM, std::string_view(buffer, sprintf_s(buffer, "%.9g", inContent.Metadata.BPM.BPM))); // Better to be explicit
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::WAVE))
 			appendProperyLine(out, Key::Main_WAVE, inContent.Metadata.WAVE);
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::PREIMAGE))
 			appendProperyLine(out, Key::Main_PREIMAGE, inContent.Metadata.PREIMAGE);
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::WAVE, &ParsedMainMetadata::OFFSET)) // Better to be explicit if `WAVE:` is given
-			appendProperyLine(out, Key::Main_OFFSET, std::string_view(buffer, sprintf_s(buffer, "%g", inContent.Metadata.OFFSET.Seconds)));
+			appendProperyLine(out, Key::Main_OFFSET, std::string_view(buffer, sprintf_s(buffer, "%.17g", inContent.Metadata.OFFSET.Seconds)));
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::DEMOSTART))
 			appendProperyLine(out, Key::Main_DEMOSTART, std::string_view(buffer, sprintf_s(buffer, "%g", inContent.Metadata.DEMOSTART.Seconds)));
 		// if (shouldEmitMainMetadata(&ParsedMainMetadata::GENRE))
@@ -1329,7 +1331,7 @@ namespace TJA
 			}
 
 			// Unspecified default value
-			if (firstInGroup || shouldEmitCourseMetadata(&ParsedCourseMetadata::LEVEL, &ParsedCourseMetadata::LEVEL_DECIMALPLACES))
+			if (!course.Metadata.OmitLEVEL && (firstInGroup || shouldEmitCourseMetadata(&ParsedCourseMetadata::LEVEL, &ParsedCourseMetadata::LEVEL_DECIMALPLACES, &ParsedCourseMetadata::OmitLEVEL)))
 				appendProperyLine(out, Key::Course_LEVEL, std::string_view(buffer, sprintf_s(buffer, "%.*f", course.Metadata.LEVEL_DECIMALPLACES, course.Metadata.LEVEL)));
 
 			// Better to be explicit
@@ -1398,7 +1400,7 @@ namespace TJA
 				} break;
 				case ParsedChartCommandType::ChangeTempo:
 				{
-					appendCommandLine(out, Key::Chart_BPMCHANGE, std::string_view(buffer, sprintf_s(buffer, "%g", command.Param.ChangeTempo.Value.BPM)));
+					appendCommandLine(out, Key::Chart_BPMCHANGE, std::string_view(buffer, sprintf_s(buffer, "%.9g", command.Param.ChangeTempo.Value.BPM)));
 				} break;
 				case ParsedChartCommandType::ChangeDelay:
 				{

@@ -334,6 +334,7 @@ namespace TJA
 		DifficultyType COURSE = DifficultyType::Oni;
 		u8 LEVEL_DECIMALPLACES = 0;
 		f64 LEVEL = 1;
+		b8 OmitLEVEL = false;
 		i32 STYLE = 1;
 		i32 START_PLAYERSIDE = 0;
 		std::vector<i32> BALLOON;

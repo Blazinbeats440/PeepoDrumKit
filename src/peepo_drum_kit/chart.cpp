@@ -163,6 +163,11 @@ namespace PeepoDrumKit
 
 	std::string ChartCourse::ToString(OmitLevel omitLevel) const
 	{
+		if (LevelUnspecified && Level == 0 && LevelDecimalPlaces == 0)
+		{
+			const auto style = GetStyleName(Style, PlayerSide, omitLevel >= OmitLevel::PlayerCount);
+			return (omitLevel == OmitLevel::None ? std::string(UI_StrRuntime(DifficultyTypeNames[EnumToIndex(Type)])) + " " : "") + std::string(style);
+		}
 		constexpr cstr fmts[] = { u8"%s ★%.0f%s %s", u8"%.0s★%.0f%s %s", u8"%.0s★%.0f%s%.0s" };
 		cstr fmt = fmts[std::array{ 0, 1, 1, 2 } [EnumToIndex(omitLevel)] ];
 		f64 levelRound = Round(Level, std::pow(10, -LevelDecimalPlaces));
@@ -243,7 +248,8 @@ namespace PeepoDrumKit
 
 			// HACK: Write proper enum conversion functions
 			outCourse.Type = Clamp(static_cast<DifficultyType>(inCourse.CourseMetadata.COURSE), DifficultyType {}, DifficultyType::Count);
-			outCourse.Level = inCourse.CourseMetadata.LEVEL;
+			outCourse.Level = inCourse.CourseMetadata.OmitLEVEL ? 0 : inCourse.CourseMetadata.LEVEL;
+			outCourse.LevelUnspecified = inCourse.CourseMetadata.OmitLEVEL;
 			outCourse.LevelDecimalPlaces = inCourse.CourseMetadata.LEVEL_DECIMALPLACES;
 			outCourse.Style = std::max(inCourse.CourseMetadata.STYLE, 1);
 			outCourse.PlayerSide = std::clamp(inCourse.CourseMetadata.START_PLAYERSIDE, 1, outCourse.Style);
@@ -479,6 +485,7 @@ namespace PeepoDrumKit
 			outCourse.Metadata.COURSE = static_cast<TJA::DifficultyType>(inCourse.Type);
 			outCourse.Metadata.LEVEL = inCourse.Level;
 			outCourse.Metadata.LEVEL_DECIMALPLACES = inCourse.LevelDecimalPlaces;
+			outCourse.Metadata.OmitLEVEL = inCourse.LevelUnspecified && inCourse.Level == 0 && inCourse.LevelDecimalPlaces == 0;
 			outCourse.Metadata.STYLE = inCourse.Style;
 			outCourse.Metadata.START_PLAYERSIDE = inCourse.PlayerSide;
 			outCourse.Metadata.NOTESDESIGNER = inCourse.CourseCreator;

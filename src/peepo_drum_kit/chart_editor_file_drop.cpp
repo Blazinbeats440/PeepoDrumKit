@@ -32,7 +32,8 @@ namespace PeepoDrumKit::FileDrop
 		{
 			if (iterator.depth() >= std::max(0, searchDepth) || IsReparsePoint(iterator->path()))
 				iterator.disable_recursion_pending();
-			if (iterator->is_regular_file(error) && !error && ASCII::MatchesInsensitive(iterator->path().extension().u8string(), ".tja"))
+			if (iterator->is_regular_file(error) && !error && (ASCII::MatchesInsensitive(iterator->path().extension().u8string(), ".tja")
+				|| ASCII::MatchesInsensitive(iterator->path().extension().u8string(), ".mc") || ASCII::MatchesInsensitive(iterator->path().extension().u8string(), ".osu")))
 				result.ChartPaths.push_back(iterator->path().u8string());
 		}
 		if (error) result.Failure = Error::ReadFailed;
@@ -265,7 +266,7 @@ namespace PeepoDrumKit::FileDrop
 	b8 IsArchivePath(std::string_view path)
 	{
 		const std::string extension = fs::u8path(path).extension().u8string();
-		return ASCII::MatchesInsensitive(extension, ".zip") || ASCII::MatchesInsensitive(extension, ".7z")
+		return ASCII::MatchesInsensitive(extension, ".zip") || ASCII::MatchesInsensitive(extension, ".osz") || ASCII::MatchesInsensitive(extension, ".7z")
 			|| ASCII::MatchesInsensitive(extension, ".rar") || ASCII::MatchesInsensitive(extension, ".lzh");
 	}
 
@@ -293,7 +294,7 @@ namespace PeepoDrumKit::FileDrop
 
 	Result ExtractArchive(std::string_view archivePath, std::string_view extractionRoot, i32 searchDepth)
 	{
-		if (ASCII::MatchesInsensitive(fs::u8path(archivePath).extension().u8string(), ".zip"))
+		if (ASCII::MatchesInsensitive(fs::u8path(archivePath).extension().u8string(), ".zip") || ASCII::MatchesInsensitive(fs::u8path(archivePath).extension().u8string(), ".osz"))
 			return ExtractZip(archivePath, extractionRoot, searchDepth);
 		Result result;
 		result.DirectoryPath = archivePath;

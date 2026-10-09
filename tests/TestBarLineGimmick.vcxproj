@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{C4D5D45E-F624-4D84-AF02-D4779C118DA1}</ProjectGuid>
+    <RootNamespace>TestBarLineGimmick</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\build\bin\$(Platform)-$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\bin-int\$(ProjectName)-$(Platform)-$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup><ClCompile>
+    <WarningLevel>Level3</WarningLevel><LanguageStandard>stdcpp17</LanguageStandard>
+    <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(ProjectDir)..\3rdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">PEEPO_DEBUG=1;PEEPO_RELEASE=0;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">PEEPO_DEBUG=0;PEEPO_RELEASE=1;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+  </ClCompile></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="test_barline_gimmick.cpp" />
+    <ClCompile Include="..\src\peepo_drum_kit\chart.cpp" />
+    <ClCompile Include="..\src\core_beat.cpp" />
+    <ClCompile Include="..\src\core_undo.cpp" />
+    <ClCompile Include="..\src\core_string.cpp" />
+    <ClCompile Include="..\src\core_types.cpp" />
+    <ClCompile Include="..\src\file_format_tja.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

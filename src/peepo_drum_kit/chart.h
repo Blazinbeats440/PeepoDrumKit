@@ -515,6 +515,7 @@ namespace PeepoDrumKit
 		DifficultyType Type = DifficultyType::Oni;
 		u8 LevelDecimalPlaces = 0;
 		f64 Level = 0;
+		b8 LevelUnspecified = false;
 		i32 Style = 1;
 		i32 PlayerSide = 1;
 

@@ -4,6 +4,8 @@
 #include "chart_editor_widgets.h"
 #include "audio/audio_file_formats.h"
 #include "chart_editor_i18n.h"
+#include "file_format_mc.h"
+#include "file_format_osu.h"
 #include <cmath>
 #include <filesystem>
 #include <thorvg/thorvg.h>
@@ -1280,7 +1282,7 @@ namespace PeepoDrumKit
 		{
 			return isDirectory ? FileDrop::ReadFolder(pathCopy, searchDepth) : FileDrop::ExtractArchive(pathCopy, extractionRoot, searchDepth);
 		});
-		Gui::OpenPopup(UI_WindowName("FOLDER_DROP_TITLE"));
+		droppedPathPopupRequested = true;
 	}
 
 	void ChartEditor::DrawGui()
@@ -1374,10 +1376,15 @@ namespace PeepoDrumKit
 				StartAsyncReadingDroppedPath(droppedFilePath, isDirectory);
 				break;
 			}
-			if (Path::HasAnyExtension(droppedFilePath, TJA::Extension)) { CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = droppedFilePath] { StartAsyncImportingChartFile(pathCopy); }); break; }
+			if (Path::HasAnyExtension(droppedFilePath, ".tja;.mc;.osu")) { CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = droppedFilePath] { StartAsyncImportingChartFile(pathCopy); }); break; }
 			if (Path::HasAnyExtension(droppedFilePath, Audio::SupportedFileFormatExtensionsPacked)) { SetAndStartLoadingChartSongFileName(droppedFilePath, context.Undo); break; }
 			if (Path::HasAnyExtension(droppedFilePath, TJA::PreimageExtensions)) { SetAndStartLoadingSongJacketFileName(droppedFilePath, context.Undo); break; }
 			if (Path::HasAnyExtension(droppedFilePath, BackgroundMovieExtensions)) { SetChartBackgroundMovieFileName(droppedFilePath, context.Undo); break; }
+		}
+		if (droppedPathPopupRequested && !saveConfirmationPopup.OpenOnNextFrame && Gui::GetCurrentContext()->OpenPopupStack.Size == 0)
+		{
+			droppedPathPopupRequested = false;
+			Gui::OpenPopup(UI_WindowName("FOLDER_DROP_TITLE"));
 		}
 		if (Gui::BeginPopupModal(UI_WindowName("FOLDER_DROP_TITLE"), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
 		{
@@ -2246,6 +2253,12 @@ namespace PeepoDrumKit
 		if (fileDialog.OpenSave() != Shell::FileDialogResult::OK)
 			return false;
 
+		if (Path::HasAnyExtension(fileDialog.OutFilePath, ".mc;.osu;.osz"))
+		{
+			Shell::ShowMessageBox(UI_Str("CHART_SAVE_IMPORT_PATH"), UI_Str("CHART_IMPORT_ERROR_TITLE"), Shell::MessageBoxButtons::OK, Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
+			return false;
+		}
+
 		SaveChart(context, fileDialog.OutFilePath);
 		return true;
 	}
@@ -2277,17 +2290,53 @@ namespace PeepoDrumKit
 				return result;
 			}
 
-			assert(Path::HasExtension(result.ChartFilePath, TJA::Extension));
-
 			const std::string_view fileContentView = std::string_view(reinterpret_cast<const char*>(fileContent.get()), fileSize);
-			if (UTF8::HasBOM(fileContentView))
-				result.TJA.FileContentUTF8 = UTF8::TrimBOM(fileContentView);
-			else
-				result.TJA.FileContentUTF8 = UTF8::FromShiftJIS(fileContentView);
+			result.ImportedExternalChart = Path::HasAnyExtension(result.ChartFilePath, ".mc;.osu");
+			if (Path::HasExtension(result.ChartFilePath, MC::Extension))
+			{
+				MC::Error error;
+				if (!MC::ConvertToTJA(fileContentView, result.TJA.Parsed, error))
+				{
+					switch (error)
+					{
+					case MC::Error::InvalidJSON: result.ErrorMessageKey = "CHART_IMPORT_MC_JSON"; break;
+					case MC::Error::NotTaiko: result.ErrorMessageKey = "CHART_IMPORT_MC_MODE"; break;
+					case MC::Error::SizeLimit: result.ErrorMessageKey = "CHART_IMPORT_MC_SIZE"; break;
+					default: result.ErrorMessageKey = "CHART_IMPORT_MC_INVALID"; break;
+					}
+					return result;
+				}
+			}
+			else if (Path::HasExtension(result.ChartFilePath, OSU::Extension))
+			{
+				OSU::Error error;
+				if (!OSU::ConvertToTJA(fileContentView, result.TJA.Parsed, error))
+				{
+					switch (error)
+					{
+					case OSU::Error::UnsupportedMode: result.ErrorMessageKey = "CHART_IMPORT_OSU_MODE"; break;
+					case OSU::Error::SizeLimit: result.ErrorMessageKey = "CHART_IMPORT_OSU_SIZE"; break;
+					default: result.ErrorMessageKey = "CHART_IMPORT_OSU_INVALID"; break;
+					}
+					return result;
+				}
+			}
+			else if (Path::HasExtension(result.ChartFilePath, TJA::Extension))
+			{
+				if (UTF8::HasBOM(fileContentView))
+					result.TJA.FileContentUTF8 = UTF8::TrimBOM(fileContentView);
+				else
+					result.TJA.FileContentUTF8 = UTF8::FromShiftJIS(fileContentView);
 
-			result.TJA.Lines = TJA::SplitLines(result.TJA.FileContentUTF8);
-			result.TJA.Tokens = TJA::TokenizeLines(result.TJA.Lines);
-			result.TJA.Parsed = ParseTokens(result.TJA.Tokens, result.TJA.ParseErrors);
+				result.TJA.Lines = TJA::SplitLines(result.TJA.FileContentUTF8);
+				result.TJA.Tokens = TJA::TokenizeLines(result.TJA.Lines);
+				result.TJA.Parsed = ParseTokens(result.TJA.Tokens, result.TJA.ParseErrors);
+			}
+			else
+			{
+				result.ErrorMessageKey = "CHART_IMPORT_UNSUPPORTED";
+				return result;
+			}
 
 			if (!CreateChartProjectFromTJA(result.TJA.Parsed, result.Chart))
 			{
@@ -2295,6 +2344,15 @@ namespace PeepoDrumKit
 				return result;
 			}
 
+			if (result.ImportedExternalChart)
+			{
+				result.Chart.SongFileName = Path::TryMakeAbsolute(result.Chart.SongFileName, result.ChartFilePath);
+				result.Chart.SongJacket = Path::TryMakeAbsolute(result.Chart.SongJacket, result.ChartFilePath);
+				Path::NormalizeInPlace(result.Chart.SongFileName);
+				Path::NormalizeInPlace(result.Chart.SongJacket);
+				result.ChartFilePath.clear();
+			}
+			result.Success = true;
 			return result;
 		});
 	}
@@ -2423,13 +2481,14 @@ namespace PeepoDrumKit
 	{
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Open Chart File";
-		fileDialog.InFilters = { { TJA::FilterName, TJA::FilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
+		fileDialog.InFilters = { { "Chart Files", "*.tja;*.mc;*.osu;*.osz" }, { TJA::FilterName, TJA::FilterSpec }, { MC::FilterName, MC::FilterSpec }, { OSU::FilterName, OSU::FilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
 
 		if (fileDialog.OpenRead() != Shell::FileDialogResult::OK)
 			return false;
 
-		StartAsyncImportingChartFile(fileDialog.OutFilePath);
+		if (FileDrop::IsArchivePath(fileDialog.OutFilePath)) StartAsyncReadingDroppedPath(fileDialog.OutFilePath, false);
+		else StartAsyncImportingChartFile(fileDialog.OutFilePath);
 		return true;
 	}
 
@@ -2498,29 +2557,36 @@ namespace PeepoDrumKit
 			const Time previousChartSongOffset = context.Chart.SongOffset;
 
 			AsyncImportChartResult loadResult = importChartFuture.get();
+			if (!loadResult.Success)
+			{
+				Shell::ShowMessageBox(UI_StrRuntime(loadResult.ErrorMessageKey), UI_Str("CHART_IMPORT_ERROR_TITLE"), Shell::MessageBoxButtons::OK, Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
+			}
+			else
+			{
+				// TODO: Maybe also do date version check (?)
+				createBackupOfOriginalTJABeforeOverwriteSave = !loadResult.ImportedExternalChart && !loadResult.TJA.Parsed.HasPeepoDrumKitComment;
 
-			// TODO: Maybe also do date version check (?)
-			createBackupOfOriginalTJABeforeOverwriteSave = !loadResult.TJA.Parsed.HasPeepoDrumKitComment;
+				gamePreview.RecordedVideoRoutes = {};
+				videoExport.Selections = {};
+				context.Chart = std::move(loadResult.Chart);
+				context.Marker = {};
+				context.ChartFilePath = std::move(loadResult.ChartFilePath);
+				context.ResetChartsCompared();
+				context.SetSelectedChart(
+					context.Chart.Courses.empty() ?
+						context.Chart.Courses.emplace_back(std::make_unique<ChartCourse>()).get()
+						: context.Chart.Courses.front().get(),
+					BranchType::Normal);
+				StartAsyncLoadingSongAudioFile(Path::TryMakeAbsolute(context.Chart.SongFileName, context.ChartFilePath));
+				StartAsyncLoadingSongJacketFile(Path::TryMakeAbsolute(context.Chart.SongJacket, context.ChartFilePath));
 
-			gamePreview.RecordedVideoRoutes = {};
-			videoExport.Selections = {};
-			context.Chart = std::move(loadResult.Chart);
-			context.Marker = {};
-			context.ChartFilePath = std::move(loadResult.ChartFilePath);
-			context.ResetChartsCompared();
-			context.SetSelectedChart(
-				context.Chart.Courses.empty() ?
-					context.Chart.Courses.emplace_back(std::make_unique<ChartCourse>()).get()
-					: context.Chart.Courses.front().get(),
-				BranchType::Normal);
-			StartAsyncLoadingSongAudioFile(Path::TryMakeAbsolute(context.Chart.SongFileName, context.ChartFilePath));
-			StartAsyncLoadingSongJacketFile(Path::TryMakeAbsolute(context.Chart.SongJacket, context.ChartFilePath));
+				// NOTE: Prevent the cursor from changing screen position. Not needed if paused because a stable beat time is used instead
+				if (context.GetIsPlayback())
+					context.SetCursorTime(context.GetCursorTime() + (previousChartSongOffset - context.Chart.SongOffset));
 
-			// NOTE: Prevent the cursor from changing screen position. Not needed if paused because a stable beat time is used instead
-			if (context.GetIsPlayback())
-				context.SetCursorTime(context.GetCursorTime() + (previousChartSongOffset - context.Chart.SongOffset));
-
-			context.Undo.ClearAll();
+				context.Undo.ClearAll();
+				if (loadResult.ImportedExternalChart) context.Undo.NotifyChangesWereMade();
+			}
 		}
 
 		// NOTE: Just in case there is something wrong with the animation, that could otherwise prevent the song from finishing to load

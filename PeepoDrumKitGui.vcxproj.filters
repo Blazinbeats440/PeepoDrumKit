@@ -123,6 +123,12 @@
     <ClCompile Include="src\file_format_tja.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\file_format_mc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\file_format_osu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="3rdparty\thorvg\thorvg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -242,6 +248,9 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor_utilities.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_barline_gimmick.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\peepo_drum_kit\chart_editor_jpos_easing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -276,6 +285,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\file_format_tja.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\file_format_mc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\file_format_osu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\imgui\backend\shader_imgui_default_ps.h">

@@ -151,6 +151,8 @@
     <ClCompile Include="src\peepo_drum_kit\test_gui_audio.cpp" />
     <ClCompile Include="src\peepo_drum_kit\test_gui_tja.cpp" />
     <ClCompile Include="src\file_format_tja.cpp" />
+    <ClCompile Include="src\file_format_mc.cpp" />
+    <ClCompile Include="src\file_format_osu.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdparty\thorvg\thorvg.h" />
@@ -166,6 +168,7 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor_theme.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_widgets.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_utilities.h" />
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_barline_gimmick.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_jpos_easing.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_video_export.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_video_writer.h" />
@@ -210,6 +213,8 @@
     <ClInclude Include="src\peepo_drum_kit\chart_editor_undo.h" />
     <ClInclude Include="src\core_undo.h" />
     <ClInclude Include="src\file_format_tja.h" />
+    <ClInclude Include="src\file_format_mc.h" />
+    <ClInclude Include="src\file_format_osu.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src_res\Resource.rc">
@@ -300,6 +305,9 @@
   </ItemGroup>
   <Import Project="3rdparty\archive\archive.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyMCImportLicense" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)license_txt\mc2tja.txt" DestinationFolder="$(OutDir)license_txt" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

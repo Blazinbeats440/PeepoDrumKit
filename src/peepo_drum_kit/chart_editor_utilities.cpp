@@ -2,6 +2,7 @@
 #include "chart_editor_context.h"
 #include "chart_editor_timeline.h"
 #include "chart_editor_undo.h"
+#include "chart_editor_barline_gimmick.h"
 #include "imgui/imgui_include.h"
 #include <cstdio>
 
@@ -140,13 +141,106 @@ namespace PeepoDrumKit
 
 	void ChartUtilitiesWindow::DrawGui(ChartContext& context, const ChartTimeline& timeline)
 	{
-		if (Gui::BeginCombo(UI_Str("UTILITY_FUNCTION"), UI_Str("UTILITY_JPOS_MOTION")))
+		const cstr functions[] = { UI_Str("UTILITY_JPOS_MOTION"), UI_Str("UTILITY_BARLINE_GIMMICK") };
+		if (Gui::BeginCombo(UI_Str("UTILITY_FUNCTION"), functions[SelectedFunction]))
 		{
-			Gui::Selectable(UI_Str("UTILITY_JPOS_MOTION"), true);
+			for (i32 index = 0; index < ArrayCountI32(functions); ++index)
+				if (Gui::Selectable(functions[index], index == SelectedFunction)) SelectedFunction = index;
 			Gui::EndCombo();
 		}
 		Gui::Separator();
-		JPOSMotionGenerator.DrawGui(context, timeline);
+		if (SelectedFunction == 0) JPOSMotionGenerator.DrawGui(context, timeline);
+		else BarLineGimmickGenerator.DrawGui(context);
+	}
+
+	void BarLineGimmickUtility::DrawGui(ChartContext& context)
+	{
+		Gui::TextWrapped("%s", UI_Str("UTILITY_BARLINE_DESC"));
+		const i32 rates[] = { 120, 60, 30 };
+		const cstr labels[] = { "120", "60", "30" };
+		const i32 selectedRate = Rate == 120 ? 0 : Rate == 60 ? 1 : 2;
+		if (Gui::BeginCombo(UI_Str("UTILITY_BARLINE_RATE"), labels[selectedRate]))
+		{
+			for (i32 index = 0; index < ArrayCountI32(rates); ++index)
+				if (Gui::Selectable(labels[index], Rate == rates[index])) Rate = rates[index];
+			Gui::EndCombo();
+		}
+		Gui::Checkbox(UI_Str("UTILITY_BARLINE_APPLY_SCROLL"), &ApplyScroll);
+		if (ApplyScroll)
+		{
+			const cstr modes[] = { UI_Str("UTILITY_BARLINE_SCROLL_SINGLE"), UI_Str("UTILITY_BARLINE_SCROLL_LINEAR") };
+			if (Gui::BeginCombo(UI_Str("UTILITY_BARLINE_SCROLL_MODE"), modes[InterpolateScroll ? 1 : 0]))
+			{
+				for (i32 index = 0; index < ArrayCountI32(modes); ++index)
+					if (Gui::Selectable(modes[index], InterpolateScroll == (index == 1))) InterpolateScroll = (index == 1);
+				Gui::EndCombo();
+			}
+			Gui::InputFloat(InterpolateScroll ? UI_Str("UTILITY_BARLINE_SCROLL_START") : UI_Str("UTILITY_BARLINE_SCROLL_VALUE"), &ScrollStart, 0.1f, 1.0f, "%g");
+			if (InterpolateScroll)
+			{
+				Gui::InputFloat(UI_Str("UTILITY_BARLINE_SCROLL_END"), &ScrollEnd, 0.1f, 1.0f, "%g");
+				Gui::TextWrapped("%s", UI_Str("UTILITY_BARLINE_SCROLL_LINEAR_DESC"));
+			}
+			Gui::TextWrapped("%s", UI_Str("UTILITY_BARLINE_SCROLL_DESC"));
+		}
+		Gui::Checkbox(UI_Str("UTILITY_BARLINE_HIDE_NOTE_BARS"), &HideNoteBarLines);
+		if (HideNoteBarLines) Gui::TextWrapped("%s", UI_Str("UTILITY_BARLINE_HIDE_NOTE_BARS_DESC"));
+		ChartCourse* course = context.ChartSelectedCourse;
+		const b8 hasRange = course != nullptr && context.RangeSelection.IsActiveAndHasEnd() && context.RangeSelection.GetDuration() > Beat::Zero();
+		BarLineGimmickPlan plan;
+		if (hasRange)
+		{
+			plan = BuildBarLineGimmickPlan(*course, context.RangeSelection.GetMin(), context.RangeSelection.GetMax(), Rate);
+			if (plan.Error == BarLineGimmickError::None && ApplyScroll && (!std::isfinite(ScrollStart) || (InterpolateScroll && !std::isfinite(ScrollEnd))))
+			{
+				plan.Error = BarLineGimmickError::Scroll;
+				plan.ErrorBeat = plan.Start;
+			}
+			Gui::Text(UI_Str("UTILITY_BARLINE_RANGE"), plan.Start.BeatsFraction(), plan.End.BeatsFraction());
+			if (plan.Error == BarLineGimmickError::None)
+			{
+				Gui::Text(UI_Str("UTILITY_BARLINE_COUNT"), plan.MeasureCount);
+				if (ApplyScroll && InterpolateScroll && plan.MeasureCount == 1) Gui::TextWrapped("%s", UI_Str("UTILITY_BARLINE_SCROLL_ONE_BAR"));
+				for (const BarLineGimmickSegment& segment : plan.Segments)
+				{
+					Gui::TextWrapped(UI_Str("UTILITY_BARLINE_SEGMENT"), segment.Start.BeatsFraction(), segment.End.BeatsFraction(),
+						segment.BPM, segment.Denominator, static_cast<f64>(segment.BPM) * segment.Denominator / 240.0);
+					if (segment.Remainder > Beat::Zero())
+					{
+						const TimeSignature signature = TimeSignature(segment.Remainder.Ticks, Beat::FromBars(1).Ticks).GetSimplified();
+						Gui::Text(UI_Str("UTILITY_BARLINE_REMAINDER"), (segment.End - segment.Remainder).BeatsFraction(), signature.Numerator, signature.Denominator);
+					}
+				}
+				if (plan.FirstBar < plan.Start)
+					Gui::Text(UI_Str("UTILITY_BARLINE_PREFIX"), plan.FirstBar.BeatsFraction(), plan.PrefixSignature.Numerator, plan.PrefixSignature.Denominator);
+				if (plan.End < plan.AfterBar)
+					Gui::Text(UI_Str("UTILITY_BARLINE_SUFFIX"), plan.End.BeatsFraction(), plan.SuffixSignature.Numerator, plan.SuffixSignature.Denominator);
+				Gui::Text(UI_Str("UTILITY_BARLINE_RESTORE"), plan.AfterBar.BeatsFraction(), plan.RestoreSignature.Numerator, plan.RestoreSignature.Denominator);
+			}
+			else
+			{
+				cstr error = UI_Str("UTILITY_BARLINE_INVALID_RANGE");
+				if (plan.Error == BarLineGimmickError::Branches) error = UI_Str("UTILITY_BARLINE_BRANCHES");
+				if (plan.Error == BarLineGimmickError::Delay) error = UI_Str("UTILITY_BARLINE_DELAY");
+				if (plan.Error == BarLineGimmickError::Tempo) error = UI_Str("UTILITY_BARLINE_TEMPO");
+				if (plan.Error == BarLineGimmickError::Signature) error = UI_Str("UTILITY_BARLINE_SIGNATURE");
+				if (plan.Error == BarLineGimmickError::Scroll) error = UI_Str("UTILITY_BARLINE_SCROLL_INVALID");
+				Gui::TextWrapped("%s", error);
+				Gui::Text(UI_Str("UTILITY_BARLINE_ERROR_BEAT"), plan.ErrorBeat.BeatsFraction());
+			}
+		}
+		else Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_SELECT_RANGE"));
+		if (context.TestPlayActive) Gui::TextWrapped("%s", UI_Str("TEST_PLAY_EDITOR_LOCKED"));
+		Gui::BeginDisabled(context.TestPlayActive || !hasRange || plan.Error != BarLineGimmickError::None);
+		if (Gui::Button(UI_Str("UTILITY_JPOS_GENERATE")))
+		{
+			if (ApplyScroll) AddBarLineGimmickScrollToPlan(*course, plan, ScrollStart, ScrollEnd, InterpolateScroll);
+			if (HideNoteBarLines) AddBarLineGimmickNoteVisibilityToPlan(*course, plan);
+			LastGeneratedCount = plan.MeasureCount;
+			context.Undo.Execute<Commands::GenerateBarLineGimmick>(course, std::move(plan));
+		}
+		Gui::EndDisabled();
+		if (LastGeneratedCount > 0) Gui::TextWrapped(UI_Str("UTILITY_BARLINE_GENERATED"), LastGeneratedCount);
 	}
 
 	void JPOSMotionUtility::DrawGui(ChartContext& context, const ChartTimeline& timeline)
