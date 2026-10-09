@@ -22,6 +22,8 @@ namespace PeepoDrumKit
 	{
 		std::string ChartFilePath;
 		ChartProject Chart;
+		b8 Success = false, ImportedExternalChart = false;
+		std::string_view ErrorMessageKey = "CHART_IMPORT_READ_FAILED";
 
 		struct TJATempData
 		{
@@ -104,7 +106,7 @@ namespace PeepoDrumKit
 		b8 reopenDroppedFolderRequested = false;
 		FileDrop::Error droppedPathFailure = FileDrop::Error::None;
 		std::future<FileDrop::Result> droppedPathFuture;
-		b8 droppedPathLoading = false, droppedPathCanceled = false;
+		b8 droppedPathLoading = false, droppedPathCanceled = false, droppedPathPopupRequested = false;
 		b8 screenshotWindowRequested = false, screenshotPreviewRequested = false;
 		b8 screenshotMovieWaiting = false;
 		i32 screenshotWindowDelay = 0;

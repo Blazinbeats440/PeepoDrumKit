@@ -17,9 +17,19 @@ namespace PeepoDrumKit
 		void DrawGui(ChartContext& context, const ChartTimeline& timeline);
 	};
 
+	struct BarLineGimmickUtility
+	{
+		i32 Rate = 120, LastGeneratedCount = 0;
+		b8 ApplyScroll = false, InterpolateScroll = false, HideNoteBarLines = false;
+		f32 ScrollStart = 1.0f, ScrollEnd = 1.0f;
+		void DrawGui(ChartContext& context);
+	};
+
 	struct ChartUtilitiesWindow
 	{
+		i32 SelectedFunction = 0;
 		JPOSMotionUtility JPOSMotionGenerator;
+		BarLineGimmickUtility BarLineGimmickGenerator;
 		void DrawGui(ChartContext& context, const ChartTimeline& timeline);
 	};
 }

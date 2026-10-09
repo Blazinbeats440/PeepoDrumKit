@@ -176,6 +176,36 @@ X("UTILITY_JPOS_INVALID_TIME", "The range cannot be converted to valid movement 
 X("UTILITY_JPOS_INTERVAL_TOO_SHORT", "A segment is shorter than 1 ms. Use a coarser timeline grid, reduce the motion cycles, or adjust waypoint arrivals.") \
 X("UTILITY_JPOS_GENERATE", "Generate") \
 X("UTILITY_JPOS_GENERATED", "Last generation: %d JPOS commands. Undo once to remove them before adjusting and regenerating.") \
+X("UTILITY_BARLINE_GIMMICK", "Bar Line Gimmick Generator") \
+X("UTILITY_BARLINE_DESC", "Split the selected range into short measures. Original boundaries inside the range are replaced; surrounding bar positions and note/event timing are preserved. Undo once to restore the state before generation.") \
+X("UTILITY_BARLINE_RATE", "Target bar lines per second") \
+X("UTILITY_BARLINE_APPLY_SCROLL", "Apply SCROLL") \
+X("UTILITY_BARLINE_SCROLL_MODE", "SCROLL mode") \
+X("UTILITY_BARLINE_SCROLL_SINGLE", "Single value") \
+X("UTILITY_BARLINE_SCROLL_LINEAR", "Start and end values") \
+X("UTILITY_BARLINE_SCROLL_VALUE", "SCROLL value") \
+X("UTILITY_BARLINE_SCROLL_START", "Start SCROLL value") \
+X("UTILITY_BARLINE_SCROLL_END", "End SCROLL value") \
+X("UTILITY_BARLINE_SCROLL_LINEAR_DESC", "Interpolate linearly by beat position from the first to the last bar line inside the range.") \
+X("UTILITY_BARLINE_SCROLL_DESC", "Replace SCROLL commands inside the range. Notes and roll/balloon tails keep their original speed; bar lines at those positions use that speed too. SCROLL is not restored at the range end.") \
+X("UTILITY_BARLINE_SCROLL_INVALID", "Enter finite SCROLL values.") \
+X("UTILITY_BARLINE_SCROLL_ONE_BAR", "There is only one bar line in the range, so the start SCROLL value is used.") \
+X("UTILITY_BARLINE_HIDE_NOTE_BARS", "Hide bar lines at note positions") \
+X("UTILITY_BARLINE_HIDE_NOTE_BARS_DESC", "Insert BARLINEOFF at notes and roll/balloon tails, then BARLINEON at the next bar line. Consecutive bar lines with notes stay hidden. If the last position is hidden, visibility returns at the range end. BARLINEON overrides the original visibility at that position.") \
+X("UTILITY_BARLINE_RANGE", "Selected range: %.6g - %.6g beats") \
+X("UTILITY_BARLINE_COUNT", "Measures in the gimmick range: %d") \
+X("UTILITY_BARLINE_SEGMENT", "%.6g - %.6g beats: BPM %g, MEASURE 1/%d (%.6g bar lines/s)") \
+X("UTILITY_BARLINE_REMAINDER", "Final partial measure at %.6g beats: %d/%d") \
+X("UTILITY_BARLINE_PREFIX", "Before the range at %.6g beats: %d/%d") \
+X("UTILITY_BARLINE_SUFFIX", "After the range at %.6g beats: %d/%d") \
+X("UTILITY_BARLINE_RESTORE", "Restore at %.6g beats: %d/%d") \
+X("UTILITY_BARLINE_INVALID_RANGE", "Select a range with a positive beat length.") \
+X("UTILITY_BARLINE_BRANCHES", "Ranges overlapping a branching section are not supported.") \
+X("UTILITY_BARLINE_DELAY", "Ranges containing a DELAY, including either endpoint, are not supported.") \
+X("UTILITY_BARLINE_TEMPO", "Every BPM in the selected range must be finite and positive.") \
+X("UTILITY_BARLINE_SIGNATURE", "The affected measures cannot be represented exactly at the supported beat resolution.") \
+X("UTILITY_BARLINE_ERROR_BEAT", "Chart position: %.6g beats") \
+X("UTILITY_BARLINE_GENERATED", "Last generation: %d gimmick measures. Undo once to restore the state before generation.") \
 X("TEXT_EDITOR_READ",							"Read") \
 X("TEXT_EDITOR_STATUS_LOADED",					"Loaded the selected chart") \
 X("TEXT_EDITOR_STATUS_WRITTEN",				"Wrote to the selected chart") \
@@ -186,8 +216,19 @@ X("TEMPLATE_SAVE_SECTION",						"Save") \
 X("TEMPLATE_RECALL_SECTION",					"Recall") \
 X("TEMPLATE_CATEGORY",							"Category") \
 X("FOLDER_DROP_TITLE", "Open Chart from Folder or Archive") \
-X("FOLDER_DROP_SELECT_CHART", "Select a TJA file to open.") \
-X("FOLDER_DROP_NO_CHARTS", "No TJA files were found within the configured search depth.") \
+X("FOLDER_DROP_SELECT_CHART", "Select a TJA, MC, or OSU file to open.") \
+X("FOLDER_DROP_NO_CHARTS", "No TJA, MC, or OSU files were found within the configured search depth.") \
+X("CHART_IMPORT_ERROR_TITLE", "Chart Import / Save") \
+X("CHART_IMPORT_READ_FAILED", "The chart file could not be read.") \
+X("CHART_IMPORT_UNSUPPORTED", "Select a TJA, Malody MC, or osu! beatmap file.") \
+X("CHART_IMPORT_MC_JSON", "The MC file contains invalid JSON.") \
+X("CHART_IMPORT_MC_MODE", "Only Malody taiko charts (mode 5) can be imported.") \
+X("CHART_IMPORT_MC_INVALID", "The MC chart contains invalid notes, timing, or effects.") \
+X("CHART_IMPORT_MC_SIZE", "The MC chart exceeds the supported size or timing range.") \
+X("CHART_IMPORT_OSU_MODE", "Only osu! and osu!taiko beatmaps (modes 0 and 1) can be imported. osu!catch and osu!mania are not supported.") \
+X("CHART_IMPORT_OSU_INVALID", "The OSU beatmap contains invalid notes or timing data.") \
+X("CHART_IMPORT_OSU_SIZE", "The OSU beatmap exceeds the supported size or timing range.") \
+X("CHART_SAVE_IMPORT_PATH", "MC, OSU, and OSZ files cannot be overwritten. Choose a TJA file name and save location.") \
 X("FOLDER_DROP_READ_FAILED", "The folder or archive could not be read.") \
 X("FOLDER_DROP_LOADING", "Searching for charts / extracting archive...") \
 X("ZIP_DROP_INVALID", "The ZIP file is damaged or invalid.") \
