@@ -18,6 +18,15 @@
     <ClCompile Include="src\imgui\3rdparty\imgui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_save.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_paths.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_save_gui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\imgui\3rdparty\imgui_demo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -150,6 +159,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\imgui\3rdparty\imconfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_asset_save.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_asset_paths.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\imgui\3rdparty\imgui.h">

@@ -631,6 +631,24 @@ namespace PeepoDrumKit
 		return valueChanged;
 	}
 
+	static b8 GuiSpinSongOffset(cstr label, Time* inOutValue)
+	{
+		i64 offsetMS = static_cast<i64>(Round(inOutValue->ToMS()));
+		static constexpr i64 step = 1, stepFast = 10;
+		Gui::InputScalarWithButtonsExData exData {};
+		exData.TextColor = Gui::GetColorU32(ImGuiCol_Text);
+		exData.SpinButtons = true;
+		exData.TextCallback = [](ImGuiInputTextCallbackData* data) -> int
+		{
+			return ((data->EventChar >= '0' && data->EventChar <= '9') || data->EventChar == '-' || data->EventChar == '+') ? 0 : 1;
+		};
+		if (!Gui::InputScalar_WithExtraStuff(label, ImGuiDataType_S64, &offsetMS, &step, &stepFast, "%lld ms",
+			ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_CallbackCharFilter, &exData).ValueChanged)
+			return false;
+		*inOutValue = Time::FromMS(static_cast<f64>(offsetMS));
+		return true;
+	}
+
 	static b8 GuiDragLabelFloat(std::string_view label, f32* inOutValue, f32 speed = 1.0f, f32 min = 0.0f, f32 max = 0.0f, ImGuiSliderFlags flags = ImGuiSliderFlags_None)
 	{
 		return GuiDragLabelScalar(label, ImGuiDataType_Float, inOutValue, speed, &min, &max, flags);
@@ -1892,7 +1910,7 @@ namespace PeepoDrumKit
 					if (Gui::Button(buttonLabel.c_str()))
 					{
 						context.Undo.Execute<Commands::AddTempoChange>(&course, &course.TempoMap, TempoChange(Beat::Zero(), Tempo(candidate.BPM)));
-						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, -candidate.Offset);
+						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(Round(-candidate.Offset.ToMS())));
 					}
 				}
 			}
@@ -1902,8 +1920,8 @@ namespace PeepoDrumKit
 			Gui::Separator();
 			Gui::Text(UI_Str("TEMPO_SONG_OFFSET"), chart.SongOffset.ToMS());
 			Gui::SameLine();
-			if (f32 offsetMS = chart.SongOffset.ToMS_F32(); Gui::SpinFloat("##TempoCalculatorSongOffset", &offsetMS, 1.0f, 10.0f, "%.3f ms", ImGuiInputTextFlags_None))
-				context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(offsetMS));
+			if (Time offset = chart.SongOffset; GuiSpinSongOffset("##TempoCalculatorSongOffset", &offset))
+				context.Undo.Execute<Commands::ChangeSongOffset>(&chart, offset);
 
 			const TempoChange* initialTempoChange = course.TempoMap.Tempo.TryFindLastAtBeat(Beat::Zero());
 			const f64 initialBPM = (initialTempoChange != nullptr) ? initialTempoChange->Tempo.BPM : FallbackTempo.BPM;
@@ -1913,7 +1931,7 @@ namespace PeepoDrumKit
 			{
 				const auto shiftOffset = [&](f64 beats)
 				{
-					context.Undo.Execute<Commands::ChangeSongOffset>(&chart, chart.SongOffset + Time::FromSec(beatDuration * beats));
+					context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(Round((chart.SongOffset + Time::FromSec(beatDuration * beats)).ToMS())));
 				};
 				static constexpr std::array<std::pair<cstr, f64>, 6> shifts = {{
 					{ "-1 beat", -1.0 }, { "-1/2 beat", -0.5 }, { "-1/4 beat", -0.25 },
@@ -3910,14 +3928,14 @@ namespace PeepoDrumKit
 				Gui::Property::Property([&]
 				{
 					Gui::SetNextItemWidth(-1.0f);
-					if (f32 v = chart.SongOffset.ToMS_F32(); GuiDragLabelFloat(UI_Str("SYNC_SONG_OFFSET"), &v, TimelineDragScalarSpeedAtZoomMS(timeline.Camera)))
-						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(v));
+					if (i64 offsetMS = static_cast<i64>(Round(chart.SongOffset.ToMS())); GuiDragLabelScalar(UI_Str("SYNC_SONG_OFFSET"), ImGuiDataType_S64, &offsetMS, TimelineDragScalarSpeedAtZoomMS(timeline.Camera)))
+						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(static_cast<f64>(offsetMS)));
 				});
 				Gui::Property::Value([&]
 				{
 					Gui::SetNextItemWidth(-1.0f);
-					if (f32 v = chart.SongOffset.ToMS_F32(); Gui::SpinFloat("##SongOffset", &v, 1.0f, 10.0f, "%.3f ms", ImGuiInputTextFlags_None))
-						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, Time::FromMS(v));
+					if (Time offset = chart.SongOffset; GuiSpinSongOffset("##SongOffset", &offset))
+						context.Undo.Execute<Commands::ChangeSongOffset>(&chart, offset);
 				});
 
 				// TODO: Disable merge if made inactive this frame (?)

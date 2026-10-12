@@ -1,5 +1,7 @@
 ﻿#include "chart_editor_settings_gui.h"
 
+#include "core_io.h"
+
 namespace PeepoDrumKit
 {
 	struct CategoryTextPair { std::string_view Category, Text; };
@@ -139,7 +141,7 @@ namespace PeepoDrumKit
 
 		enum class WidgetType : u32 {
 			Default,
-			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
+			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
 			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers,
 		};
@@ -223,6 +225,8 @@ namespace PeepoDrumKit
 						changesWereMade |= GuiBoolCombo("##", inOutB8, { UI_Str("SETTINGS_SONG_SPACE"), UI_Str("SETTINGS_CHART_SPACE") });
 					else if (in.Widget == WidgetType::B8_ExclusiveAudioComboBox)
 						changesWereMade |= GuiBoolCombo("##", inOutB8, { UI_Str("SETTINGS_TRUE_EXCLUSIVE"), UI_Str("SETTINGS_FALSE") });
+					else if (in.Widget == WidgetType::B8_RecentFilesDisplay)
+						changesWereMade |= GuiBoolCombo("##", inOutB8, { UI_Str("SETTINGS_RECENT_FULL_PATH"), UI_Str("SETTINGS_RECENT_FILE_NAME") });
 					else
 						changesWereMade |= GuiBoolCombo("##", inOutB8);
 				}
@@ -457,7 +461,30 @@ namespace PeepoDrumKit
 				}
 				else if (inOutStr != nullptr)
 				{
-					changesWereMade |= Gui::InputTextWithHint("##", "n/a", &inOutStr->Value);
+					if (in.Widget == WidgetType::StdString_ChartOpenDirectory)
+					{
+						const std::string executableDirectory = Directory::GetExecutableDirectory();
+						const char* browseLabel = UI_Str("SETTINGS_OPEN_FOLDER_BROWSE");
+						const f32 browseWidth = Gui::CalcTextSize(browseLabel).x + style.FramePadding.x * 2.0f;
+						Gui::SetNextItemWidth(Max(1.0f, Gui::CalcItemWidth() - browseWidth - style.ItemInnerSpacing.x));
+						changesWereMade |= Gui::InputTextWithHint("##", executableDirectory.c_str(), &inOutStr->Value);
+						Gui::SameLine(0.0f, style.ItemInnerSpacing.x);
+						if (Gui::Button(browseLabel))
+						{
+							const std::string initialDirectory = GetChartOpenDirectory(inOutStr->Value);
+							Shell::FileDialog folderDialog {};
+							folderDialog.InTitle = UI_Str("SETTINGS_OPEN_FOLDER");
+							folderDialog.InInitialDirectory = initialDirectory;
+							folderDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+							if (folderDialog.OpenSelectFolder() == Shell::FileDialogResult::OK)
+							{
+								inOutStr->Value = Path::NormalizeInPlace(folderDialog.OutFilePath);
+								changesWereMade = true;
+							}
+						}
+					}
+					else
+						changesWereMade |= Gui::InputTextWithHint("##", "n/a", &inOutStr->Value);
 				}
 				else
 				{
@@ -989,6 +1016,18 @@ namespace PeepoDrumKit
 							settings.General.DefaultCreatorName,
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR"),
 							UI_Str("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_OPEN"),
+							settings.General.ChartOpenDirectory,
+							UI_Str("SETTINGS_OPEN_FOLDER"),
+							UI_Str("SETTINGS_OPEN_FOLDER_DESC"),
+							SettingsGui::WidgetType::StdString_ChartOpenDirectory),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_OPEN"),
+							settings.General.RecentFilesShowFullPath,
+							UI_Str("SETTINGS_RECENT_DISPLAY"),
+							UI_Str("SETTINGS_RECENT_DISPLAY_DESC"),
+							SettingsGui::WidgetType::B8_RecentFilesDisplay),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_SAVE"),
 							settings.General.TJAFileSaveFormat,

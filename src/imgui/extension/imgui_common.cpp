@@ -222,6 +222,7 @@ namespace ImGui
 		// We call MarkItemEdited() ourselves by comparing the actual data rather than the string.
 		g.NextItemData.ItemFlags |= ImGuiItemFlags_NoMarkEdited;
 		flags |= ImGuiInputTextFlags_AutoSelectAll;
+		const ImGuiInputTextCallback text_callback = (ex_data != nullptr) ? ex_data->TextCallback : nullptr;
 
 		InputScalarWithButtonsResult result = {};
 		if (p_step != NULL)
@@ -238,7 +239,7 @@ namespace ImGui
 			BeginGroup(); // The only purpose of the group here is to allow the caller to query item data e.g. IsItemActive()
 			PushID(label);
 			SetNextItemWidth(ImMax(1.0f, CalcItemWidth() - (spin_buttons ? button_size : (button_size + style.ItemInnerSpacing.x) * 2)));
-			if (InputText("", buf, IM_ARRAYSIZE(buf), flags)) // PushId(label) + "" gives us the expected ID from outside point of view
+			if (InputText("", buf, IM_ARRAYSIZE(buf), flags, text_callback)) // PushId(label) + "" gives us the expected ID from outside point of view
 				result.ValueChanged = DataTypeApplyFromText(buf, data_type, p_data, format) || WasInputTextStateEditedThisFrame();
 
 			result.IsTextItemActive = IsItemActive();
@@ -311,7 +312,7 @@ namespace ImGui
 			const auto backup_text_color = style.Colors[ImGuiCol_Text];
 			style.Colors[ImGuiCol_Text] = (ex_data != nullptr) ? ColorConvertU32ToFloat4(ex_data->TextColor) : backup_text_color;
 
-			if (InputText(label, buf, IM_ARRAYSIZE(buf), flags))
+			if (InputText(label, buf, IM_ARRAYSIZE(buf), flags, text_callback))
 				result.ValueChanged = DataTypeApplyFromText(buf, data_type, p_data, format) || WasInputTextStateEditedThisFrame();
 			result.IsTextItemActive = IsItemActive();
 			result.TextItemRect[0] = GetItemRect();

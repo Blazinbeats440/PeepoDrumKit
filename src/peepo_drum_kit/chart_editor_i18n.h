@@ -331,6 +331,7 @@ X("SETTINGS_CATEGORY_APPEARANCE", "Appearance & Behavior") \
 X("SETTINGS_CATEGORY_KEYS", "Key Bindings") \
 X("SETTINGS_SECTION_DEFAULTS", "Defaults") \
 X("SETTINGS_SECTION_SAVE", "Saving") \
+X("SETTINGS_SECTION_OPEN", "Opening & Recent Files") \
 X("SETTINGS_SECTION_COMPATIBILITY", "Compatibility") \
 X("SETTINGS_SECTION_INPUT", "Note Input & Grid") \
 X("SETTINGS_SECTION_SCROLL", "Scrolling") \
@@ -458,6 +459,13 @@ X("SETTINGS_GENERAL_LANGUAGE", "Language") \
 X("SETTINGS_GENERAL_EXPORT_BUILTIN_LOCALE_FILES", "Export Builtin Locale Files") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR", "General: Default Creator Name") \
 X("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC", "The name that is automatically filled in when creating a new chart.") \
+X("SETTINGS_OPEN_FOLDER", "File: Initial Folder for Open") \
+X("SETTINGS_OPEN_FOLDER_DESC", "The initial folder shown by Open File. Leave empty to use the executable folder. Relative paths are resolved from that folder; unavailable folders fall back to it.") \
+X("SETTINGS_OPEN_FOLDER_BROWSE", "Browse...") \
+X("SETTINGS_RECENT_DISPLAY", "File: Recent Files Display") \
+X("SETTINGS_RECENT_DISPLAY_DESC", "Show recent files by file name or full path. Up to 30 files are retained; entries after the first nine appear under Show More.") \
+X("SETTINGS_RECENT_FULL_PATH", "Full path") \
+X("SETTINGS_RECENT_FILE_NAME", "File name only") \
 X("SETTINGS_VSYNC_OFF_FPS_LIMIT", "General: FPS Limit When VSync Is Off") \
 X("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC", "Limits rendering to this many frames per second when VSync is off. Set to 0 for unlimited FPS.") \
 X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS", "General: Balloon Expected Hits per Second") \
@@ -595,6 +603,8 @@ X("ACT_EDIT_CUT",									"Cut") \
 X("ACT_EDIT_PASTE",									"Paste") \
 /* file menu */ \
 X("ACT_FILE_OPEN_RECENT",							"Open Recent") \
+X("ACT_FILE_RECENT_MORE", "Show More") \
+X("RECENT_FILE_MISSING", "The file does not exist and cannot be opened. This item will be removed from recent files.") \
 X("ACT_FILE_REOPEN_FOLDER", "Reopen Folder") \
 X("ACT_FILE_EXIT",									"Exit") \
 X("ACT_FILE_NEW_CHART",								"New Chart") \
@@ -602,6 +612,29 @@ X("ACT_FILE_OPEN",									"Open...") \
 X("ACT_FILE_CLEAR_ITEMS",							"Clear Items") \
 X("ACT_FILE_OPEN_CHART_DIRECTORY",					"Open Chart Directory...") \
 X("ACT_FILE_SAVE_AS",								"Save As...") \
+X("ACT_FILE_SAVE_WITH_ASSETS", "Save with Related Files...") \
+X("ASSET_SAVE_TITLE", "Save Related Files") \
+X("ASSET_SAVE_COPY_OPTION", "Copy related files to the save folder") \
+X("ASSET_SAVE_DESCRIPTION", "Selected files are copied beside the TJA. Original files are kept. Different files with the same name receive a numbered name.") \
+X("ASSET_SAVE_AUDIO", "Audio (WAVE)") \
+X("ASSET_SAVE_JACKET", "Jacket (PREIMAGE)") \
+X("ASSET_SAVE_MOVIE", "Video (BGMOVIE)") \
+X("ASSET_SAVE_RESELECT", "Choose source...") \
+X("ASSET_SAVE_SOURCE", "Source") \
+X("ASSET_SAVE_DESTINATION", "Reference after saving") \
+X("ASSET_SAVE_SIZE", "Size") \
+X("ASSET_SAVE_TOTAL", "Total to copy") \
+X("ASSET_SAVE_REUSE", "Reuse an identical file (no copy required)") \
+X("ASSET_SAVE_MISSING", "Source file is unavailable. Choose a source or uncheck this item.") \
+X("ASSET_SAVE_NO_ASSETS", "No related files are specified.") \
+X("ASSET_SAVE_PREPARING", "Checking source files and matching destination contents...") \
+X("ASSET_SAVE_PROGRESS", "Copying related files and saving the TJA...") \
+X("ASSET_SAVE_CANCELING", "Canceling and removing files created by this save...") \
+X("ASSET_SAVE_START", "Copy and save") \
+X("ASSET_SAVE_RETRY", "Check again") \
+X("ASSET_SAVE_FAILED", "Could not save. Check the source files, save folder, free space and access permissions. The chart remains unsaved.") \
+X("ASSET_SAVE_CHANGED", "A source or destination file has changed. Check again before saving. The chart remains unsaved.") \
+X("ASSET_SAVE_BACKUP_FAILED", "Could not create a backup of the original TJA. The chart remains unsaved.") \
 X("VIDEO_EXPORT_MENU", "Export Chart Video...") \
 X("SCREENSHOT_WINDOW", "Save window screenshot") \
 X("SCREENSHOT_PREVIEW", "Generate preview at cursor") \
@@ -1005,6 +1038,9 @@ X("TOWER_SIDE_BOTH",								"Unspecified (Both)") \
 X("UNDO_HISTORY_DESCRIPTION",						"Description") \
 X("UNDO_HISTORY_TIME",								"Time") \
 X("UNDO_HISTORY_INITIAL_STATE",						"Initial State") \
+X("UNDO_CHANGE_SONG_FILE", "Change audio file") \
+X("UNDO_CHANGE_JACKET_FILE", "Change jacket file") \
+X("UNDO_CHANGE_MOVIE_FILE", "Change video file") \
 /* lyrics tab */ \
 X("DETAILS_LYRICS_OVERVIEW",						"Lyrics Overview") \
 X("DETAILS_LYRICS_EDIT_LINE",						"Edit Line") \

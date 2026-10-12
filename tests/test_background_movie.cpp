@@ -37,7 +37,7 @@ static BackgroundMovieStatus WaitForFrame(BackgroundMovieReader& reader, Backgro
 	}
 }
 
-static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false, u32 frameRate = 5, u32 durationSeconds = 3)
+static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false, u32 frameRate = 5, u32 durationSeconds = 3, u32 firstVideoFrame = 0)
 {
 	const std::string path = "build/bgmovie_test_" + std::to_string(GetCurrentProcessId()) + "_" +
 		std::to_string(GetTickCount64()) + u8"_\u80cc\u666f.mp4";
@@ -57,7 +57,8 @@ static std::string CreateMovie(u32 width, u32 height, b8 longAudio = false, u32 
 				pixel[2] = row < height / 2 ? 220 : 20;
 				pixel[3] = 255;
 			}
-		Check(writer.WriteVideoFrame(pixels.data(), width * 4, index), std::string(writer.GetError()).c_str());
+		if (index >= firstVideoFrame)
+			Check(writer.WriteVideoFrame(pixels.data(), width * 4, index), std::string(writer.GetError()).c_str());
 		Check(writer.WriteAudioSamples(silence.data(), audioFrames, index * audioFrames), std::string(writer.GetError()).c_str());
 	}
 	if (longAudio)
@@ -310,6 +311,45 @@ int main()
 		Check(frame.Size == ivec2(66, 48), "Video width with row padding");
 	}
 	CheckDynamicTexture(frame);
+	const std::string delayedPath = CreateMovie(64, 48, false, 30, 3, 30);
+	reader.Request(delayedPath, Time::FromSec(1.5));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready, "Delayed movie must support starting midway");
+	reader.Request(delayedPath, Time::FromSec(1.1));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && frame.Start.Seconds <= 1.1 && frame.End.Seconds > 1.1,
+		"A seeked frame must not be mistaken for the start of the movie");
+	reader.Request(delayedPath, Time::Zero());
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Inactive, "Rewinding before the first video frame must hide the movie");
+	for (i32 index = 0; index < 240; ++index)
+	{
+		const Time time = Time::FromSec(index / 240.0);
+		reader.Request(delayedPath, time);
+		Check(reader.Poll(frame) == BackgroundMovieStatus::Inactive, "Known leading gap must stay inactive without waiting for decoding");
+	}
+	reader.Request(delayedPath, Time::FromSec(0.9999999));
+	Check(reader.Poll(frame) == BackgroundMovieStatus::Inactive, "Time immediately before the first frame must be inactive");
+	reader.Request(delayedPath, Time::FromSec(1.0));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready && std::abs(frame.Start.Seconds - 1.0) < 0.0001,
+		"Delayed movie must become ready at the first video timestamp");
+	reader.Request(delayedPath, Time::FromSec(-0.1));
+	Check(reader.Poll(frame) == BackgroundMovieStatus::Inactive, "Negative movie time must hide the previously decoded frame");
+	reader.Request(delayedPath, Time::FromSec(F64Max));
+	Check(reader.Poll(frame) == BackgroundMovieStatus::Failed, "Invalid time must still fail after learning the leading gap");
+	reader.Request(delayedPath, Time::FromSec(1.2));
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready, "Recovery must discard the previous movie start state");
+	exportReader.Request(delayedPath, Time::Zero());
+	Check(WaitForFrame(exportReader, exportFrame) == BackgroundMovieStatus::Inactive, "Fresh export reader must detect the leading gap");
+	for (i32 index = 0; index < 30; ++index)
+	{
+		exportReader.Request(delayedPath, Time::FromSec(index / 30.0));
+		Check(exportReader.Poll(exportFrame) == BackgroundMovieStatus::Inactive, "Export frames in the leading gap must not wait or reuse movie pixels");
+	}
+	exportReader.Request(delayedPath, Time::FromSec(1.0));
+	Check(WaitForFrame(exportReader, exportFrame) == BackgroundMovieStatus::Ready, "Export must resume at the delayed first frame");
+	reader.Request(path, Time::Zero());
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Ready, "Changing movies must clear the known leading gap");
+	reader.Close();
+	reader.Request(delayedPath, Time::Zero());
+	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Inactive, "Reopening a delayed movie must detect its start again");
 	reader.Request(CreateMovie(64, 48, true), Time::FromSec(3.1));
 	Check(WaitForFrame(reader, frame) == BackgroundMovieStatus::Inactive, "Long audio must not extend the last video frame");
 	std::cout << "Background movie tests passed" << std::endl;

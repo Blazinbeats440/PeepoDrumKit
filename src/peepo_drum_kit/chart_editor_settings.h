@@ -10,8 +10,7 @@ namespace PeepoDrumKit
 
 	struct RecentFilesList
 	{
-		// NOTE: Default 9 to match the keyboard number row key count
-		size_t MaxCount = 9;
+		size_t MaxCount = 30;
 		// NOTE: Newest items are stored first and in normalized form
 		std::vector<std::string> SortedPaths;
 
@@ -136,6 +135,10 @@ namespace PeepoDrumKit
 		} LastSession = {};
 
 		RecentFilesList RecentFiles;
+		struct RelatedFileDirectoriesData
+		{
+			std::string Audio, Jacket, Movie;
+		} RelatedFileDirectories = {};
 	};
 
 	struct UserSettingsData
@@ -149,6 +152,8 @@ namespace PeepoDrumKit
 		{
 			WithDefault<i32> VSyncOffFPSLimit = 0;
 			WithDefault<std::string> DefaultCreatorName = {};
+			WithDefault<std::string> ChartOpenDirectory = {};
+			WithDefault<b8> RecentFilesShowFullPath = true;
 			WithDefault<i32> TJAFileSaveFormat = 0;
 			WithDefault<i32> FolderDropSearchDepth = 2;
 			WithDefault<b8> WarnTaikojiroIncompatibleCharts = false;
@@ -460,6 +465,7 @@ namespace PeepoDrumKit
 
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, UserSettingsData& out);
 	void SettingsToIni(const UserSettingsData& in, std::string& out);
+	std::string GetChartOpenDirectory(std::string_view configuredDirectory);
 
 	struct IniMemberVoidPtr { void* Address; size_t ByteSize; };
 	struct IniMemberParseResult { b8 HasError; cstr ErrorMessage; };

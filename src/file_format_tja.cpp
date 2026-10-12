@@ -612,7 +612,7 @@ namespace TJA
 					case Key::Main_BPM: { if (!tryParseTempo(in, &out.BPM)) { outErrors.Push(lineIndex, "Invalid tempo '%.*s'", FmtStrViewArgs(in)); } } break;
 					case Key::Main_WAVE: { out.WAVE = in; } break;
 					case Key::Main_PREIMAGE: { out.PREIMAGE = in; } break;
-					case Key::Main_OFFSET: { if (!tryParseTime(in, &out.OFFSET)) { outErrors.Push(lineIndex, "Invalid float '%.*s'", FmtStrViewArgs(in)); } } break;
+					case Key::Main_OFFSET: { if (f64 v; ASCII::TryParse(in, v)) { out.OFFSET = Time::FromSec(v); } else { outErrors.Push(lineIndex, "Invalid float '%.*s'", FmtStrViewArgs(in)); } } break;
 					case Key::Main_DEMOSTART: { if (!tryParseTime(in, &out.DEMOSTART)) { outErrors.Push(lineIndex, "Invalid float '%.*s'", FmtStrViewArgs(in)); } } break;
 					case Key::Main_GENRE: READ_AS_OTHER({ out.GENRE = in; }); break;
 					case Key::Main_SCOREMODE: READ_AS_OTHER({ if (!tryParseScoreMode(in, &out.SCOREMODE)) { outErrors.Push(lineIndex, "Unknown score mode '%.*s'", FmtStrViewArgs(in)); } }); break;
@@ -1242,7 +1242,11 @@ namespace TJA
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::PREIMAGE))
 			appendProperyLine(out, Key::Main_PREIMAGE, inContent.Metadata.PREIMAGE);
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::WAVE, &ParsedMainMetadata::OFFSET)) // Better to be explicit if `WAVE:` is given
-			appendProperyLine(out, Key::Main_OFFSET, std::string_view(buffer, sprintf_s(buffer, "%.17g", inContent.Metadata.OFFSET.Seconds)));
+		{
+			const f64 offsetMS = Round(inContent.Metadata.OFFSET.ToMS());
+			const f64 offsetSeconds = (offsetMS == 0.0) ? 0.0 : Time::FromMS(offsetMS).ToSec();
+			appendProperyLine(out, Key::Main_OFFSET, std::string_view(buffer, sprintf_s(buffer, "%.3f", offsetSeconds)));
+		}
 		if (shouldEmitMainMetadata(&ParsedMainMetadata::DEMOSTART))
 			appendProperyLine(out, Key::Main_DEMOSTART, std::string_view(buffer, sprintf_s(buffer, "%g", inContent.Metadata.DEMOSTART.Seconds)));
 		// if (shouldEmitMainMetadata(&ParsedMainMetadata::GENRE))

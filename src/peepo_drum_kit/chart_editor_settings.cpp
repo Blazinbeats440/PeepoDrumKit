@@ -3,9 +3,22 @@
 #include "core_string.h"
 #include "core_io.h"
 #include <algorithm>
+#include <filesystem>
 
 namespace PeepoDrumKit
 {
+	std::string GetChartOpenDirectory(std::string_view configuredDirectory)
+	{
+		const std::string executableDirectory = Directory::GetExecutableDirectory();
+		if (configuredDirectory.empty())
+			return executableDirectory;
+		auto directory = std::filesystem::u8path(configuredDirectory);
+		if (directory.is_relative())
+			directory = std::filesystem::u8path(executableDirectory) / directory;
+		std::error_code error;
+		return std::filesystem::is_directory(directory, error) && !error ? directory.lexically_normal().u8string() : executableDirectory;
+	}
+
 	void RecentFilesList::Add(std::string newFilePath, b8 addToEnd)
 	{
 		Path::NormalizeInPlace(newFilePath);
@@ -267,7 +280,7 @@ namespace PeepoDrumKit
 	}
 
 	constexpr size_t SizeOfPersistentAppData = sizeof(PersistentAppData);
-	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152 + sizeof(PersistentAppData::VideoExportSettingsData), "TODO: Add missing ini file handling for newly added PersistentAppData fields");
+	static_assert(PEEPO_RELEASE || SizeOfPersistentAppData == 152 + sizeof(PersistentAppData::VideoExportSettingsData) + sizeof(PersistentAppData::RelatedFileDirectoriesData), "TODO: Add missing ini file handling for newly added PersistentAppData fields");
 
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, PersistentAppData& out)
 	{
@@ -345,6 +358,12 @@ namespace PeepoDrumKit
 				else if (it.Key == "title_vertical_position") { if (!ASCII::TryParse(in, settings.TitleVerticalPosition)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "title_color") { if (!ASCII::TryParse(in, settings.TitleColor)) return parser.Error_InvalidInt(); }
 				else if (it.Key == "title_band_color") { if (!ASCII::TryParse(in, settings.TitleBandColor)) return parser.Error_InvalidInt(); }
+			}
+			else if (parser.CurrentSection == "related_file_directories")
+			{
+				if (it.Key == "audio") out.RelatedFileDirectories.Audio = in;
+				else if (it.Key == "jacket") out.RelatedFileDirectories.Jacket = in;
+				else if (it.Key == "movie") out.RelatedFileDirectories.Movie = in;
 			}
 			else if (parser.CurrentSection == "recent_files")
 			{
@@ -427,6 +446,11 @@ namespace PeepoDrumKit
 		writer.LineKeyValue_Str("title_band_color", std::to_string(video.TitleBandColor));
 		writer.Line();
 
+		writer.LineSection("related_file_directories");
+		writer.LineKeyValue_Str("audio", in.RelatedFileDirectories.Audio);
+		writer.LineKeyValue_Str("jacket", in.RelatedFileDirectories.Jacket);
+		writer.LineKeyValue_Str("movie", in.RelatedFileDirectories.Movie);
+		writer.Line();
 		writer.LineSection("recent_files");
 		if (!in.RecentFiles.SortedPaths.empty())
 			for (size_t i = 0; i < in.RecentFiles.SortedPaths.size(); i++)
@@ -583,6 +607,8 @@ namespace PeepoDrumKit
 			SECTION("general");
 			X(General.VSyncOffFPSLimit, "vsync_off_fps_limit");
 			X(General.DefaultCreatorName, "default_creator_name");
+			X(General.ChartOpenDirectory, "chart_open_directory");
+			X(General.RecentFilesShowFullPath, "recent_files_show_full_path");
 			X(General.TJAFileSaveFormat, "tja_file_save_format");
 			X(General.FolderDropSearchDepth, "folder_drop_search_depth");
 			X(General.WarnTaikojiroIncompatibleCharts, "warn_taikojiro_incompatible_charts");

@@ -1248,7 +1248,7 @@ namespace PeepoDrumKit
 			}
 		}
 		MovieVisible = MovieTexture.IsValid() && (MovieStatus == BackgroundMovieStatus::Ready ||
-			(MovieStatus == BackgroundMovieStatus::Pending && !VideoExportTime.has_value() && time >= Time::Zero()));
+			(MovieStatus == BackgroundMovieStatus::Pending && !VideoExportTime.has_value() && time >= Time::Zero() && time >= MovieFrame.Start));
 	}
 
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)

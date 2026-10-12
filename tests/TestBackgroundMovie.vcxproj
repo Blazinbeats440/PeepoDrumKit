@@ -25,7 +25,8 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel><LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>PEEPO_DEBUG=1;PEEPO_RELEASE=0;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">PEEPO_DEBUG=1;PEEPO_RELEASE=0;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">PEEPO_DEBUG=0;PEEPO_RELEASE=1;PEEPO_WIN32=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link><AdditionalDependencies>mfreadwrite.lib;mfplat.lib;mfuuid.lib;ole32.lib;Shlwapi.lib;d3d11.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <FxCompile>

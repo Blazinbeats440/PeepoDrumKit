@@ -108,7 +108,9 @@ int main(int argc, char** argv)
 	for (const auto* current : { &timingChart, &timingRestored })
 	{
 		Require(current->Courses[0]->Notes_Normal.size() == 4, "notes across tempo changes");
-		for (size_t index = 0; index < 4; index++) Require(std::abs(SongMilliseconds(*current, current->Courses[0]->Notes_Normal[index].BeatTime) - timestamps[index]) < 0.025, "fractional times and BPM boundaries remain accurate");
+		const f64 offsetRoundingMS = (timingChart.SongOffset - current->SongOffset).ToMS();
+		Require(std::abs(offsetRoundingMS) <= 0.5, "saved offset changes by at most half a millisecond");
+		for (size_t index = 0; index < 4; index++) Require(std::abs(SongMilliseconds(*current, current->Courses[0]->Notes_Normal[index].BeatTime) - (timestamps[index] + offsetRoundingMS)) < 0.025, "fractional times and BPM boundaries remain accurate");
 	}
 	Require(!timingChart.Courses[0]->GoGoRanges.empty() && !timingChart.Courses[0]->DelayChanges_Normal.empty(), "gogo and BPM timing corrections");
 	const auto triple = Create(Import("osu file format v14\n[TimingPoints]\n0,500,3\n[HitObjects]\n256,192,0,1,0\n256,192,1500,1,2\n"));
