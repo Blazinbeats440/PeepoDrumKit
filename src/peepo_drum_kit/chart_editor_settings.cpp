@@ -526,6 +526,7 @@ namespace PeepoDrumKit
 
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
 		out.General.VSyncOffFPSLimit.Value = Max(0, out.General.VSyncOffFPSLimit.Value);
+		out.General.GamePreviewLayout.Value = Clamp(out.General.GamePreviewLayout.Value, 0, 1);
 		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
 		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
 		out.TestPlay.GoodWindowMilliseconds.Value = Clamp(out.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
@@ -622,6 +623,7 @@ namespace PeepoDrumKit
 			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
+			X(General.GamePreviewLayout, "game_preview_layout");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
 			X(General.GamePreviewBarLinesBehindNotes, "game_preview_bar_lines_behind_notes");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
@@ -715,6 +717,7 @@ namespace PeepoDrumKit
 			X(Input.Editor_OpenChartStats, "editor_open_chart_stats");
 			X(Input.Editor_OpenLyrics, "editor_open_lyrics");
 			X(Input.Editor_TogglePreviewComments, "editor_toggle_preview_comments");
+			X(Input.Editor_TogglePreviewLayout, "editor_toggle_preview_layout");
 			X(Input.Editor_ScreenshotWindow, "editor_screenshot_window");
 			X(Input.Editor_ScreenshotPreview, "editor_screenshot_preview");
 			X(Input.Editor_OpenTextEditor, "editor_open_text_editor");

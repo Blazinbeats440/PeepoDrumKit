@@ -1,6 +1,7 @@
 #include "chart_editor_video_export.h"
 #include "chart_editor_test_play_rules.h"
 #include "chart_editor_widgets.h"
+#include "chart_editor_i18n.h"
 #include <cmath>
 
 namespace PeepoDrumKit
@@ -586,6 +587,7 @@ namespace PeepoDrumKit
 		auto& io = Gui::GetIO();
 		io.IniFilename = io.LogFilename = nullptr;
 		io.DeltaTime = 1.0f / 60.0f;
+		io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 		io.ConfigErrorRecoveryEnableAssert = io.ConfigErrorRecoveryEnableDebugLog = io.ConfigErrorRecoveryEnableTooltip = false;
 		testContext->ErrorCallbackUserData = &error;
 		testContext->ErrorCallback = [](ImGuiContext*, void* userData, cstr message) { *static_cast<std::string*>(userData) += message; };
@@ -708,6 +710,141 @@ namespace PeepoDrumKit
 					if (combo == 1000) fourDigitWidth = bounds.GetWidth();
 					if (combo >= 10000 && std::abs(bounds.GetWidth() - fourDigitWidth) > 0.001f)
 						{ error = "Five or more combo digits did not fit the four-digit width"; return false; }
+				}
+			}
+		}
+		const UserSettingsData previousSettings = Settings;
+		defer { Settings_Mutable = previousSettings; };
+		Settings_Mutable.General.GamePreviewShowComments.Value = true;
+		Settings_Mutable.General.GamePreviewCommentHoldMeasures.Value = 1;
+		Settings_Mutable.General.GamePreviewCommentFontSize.Value = 28;
+		Settings_Mutable.Appearance.PreviewCommentTextColor.Value = IM_COL32(19, 233, 87, 255);
+		context.SetCursorTime(context.ChartSelectedCourse->BeatToPlaybackTime(Beat::Zero(), BranchType::Normal));
+		const auto drawPreview = [&](ChartGamePreview& preview, vec2 windowSize, b8 drawControls = false)
+		{
+			io.DisplaySize = windowSize;
+			Gui::NewFrame();
+			if (drawControls) preview.DrawTestPlayControls(context);
+			Gui::SetNextWindowPos(vec2(0.0f));
+			Gui::SetNextWindowSize(windowSize);
+			Gui::Begin("Game preview layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+			ImDrawList* drawList = Gui::GetWindowDrawList();
+			drawList->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+			preview.DrawGui(context, context.GetCursorTime());
+			Gui::End();
+			Gui::Render();
+			return drawList;
+		};
+		const auto sameCamera = [](const GameCamera& first, const GameCamera& second)
+		{
+			return first.ScreenSpaceViewportRect.TL == second.ScreenSpaceViewportRect.TL && first.ScreenSpaceViewportRect.BR == second.ScreenSpaceViewportRect.BR
+				&& first.LaneRect.TL == second.LaneRect.TL && first.LaneRect.BR == second.LaneRect.BR
+				&& first.WorldSpaceSize == second.WorldSpaceSize && first.WorldToScreenScaleFactor == second.WorldToScreenScaleFactor;
+		};
+		for (vec2 windowSize : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f), vec2(800.0f, 800.0f), vec2(1280.0f, 480.0f) })
+		{
+			ChartGamePreview preview;
+			for (i32 laneCount : { 1, 2, 3, 2 })
+			{
+				context.ResetChartsCompared();
+				context.CompareMode = laneCount > 1;
+				if (laneCount >= 2) context.ChartsCompared[context.Chart.Courses[0].get()].insert(BranchType::Expert);
+				if (laneCount == 3) context.ChartsCompared[context.Chart.Courses[1].get()].insert(BranchType::Normal);
+				for (const std::string& commentText : { std::string(), std::string("First line\nSecond line"), std::string(6000, 'X') })
+				{
+					for (auto& course : context.Chart.Courses)
+						course->Comments.Sorted = commentText.empty() ? std::vector<CommentChange>() : std::vector<CommentChange>{ { Beat::Zero(), commentText, false } };
+					GameCamera originalCamera;
+					for (i32 layout : { 0, 1 })
+					{
+						Settings_Mutable.General.GamePreviewLayout.Value = layout;
+						ImDrawList* drawList = drawPreview(preview, windowSize);
+						if (!error.empty()) return false;
+						if (preview.VideoExportDrawList != nullptr || preview.VideoExportTime.has_value())
+							{ error = "Game preview entered video export mode"; return false; }
+						if (layout == 0) { originalCamera = preview.Camera; continue; }
+						if (laneCount == 3)
+						{
+							if (!sameCamera(preview.Camera, originalCamera))
+								{ error = "Three preview lanes did not fall back to the original layout"; return false; }
+							continue;
+						}
+						if (std::abs(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect) - 16.0f / 9.0f) > 0.001f
+							|| preview.Camera.WorldSpaceSize != vec2(1920.0f, 1080.0f) || preview.Camera.LaneRect.TL.x != 498.0f
+							|| preview.Camera.LaneRect.TL.y != (laneCount == 1 ? 251.0f : 540.0f)
+							|| preview.Camera.LaneWidth() != GameLaneStandardWidth)
+							{
+								error = "Arcade preview changed the video lane arrangement or aspect ratio: lanes=" + std::to_string(laneCount)
+									+ ", ratio=" + std::to_string(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect))
+									+ ", world=" + std::to_string(preview.Camera.WorldSpaceSize.x) + "x" + std::to_string(preview.Camera.WorldSpaceSize.y)
+									+ ", lane=" + std::to_string(preview.Camera.LaneRect.TL.x) + "," + std::to_string(preview.Camera.LaneRect.TL.y)
+									+ ", width=" + std::to_string(preview.Camera.LaneWidth());
+								return false;
+							}
+						if (commentText.empty()) continue;
+						const f32 markerX = preview.Camera.WorldToScreenSpace(vec2(618.0f, 0.0f)).x;
+						const f32 markerWidth = preview.Camera.WorldToScreenScale(28.0f * 0.45f);
+						std::vector<vec2> markerVertices;
+						for (const auto& vertex : drawList->VtxBuffer)
+							if (vertex.col == *Settings.Appearance.PreviewCommentTextColor && vertex.pos.x >= markerX - 0.001f && vertex.pos.x <= markerX + markerWidth + 0.001f)
+								markerVertices.push_back(vec2(vertex.pos));
+						if (markerVertices.size() != static_cast<size_t>(laneCount * 3))
+							{ error = "Preview comment markers were missing"; return false; }
+						for (i32 lane = 0; lane < laneCount; ++lane)
+						{
+							const vec2 tip = markerVertices[lane * 3], base = markerVertices[lane * 3 + 1];
+							const b8 above = laneCount == 2 && lane == 0;
+							const f32 laneBoundaryY = preview.Camera.WorldToScreenSpace(vec2(0.0f, above ? 276.0f : preview.Camera.LaneRect.BR.y)).y;
+							if ((above && (tip.y <= base.y || tip.y >= laneBoundaryY)) || (!above && (tip.y >= base.y || tip.y <= laneBoundaryY)))
+								{ error = "Preview comment position or triangle direction was incorrect"; return false; }
+						}
+					}
+				}
+			}
+		}
+		context.ResetChartsCompared();
+		context.CompareMode = true;
+		context.ChartsCompared[context.Chart.Courses[1].get()].insert(BranchType::Normal);
+		for (size_t commentedCourse : { size_t(0), size_t(1) })
+		{
+			for (auto& course : context.Chart.Courses) course->Comments.Sorted.clear();
+			context.Chart.Courses[commentedCourse]->Comments.Sorted = { { Beat::Zero(), "Comment", false } };
+			ChartGamePreview preview;
+			drawPreview(preview, vec2(1280.0f, 720.0f));
+			if (!error.empty()) return false;
+			if (preview.Camera.LaneRect.TL != vec2(498.0f, 540.0f))
+				{ error = "One-sided comments separated the arcade preview lanes"; return false; }
+		}
+		context.ResetChartsCompared();
+		context.Chart.Courses[0]->Comments.Sorted = { { Beat::Zero(), "Comment", false } };
+		Audio::Engine.ApplicationStartup();
+		defer { Audio::Engine.ApplicationShutdown(); };
+		context.SongVoice = Audio::Engine.AddVoice(Audio::SourceHandle::Invalid, "Preview layout test", false, 1.0f, 0.0f, true);
+		defer { Audio::Engine.RemoveVoice(context.SongVoice); };
+		Settings_Mutable.TestPlay.ShowStartButtonsInPreview.Value = true;
+		Note* recordedNote = &context.ChartSelectedCourse->Notes_Normal.Sorted.front();
+		context.TestPlayJudgements[recordedNote] = { 1, 0, true };
+		for (i32 layout : { 0, 1 })
+		{
+			Settings_Mutable.General.GamePreviewLayout.Value = layout;
+			ChartGamePreview preview;
+			preview.TestPlayCourse = context.ChartSelectedCourse;
+			preview.TestPlayNotes.push_back({ recordedNote, Time::Zero(), 1, Time::Zero(), 0, true, BranchType::Normal });
+			GameCamera editingCamera;
+			for (i32 state = 0; state < 6; ++state)
+			{
+				preview.IsTestPlaying = state > 0 && state < 5;
+				context.SongVoice.SetIsPlaying(state == 1 || state == 4);
+				drawPreview(preview, vec2(1280.0f, 720.0f), true);
+				if (!error.empty()) return false;
+				if (state == 0) editingCamera = preview.Camera;
+				else if (!sameCamera(preview.Camera, editingCamera))
+					{ error = "Test play controls or pause records moved the preview lanes"; return false; }
+				if (state == 2)
+				{
+					ImGuiWindow* controls = Gui::FindWindowByName(UI_WindowName("TAB_TEST_PLAY"));
+					if (!controls) { error = "Test play controls window was missing"; return false; }
+					controls->StateStorage.SetInt(controls->GetID(UI_Str("TEST_PLAY_RECORDS")), 1);
 				}
 			}
 		}

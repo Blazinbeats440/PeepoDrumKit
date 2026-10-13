@@ -22,6 +22,7 @@ X("TAB_SETTINGS",				"Settings") \
 X("TAB_USAGE_GUIDE",			"Usage Guide") \
 X("TAB_UPDATE_NOTES",			"Update Notes") \
 X("TAB_GAME_PREVIEW",			"Game Preview") \
+X("TAB_TEST_PLAY", "Test Play") \
 X("TAB_AUDIO_TEST",				"Audio Test") \
 X("TAB_TJA_IMPORT_TEST",		"TJA Import Test") \
 X("TAB_UNDO_HISTORY",			"Undo History") \
@@ -33,6 +34,7 @@ X("TAB_INSPECTOR",				"Chart Inspector") \
 #define PEEPODRUMKIT_UI_STRINGS_X_MACRO_LIST_EN	\
 /* tab names */ \
 X("TAB_GAME_PREVIEW",								"Game Preview") \
+X("TAB_TEST_PLAY", "Test Play") \
 X("TAB_TIMELINE",									"Chart Timeline") \
 X("TAB_TIMELINE_DEBUG",								"Chart Timeline - Debug") \
 X("TAB_CHART_PROPERTIES",							"Chart Properties") \
@@ -426,7 +428,7 @@ X("TEST_PLAY_START_CURRENT", "Start from Current Position") \
 X("TEST_PLAY_START_MARKER", "Start from Marker") \
 X("TEST_PLAY_AUTO_BRANCH", "Automatic Branching") \
 X("TEST_PLAY_SCORE_BRANCH_UNAVAILABLE", "Automatic branching is unavailable for score conditions") \
-X("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS", "Show start buttons in chart preview") \
+X("SETTINGS_TEST_PLAY_SHOW_START_BUTTONS", "Show start buttons in the Test Play window") \
 X("SETTINGS_TEST_PLAY_USE_BACKGROUND_MOVIE", "Play BGMOVIE during test play") \
 X("SETTINGS_PREVIEW_USE_BACKGROUND_MOVIE", "Game Preview: Play BGMOVIE while editing") \
 X("SETTINGS_USE_BACKGROUND_MOVIE_DESC", "Play the video specified by BGMOVIE in sync with the chart. Video audio is muted.") \
@@ -508,6 +510,11 @@ X("SETTINGS_BRANCH_SHOW_FORCED_BRANCH_BUTTONS_DESC", "Show buttons for forcing t
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Lines") \
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
+X("SETTINGS_PREVIEW_LAYOUT", "Game Preview & Test Play: Layout") \
+X("SETTINGS_PREVIEW_LAYOUT_DESC", "Use the arcade layout at 16:9 for one or two lanes. Three or more lanes use the original layout. Exported video uses its own setting. The default shortcut is F4.") \
+X("SETTINGS_KEY_PREVIEW_LAYOUT", "Editor: Toggle Preview & Test Play Layout") \
+X("PREVIEW_STATUS_LAYOUT_ORIGINAL", "Preview & test play layout: Original") \
+X("PREVIEW_STATUS_LAYOUT_ARCADE", "Preview & test play layout: Arcade") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are displayed in the game preview. Hidden bar lines can show numbers while the lines remain hidden.") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \

@@ -167,6 +167,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
+			WithDefault<i32> GamePreviewLayout = 0; // 0: original, 1: arcade
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
 			WithDefault<b8> GamePreviewBarLinesBehindNotes = true;
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
@@ -293,6 +294,7 @@ namespace PeepoDrumKit
 			WithDefault<MultiInputBinding> Editor_OpenChartStats = { KeyBinding(ImGuiKey_F3) };
 			WithDefault<MultiInputBinding> Editor_OpenLyrics = {};
 			WithDefault<MultiInputBinding> Editor_TogglePreviewComments = {};
+			WithDefault<MultiInputBinding> Editor_TogglePreviewLayout = { KeyBinding(ImGuiKey_F4) };
 			WithDefault<MultiInputBinding> Editor_ScreenshotWindow = { KeyBinding(ImGuiKey_F12) };
 			WithDefault<MultiInputBinding> Editor_ScreenshotPreview = {};
 			WithDefault<MultiInputBinding> Editor_OpenTextEditor = {};
@@ -484,7 +486,7 @@ namespace PeepoDrumKit
 		IniVoidPtrTypeFromStringFunc FromStringFunc;
 		IniVoidPtrTypeToStringFunc ToStringFunc;
 	};
-	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[256]; size_t MemberCount; };
+	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[272]; size_t MemberCount; };
 
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap();
 	inline const SettingsReflectionMap AppSettingsReflectionMap = StaticallyInitializeAppSettingsReflectionMap();
