@@ -8,6 +8,8 @@
 #include "chart_editor_video_writer.h"
 #include "chart_editor_settings_gui.h"
 #include "chart_editor_file_drop.h"
+#include "chart_editor_asset_save.h"
+#include "chart_editor_asset_paths.h"
 #include "chart_editor_timeline.h"
 #include "imgui/imgui_include.h"
 #include "audio/audio_engine.h"
@@ -38,6 +40,7 @@ namespace PeepoDrumKit
 	struct AsyncLoadSongResult
 	{
 		std::string SongFilePath;
+		b8 UpdateChartMetadata = true;
 		Audio::PCMSampleBuffer SampleBuffer;
 		Audio::WaveformMipChain WaveformL, WaveformR;
 	};
@@ -70,12 +73,12 @@ namespace PeepoDrumKit
 
 		void CreateNewChart(ChartContext& context);
 		void CreateNewDifficulty(ChartContext& context, DifficultyType difficulty);
-		void SaveChart(ChartContext& context, std::string_view filePath = "");
-		b8 OpenChartSaveAsDialog(ChartContext& context);
+		b8 SaveChart(ChartContext& context, std::string_view filePath = "");
+		b8 OpenChartSaveAsDialog(ChartContext& context, b8 copyAssets = false);
 		b8 TrySaveChartOrOpenSaveAsDialog(ChartContext& context);
 
 		void StartAsyncImportingChartFile(std::string_view absoluteChartFilePath);
-		void StartAsyncLoadingSongAudioFile(std::string_view absoluteAudioFilePath);
+		void StartAsyncLoadingSongAudioFile(std::string_view absoluteAudioFilePath, b8 updateChartMetadata = true);
 		void StartAsyncLoadingSongJacketFile(std::string_view absoluteJacketFilePath);
 		void SetAndStartLoadingChartSongFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo);
 		void SetAndStartLoadingSongJacketFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo);
@@ -94,6 +97,24 @@ namespace PeepoDrumKit
 
 	private:
 		void StartAsyncReadingDroppedPath(std::string_view path, b8 isDirectory);
+		void StartAssetSave(std::string_view chartPath);
+		void PrepareAssetSave();
+		void DrawAssetSavePopup();
+		std::string BuildChartSaveText(const AssetSave::Plan& plan);
+		void FinishChartSave(const AssetSave::Plan& plan, b8 reloadAssets);
+		void ShowChartSaveFailure(const AssetSave::Failure& failure);
+		struct AssetSaveData
+		{
+			b8 Active = false, OpenOnNextFrame = false;
+			std::string OldChartPath, ChartPath;
+			std::vector<AssetSave::Input> Inputs;
+			AssetSave::Plan Plan;
+			AssetSave::Failure Failed;
+			std::shared_ptr<AssetSave::Progress> Progress;
+			std::future<AssetSave::Plan> PrepareFuture;
+			std::future<AssetSave::Failure> SaveFuture;
+			std::function<void()> OnSuccess;
+		} assetSave = {};
 
 		ChartContext context = {};
 		ChartTimeline timeline = {};
@@ -174,6 +195,13 @@ namespace PeepoDrumKit
 		std::future<AsyncImportChartResult> importChartFuture {};
 		std::future<AsyncLoadSongResult> loadSongFuture {};
 		std::future<AsyncLoadJacketResult> loadJacketFuture {};
+		struct PendingSongLoadRequest
+		{
+			std::string FilePath;
+			b8 UpdateChartMetadata = true;
+		};
+		std::optional<PendingSongLoadRequest> pendingSongLoad;
+		std::optional<std::string> pendingJacketLoad;
 		CPUStopwatch loadSongStopwatch = {};
 		CPUStopwatch loadJacketStopwatch = {};
 		b8 createBackupOfOriginalTJABeforeOverwriteSave = false;

@@ -143,6 +143,7 @@ namespace Shell
 	{
 		std::string_view InTitle;
 		std::string_view InFileName;
+		std::string_view InInitialDirectory;
 		std::string_view InDefaultExtension;
 		std::vector<FileFilter> InFilters;
 		u32 InOutFilterIndex = 0;

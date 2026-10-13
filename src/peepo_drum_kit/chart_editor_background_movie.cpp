@@ -63,11 +63,12 @@ namespace PeepoDrumKit
 		ComPtr<IMFSourceReader> Reader;
 		ComPtr<IMFSample> Current, Next;
 		LONGLONG CurrentTime = 0, NextTime = 0, CurrentDuration = 0, Duration = -1, FrameDuration = 333333;
+		std::optional<LONGLONG> FirstFrameTime;
 		ivec2 Size = {}, CurrentSize = {}, NextSize = {};
 		ivec2 DisplaySize = {}, CurrentDisplaySize = {}, NextDisplaySize = {};
 		ivec2 CropOrigin = {}, CurrentCropOrigin = {}, NextCropOrigin = {};
 		LONG Stride = 0, CurrentStride = 0, NextStride = 0;
-		b8 EndOfStream = false, PositionInitialized = false;
+		b8 EndOfStream = false, PositionInitialized = false, ReadingFromStart = true;
 		std::string Error;
 
 		b8 Check(HRESULT result, const char* operation)
@@ -160,6 +161,7 @@ namespace PeepoDrumKit
 		b8 Seek(LONGLONG time)
 		{
 			PositionInitialized = true;
+			ReadingFromStart = time == 0;
 			Current.Reset(); Next.Reset(); EndOfStream = false;
 			PROPVARIANT position = {};
 			position.vt = VT_I8;
@@ -175,6 +177,11 @@ namespace PeepoDrumKit
 			if (flags & MF_SOURCE_READERF_ERROR) { Error = "Background video decoder reported an error"; return false; }
 			if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) && !ReadFormat()) return false;
 			if (flags & MF_SOURCE_READERF_ENDOFSTREAM) EndOfStream = true;
+			if (sample && ReadingFromStart)
+			{
+				FirstFrameTime = time;
+				ReadingFromStart = false;
+			}
 			return true;
 		}
 
@@ -217,7 +224,8 @@ namespace PeepoDrumKit
 		BackgroundMovieStatus Decode(LONGLONG target, BackgroundMovieFrame& frame, const std::function<b8()>& canceled)
 		{
 			if (!Error.empty()) return BackgroundMovieStatus::Failed;
-			if (target < 0 || (Duration >= 0 && target >= Duration)) return BackgroundMovieStatus::Inactive;
+			if (target < 0 || (FirstFrameTime && target < *FirstFrameTime) || (Duration >= 0 && target >= Duration))
+				return BackgroundMovieStatus::Inactive;
 			if (!PositionInitialized)
 			{
 				PositionInitialized = true;
@@ -281,6 +289,7 @@ namespace PeepoDrumKit
 		b8 Stopping = false, InvalidTime = false;
 		std::string Path, PublishedPath, Error;
 		LONGLONG Target = 0, PublishedTarget = 0, Duration = -1;
+		std::optional<LONGLONG> FirstFrameTime;
 		u64 RequestRevision = 0, PathRevision = 0, Sequence = 0;
 		BackgroundMovieStatus Status = BackgroundMovieStatus::Inactive;
 		std::deque<BackgroundMovieFrame> Frames;
@@ -359,6 +368,7 @@ namespace PeepoDrumKit
 				PublishedPath = path;
 				PublishedTarget = target;
 				Duration = decoder.Duration;
+				FirstFrameTime = decoder.FirstFrameTime;
 				if (status == BackgroundMovieStatus::Ready && !frame.Pixels.empty()) CacheFrame(std::move(frame));
 
 				// Publish the requested frame first, then fill a bounded buffer ahead of the current cursor.
@@ -389,6 +399,7 @@ namespace PeepoDrumKit
 					lock.lock();
 					if (PathRevision != pathRevision || InvalidTime || aheadStatus == BackgroundMovieStatus::Pending) break;
 					Duration = decoder.Duration;
+					FirstFrameTime = decoder.FirstFrameTime;
 					if (aheadStatus != BackgroundMovieStatus::Ready) break;
 					if (CachedBytes + ahead.Pixels.size() > MaxCachedBytes) break;
 					CacheFrame(std::move(ahead));
@@ -414,6 +425,7 @@ namespace PeepoDrumKit
 		{
 			impl->InvalidTime = false; impl->PublishedPath.clear(); impl->Error.clear();
 			impl->Frames.clear(); impl->CachedBytes = 0;
+			impl->FirstFrameTime.reset();
 			++impl->PathRevision;
 		}
 		const LONGLONG target = static_cast<LONGLONG>(std::llround(time.Seconds * MovieTicksPerSecond));
@@ -422,11 +434,14 @@ namespace PeepoDrumKit
 		{
 			++impl->PathRevision;
 			impl->PublishedPath.clear(); impl->Error.clear(); impl->Duration = -1;
+			impl->FirstFrameTime.reset();
 			impl->Frames.clear(); impl->CachedBytes = 0;
 			impl->Status = BackgroundMovieStatus::Pending;
 		}
 		impl->Path = path;
 		impl->Target = target;
+		if (impl->PublishedPath == path && impl->Status != BackgroundMovieStatus::Failed &&
+			impl->FirstFrameTime && target < *impl->FirstFrameTime) return;
 		++impl->RequestRevision;
 		if (!impl->Worker.joinable() && !path.empty())
 		{
@@ -444,7 +459,8 @@ namespace PeepoDrumKit
 		if (impl->Path.empty()) return BackgroundMovieStatus::Inactive;
 		if (impl->PublishedPath != impl->Path) return BackgroundMovieStatus::Pending;
 		if (impl->Status == BackgroundMovieStatus::Failed) return BackgroundMovieStatus::Failed;
-		if (impl->Target < 0 || (impl->Duration >= 0 && impl->Target >= impl->Duration)) return BackgroundMovieStatus::Inactive;
+		if (impl->Target < 0 || (impl->FirstFrameTime && impl->Target < *impl->FirstFrameTime) ||
+			(impl->Duration >= 0 && impl->Target >= impl->Duration)) return BackgroundMovieStatus::Inactive;
 		if (const auto* cached = impl->FindFrame(impl->Target))
 		{
 			if (frame.Sequence != cached->Sequence) frame = *cached;

@@ -517,6 +517,14 @@ namespace Shell
 				if (!dialog.InTitle.empty())
 					hr = fileDialog->SetTitle(UTF8::WideArg(dialog.InTitle).c_str());
 
+				if (!dialog.InInitialDirectory.empty())
+				{
+					ComPtr<IShellItem> initialFolder;
+					const std::string folderPath = Path::CopyAndNormalizeWin32(dialog.InInitialDirectory);
+					if (SUCCEEDED(::SHCreateItemFromParsingName(UTF8::WideArg(folderPath).c_str(), nullptr, IID_PPV_ARGS(&initialFolder))))
+						fileDialog->SetFolder(initialFolder.Get());
+				}
+
 				if (!dialog.InFileName.empty())
 					hr = fileDialog->SetFileName(UTF8::WideArg(dialog.InFileName).c_str());
 

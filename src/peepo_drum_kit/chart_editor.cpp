@@ -125,6 +125,9 @@ namespace PeepoDrumKit
 
 	ChartEditor::~ChartEditor()
 	{
+		if (assetSave.Progress) assetSave.Progress->Cancel = true;
+		if (assetSave.PrepareFuture.valid()) assetSave.PrepareFuture.wait();
+		if (assetSave.SaveFuture.valid()) assetSave.SaveFuture.wait();
 		if (screenshotDrawList) IM_DELETE(screenshotDrawList);
 		auto& videoSettings = PersistentApp.VideoExport;
 		videoSettings.Layout = static_cast<i32>(videoExport.Layout);
@@ -361,6 +364,12 @@ namespace PeepoDrumKit
 	{
 		if (Gui::BeginMenuBar())
 		{
+			if (assetSave.Active)
+			{
+				Gui::TextUnformatted(UI_Str("ASSET_SAVE_TITLE"));
+				Gui::EndMenuBar();
+				return;
+			}
 			if (context.TestPlayActive)
 			{
 				Gui::TextUnformatted(UI_Str("TEST_PLAY_EDITOR_LOCKED"));
@@ -381,27 +390,48 @@ namespace PeepoDrumKit
 
 				if (Gui::BeginMenu(UI_Str("ACT_FILE_OPEN_RECENT"), !PersistentApp.RecentFiles.SortedPaths.empty()))
 				{
-					for (size_t i = 0; i < PersistentApp.RecentFiles.SortedPaths.size(); i++)
+					static constexpr size_t directItemCount = 9;
+					std::string selectedPath;
+					auto drawRecentFile = [&](size_t index)
 					{
-						const auto& path = PersistentApp.RecentFiles.SortedPaths[i];
-						const char shortcutDigit[2] = { (i <= ('9' - '1')) ? static_cast<char>('1' + i) : '\0', '\0' };
-
-						if (Gui::MenuItem(path.c_str(), shortcutDigit))
-						{
-							if (File::Exists(path))
-							{
-								CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = std::string(path)] { StartAsyncImportingChartFile(pathCopy); });
-							}
-							else
-							{
-								// TODO: Popup asking to remove from list
-							}
-						}
+						const auto& path = PersistentApp.RecentFiles.SortedPaths[index];
+						const std::string label = *Settings.General.RecentFilesShowFullPath ? path : std::string(Path::GetFileName(path));
+						const char shortcutDigit[2] = { index < directItemCount ? static_cast<char>('1' + index) : '\0', '\0' };
+						Gui::PushID(static_cast<i32>(index));
+						if (Gui::MenuItem(label.c_str(), shortcutDigit))
+							selectedPath = path;
+						if (!*Settings.General.RecentFilesShowFullPath && Gui::IsItemHovered())
+							Gui::SetTooltip("%s", path.c_str());
+						Gui::PopID();
+					};
+					const size_t recentCount = PersistentApp.RecentFiles.SortedPaths.size();
+					for (size_t i = 0; i < Min(recentCount, directItemCount); i++)
+						drawRecentFile(i);
+					if (recentCount > directItemCount && Gui::BeginMenu(UI_Str("ACT_FILE_RECENT_MORE")))
+					{
+						for (size_t i = directItemCount; i < recentCount; i++)
+							drawRecentFile(i);
+						Gui::EndMenu();
 					}
 					Gui::Separator();
 					if (Gui::MenuItem(UI_Str("ACT_FILE_CLEAR_ITEMS")))
 						PersistentApp.RecentFiles.SortedPaths.clear();
 					Gui::EndMenu();
+					if (!selectedPath.empty())
+					{
+						if (File::Exists(selectedPath))
+							CheckOpenSaveConfirmationPopupThenCall([this, pathCopy = std::move(selectedPath)] { StartAsyncImportingChartFile(pathCopy); });
+						else
+						{
+							std::error_code fileError;
+							const b8 missingFile = !std::filesystem::exists(std::filesystem::u8path(selectedPath), fileError) && !fileError;
+							std::string message = missingFile ? UI_Str("RECENT_FILE_MISSING") : UI_Str("CHART_IMPORT_READ_FAILED");
+							message.append("\n\n").append(selectedPath);
+							Shell::ShowMessageBox(message, UI_Str("CHART_IMPORT_ERROR_TITLE"), Shell::MessageBoxButtons::OK, Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
+							if (missingFile)
+								PersistentApp.RecentFiles.Remove(selectedPath);
+						}
+					}
 				}
 
 				std::error_code folderError;
@@ -414,6 +444,11 @@ namespace PeepoDrumKit
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("ACT_EDIT_SAVE"), ToShortcutString(*Settings.Input.Editor_ChartSave).Data)) { TrySaveChartOrOpenSaveAsDialog(context); }
 				if (Gui::MenuItem(UI_Str("ACT_FILE_SAVE_AS"), ToShortcutString(*Settings.Input.Editor_ChartSaveAs).Data)) { OpenChartSaveAsDialog(context); }
+				if (Gui::MenuItem(UI_Str("ACT_FILE_SAVE_WITH_ASSETS"), nullptr, false, !importChartFuture.valid() && !videoExport.Exporting && !videoExport.Preparing))
+				{
+					if (context.ChartFilePath.empty()) OpenChartSaveAsDialog(context, true);
+					else StartAssetSave(context.ChartFilePath);
+				}
 				if (Gui::MenuItem(UI_Str("SCREENSHOT_WINDOW"), ToShortcutString(*Settings.Input.Editor_ScreenshotWindow).Data)) screenshotWindowRequested = true;
 				if (Gui::MenuItem(UI_Str("SCREENSHOT_PREVIEW"), ToShortcutString(*Settings.Input.Editor_ScreenshotPreview).Data, false,
 					context.ChartSelectedCourse != nullptr && !videoExport.Exporting && !videoExport.Preparing)) screenshotPreviewRequested = true;
@@ -1288,6 +1323,12 @@ namespace PeepoDrumKit
 	void ChartEditor::DrawGui()
 	{
 		InternalUpdateAsyncLoading();
+		if (assetSave.Active)
+		{
+			DrawAssetSavePopup();
+			UpdateApplicationWindowTitle(context);
+			return;
+		}
 		const u32 videoExportWidth = videoExport.ShowWindow ? VideoResolutionPresets[videoExport.Resolution].Width : 0;
 		gamePreview.VideoExportResolutionWidth = videoExport.Preview.VideoExportResolutionWidth = videoExportWidth;
 
@@ -1368,7 +1409,7 @@ namespace PeepoDrumKit
 		}
 		for (const std::string& droppedFilePath : ApplicationHost::GlobalState.FilePathsDroppedThisFrame)
 		{
-			if (Gui::GetCurrentContext()->OpenPopupStack.Size > 0 || saveConfirmationPopup.OpenOnNextFrame || droppedPathFuture.valid()) break;
+			if (assetSave.Active || Gui::GetCurrentContext()->OpenPopupStack.Size > 0 || saveConfirmationPopup.OpenOnNextFrame || droppedPathFuture.valid()) break;
 			std::error_code directoryError;
 			const b8 isDirectory = std::filesystem::is_directory(std::filesystem::u8path(droppedFilePath), directoryError);
 			if (isDirectory || FileDrop::IsArchivePath(droppedFilePath))
@@ -1443,7 +1484,7 @@ namespace PeepoDrumKit
 		// NOTE: Global input bindings
 		{
 			const b8 noActiveID = (Gui::GetActiveID() == 0);
-			const b8 noOpenPopup = (Gui::GetCurrentContext()->OpenPopupStack.Size <= 0);
+			const b8 noOpenPopup = (!assetSave.Active && Gui::GetCurrentContext()->OpenPopupStack.Size <= 0);
 			if (noActiveID)
 			{
 				const f32 guiScaleFactorToSetNextFrame = GuiScaleFactorToSetNextFrame;
@@ -1520,6 +1561,13 @@ namespace PeepoDrumKit
 				if (Gui::IsAnyPressed(*Settings.Input.Timeline_SelectBranchMaster, false))
 					context.SetSelectedChart(context.ChartSelectedCourse, BranchType::Master);
 			}
+		}
+
+		if (assetSave.Active)
+		{
+			context.Undo.FlushAndExecuteEndOfFrameCommands();
+			DrawAssetSavePopup();
+			return;
 		}
 
 		if (PersistentApp.LastSession.ShowWindow_Help)
@@ -1922,7 +1970,9 @@ namespace PeepoDrumKit
 					UpdateApplicationWindowTitle(context);
 					if (saveConfirmationPopup.OnSuccessFunction)
 					{
-						if (!clickedCancel && !saveDialogCanceled)
+						if (clickedYes && assetSave.Active)
+							assetSave.OnSuccess = std::move(saveConfirmationPopup.OnSuccessFunction);
+						else if (!clickedCancel && !saveDialogCanceled)
 							saveConfirmationPopup.OnSuccessFunction();
 						saveConfirmationPopup.OnSuccessFunction = {};
 					}
@@ -1989,6 +2039,7 @@ namespace PeepoDrumKit
 
 	ApplicationHost::CloseResponse ChartEditor::OnWindowCloseRequest()
 	{
+		if (assetSave.Active) return ApplicationHost::CloseResponse::SupressExit;
 		if (context.Undo.HasPendingChanges)
 		{
 			tryToCloseApplicationOnNextFrame = true;
@@ -2016,8 +2067,10 @@ namespace PeepoDrumKit
 	void ChartEditor::CreateNewChart(ChartContext& context)
 	{
 		if (loadSongFuture.valid()) loadSongFuture.get();
+		pendingSongLoad.reset();
 		if (!context.SongSourceFilePath.empty()) StartAsyncLoadingSongAudioFile("");
 		if (loadJacketFuture.valid()) loadJacketFuture.get();
+		pendingJacketLoad.reset();
 		if (!context.SongJacketFilePath.empty()) StartAsyncLoadingSongJacketFile("");
 		if (importChartFuture.valid()) importChartFuture.get();
 		InternalUpdateAsyncLoading();
@@ -2166,76 +2219,56 @@ namespace PeepoDrumKit
 		return warnings;
 	}
 
-	void ChartEditor::SaveChart(ChartContext& context, std::string_view filePath)
+	std::string ChartEditor::BuildChartSaveText(const AssetSave::Plan& plan)
 	{
-		if (filePath.empty())
-			filePath = context.ChartFilePath;
-
-		assert(!filePath.empty());
-		if (!filePath.empty())
+		TJA::ParsedTJA tja;
+		ConvertChartProjectToTJA(context.Chart, tja, *Settings.General.IncludePeepoDrumKitComment);
+		tja.Metadata.WAVE = plan.Assets[0].SavedReference;
+		tja.Metadata.PREIMAGE = plan.Assets[1].SavedReference;
+		for (auto& [key, value] : tja.Metadata.Others)
+			if (ASCII::MatchesInsensitive(key, "BGMOVIE")) value = plan.Assets[2].SavedReference;
+		std::string tjaText;
+		const auto saveFormat = (*Settings.General.TJAFileSaveFormat == 1) ? TJA::SaveFormat::ANSI_CRLF : TJA::SaveFormat::Current;
+		TJA::ConvertParsedToText(tja, tjaText, saveFormat);
+		if (*Settings.General.WarnTaikojiroIncompatibleCharts)
 		{
-			if (filePath != context.ChartFilePath) {
-				// prevent absolute or wrong relative resource path
-				if (auto path = Path::TryRemakeRelative(context.Chart.SongFileName, context.ChartFilePath, filePath); !path.empty())
-					context.Chart.SongFileName = Path::NormalizeInPlace(path);
-				if (auto path = Path::TryRemakeRelative(context.Chart.SongJacket, context.ChartFilePath, filePath); !path.empty())
-					context.Chart.SongJacket = Path::NormalizeInPlace(path);
-				for (auto& [key, value] : context.Chart.OtherMetadata)
-					if (ASCII::MatchesInsensitive(key, "BGMOVIE"))
-						if (auto path = Path::TryRemakeRelative(ASCII::Trim(value), context.ChartFilePath, filePath); !path.empty())
-							value = Path::NormalizeInPlace(path);
-			}
-
-			TJA::ParsedTJA tja;
-			ConvertChartProjectToTJA(context.Chart, tja, *Settings.General.IncludePeepoDrumKitComment);
-			std::string tjaText;
-			const auto saveFormat = (*Settings.General.TJAFileSaveFormat == 1)
-				? TJA::SaveFormat::ANSI_CRLF
-				: TJA::SaveFormat::Current;
-			TJA::ConvertParsedToText(tja, tjaText, saveFormat);
-			if (*Settings.General.WarnTaikojiroIncompatibleCharts)
+			const std::string warnings = GetTaikojiroCompatibilityWarnings(context.Chart, tja, saveFormat);
+			if (!warnings.empty())
 			{
-				const std::string warnings = GetTaikojiroCompatibilityWarnings(context.Chart, tja, saveFormat);
-				if (!warnings.empty())
-				{
-					std::string message = UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_DESC");
-					message += "\n\n";
-					message += warnings;
-					Shell::ShowMessageBox(
-						message,
-						UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_TITLE"),
-						Shell::MessageBoxButtons::OK,
-						Shell::MessageBoxIcon::Warning,
-						ApplicationHost::GlobalState.NativeWindowHandle);
-				}
+				const std::string message = std::string(UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_DESC")) + "\n\n" + warnings;
+				Shell::ShowMessageBox(message, UI_Str("SAVE_TAIKOJIRO_COMPAT_WARNING_TITLE"), Shell::MessageBoxButtons::OK,
+					Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
 			}
-
-			// TODO: Proper async file saving by copying in-memory
-			if (createBackupOfOriginalTJABeforeOverwriteSave)
-			{
-				static constexpr b8 overwriteExisting = false;
-				const std::string originalFileBackupPath { std::string(filePath).append(".bak") };
-
-				File::Copy(filePath, originalFileBackupPath, overwriteExisting);
-				createBackupOfOriginalTJABeforeOverwriteSave = false;
-			}
-
-			File::WriteAllBytes(filePath, tjaText);
-
-			context.ChartFilePath = filePath;
-			for (auto& recording : gamePreview.RecordedVideoRoutes)
-			{
-				if (recording.Course && recording.Changes == context.Undo.NumberOfChangesMade) recording.Changes = 0;
-				else recording = {};
-			}
-			context.Undo.ClearChangesWereMade();
-
-			PersistentApp.RecentFiles.Add(std::string { filePath });
 		}
+		return tjaText;
 	}
 
-	b8 ChartEditor::OpenChartSaveAsDialog(ChartContext& context)
+	b8 ChartEditor::SaveChart(ChartContext& context, std::string_view filePath)
 	{
+		if (assetSave.Active || importChartFuture.valid()) return false;
+		if (filePath.empty()) filePath = context.ChartFilePath;
+		if (filePath.empty()) return false;
+		const std::vector<AssetSave::Input> inputs = {
+			{ context.Chart.SongFileName, {}, false }, { context.Chart.SongJacket, {}, false },
+			{ ReadBackgroundMovieDefinition(context.Chart.OtherMetadata).FileName, {}, false },
+		};
+		AssetSave::Progress progress;
+		const auto plan = AssetSave::Prepare(context.ChartFilePath, filePath, inputs, progress);
+		const auto failed = plan.CanSave()
+			? AssetSave::Save(plan, BuildChartSaveText(plan), createBackupOfOriginalTJABeforeOverwriteSave, progress)
+			: plan.Failed;
+		if (failed.Code != AssetSave::Error::None)
+		{
+			ShowChartSaveFailure(failed);
+			return false;
+		}
+		FinishChartSave(plan, false);
+		return true;
+	}
+
+	b8 ChartEditor::OpenChartSaveAsDialog(ChartContext& context, b8 copyAssets)
+	{
+		if (assetSave.Active || importChartFuture.valid()) return false;
 		static constexpr auto getChartFileNameWithoutExtensionOrDefault = [](const ChartContext& context) -> std::string_view
 		{
 			if (!context.ChartFilePath.empty()) return Path::GetFileName(context.ChartFilePath, false);
@@ -2245,10 +2278,15 @@ namespace PeepoDrumKit
 
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Save Chart As";
+		const std::string saveDirectory = std::filesystem::u8path(context.ChartFilePath).parent_path().u8string();
+		fileDialog.InInitialDirectory = saveDirectory;
 		fileDialog.InFileName = getChartFileNameWithoutExtensionOrDefault(context);
 		fileDialog.InDefaultExtension = TJA::Extension;
 		fileDialog.InFilters = { { TJA::FilterName, TJA::FilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+		if (!videoExport.Exporting && !videoExport.Preparing)
+			fileDialog.InOutCustomizeItems = { { Shell::FileDialogItemType::Checkbox, UI_Str("ASSET_SAVE_COPY_OPTION"), { &copyAssets } } };
+		else copyAssets = false;
 
 		if (fileDialog.OpenSave() != Shell::FileDialogResult::OK)
 			return false;
@@ -2259,17 +2297,20 @@ namespace PeepoDrumKit
 			return false;
 		}
 
-		SaveChart(context, fileDialog.OutFilePath);
-		return true;
+		if (copyAssets)
+		{
+			if (videoExport.Exporting || videoExport.Preparing) return false;
+			StartAssetSave(fileDialog.OutFilePath);
+			return false; // The save confirmation callback is deferred until copying and saving succeed.
+		}
+		return SaveChart(context, fileDialog.OutFilePath);
 	}
 
 	b8 ChartEditor::TrySaveChartOrOpenSaveAsDialog(ChartContext& context)
 	{
 		if (context.ChartFilePath.empty())
 			return OpenChartSaveAsDialog(context);
-		else
-			SaveChart(context);
-		return true;
+		return SaveChart(context);
 	}
 
 	void ChartEditor::StartAsyncImportingChartFile(std::string_view absoluteChartFilePath)
@@ -2360,7 +2401,10 @@ namespace PeepoDrumKit
 	void ChartEditor::StartAsyncLoadingSongJacketFile(std::string_view absoluteJacketFilePath)
 	{
 		if (loadJacketFuture.valid())
-			loadJacketFuture.get();
+		{
+			pendingJacketLoad = std::string(absoluteJacketFilePath);
+			return;
+		}
 
 		context.SongJacketFadeAnimationTarget = 0.0f;
 		loadJacketStopwatch.Restart();
@@ -2368,6 +2412,7 @@ namespace PeepoDrumKit
 		{
 			AsyncLoadJacketResult result{};
 			result.JacketFilePath = std::move(tempPathCopy);
+			if (result.JacketFilePath.empty()) return result;
 
 			auto [fileContent, fileSize] = File::ReadAllBytes(result.JacketFilePath);
 			if (fileContent == nullptr || fileSize == 0)
@@ -2387,17 +2432,22 @@ namespace PeepoDrumKit
 		});
 	}
 
-	void ChartEditor::StartAsyncLoadingSongAudioFile(std::string_view absoluteAudioFilePath)
+	void ChartEditor::StartAsyncLoadingSongAudioFile(std::string_view absoluteAudioFilePath, b8 updateChartMetadata)
 	{
 		if (loadSongFuture.valid())
-			loadSongFuture.get();
+		{
+			// NOTE: Keep only the latest request while the current decode finishes.
+			pendingSongLoad = PendingSongLoadRequest { std::string(absoluteAudioFilePath), updateChartMetadata };
+			return;
+		}
 
 		context.SongWaveformFadeAnimationTarget = 0.0f;
 		loadSongStopwatch.Restart();
-		loadSongFuture = std::async(std::launch::async, [tempPathCopy = std::string(absoluteAudioFilePath)]()->AsyncLoadSongResult
+		loadSongFuture = std::async(std::launch::async, [tempPathCopy = std::string(absoluteAudioFilePath), updateChartMetadata]()->AsyncLoadSongResult
 		{
 			AsyncLoadSongResult result {};
 			result.SongFilePath = std::move(tempPathCopy);
+			result.UpdateChartMetadata = updateChartMetadata;
 
 			// TODO: Maybe handle this in a different way... but for now loading an empty file path works as an "unload"
 			if (result.SongFilePath.empty())
@@ -2431,56 +2481,46 @@ namespace PeepoDrumKit
 
 	void ChartEditor::SetAndStartLoadingChartSongFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo)
 	{
-		if (!relativeOrAbsoluteAudioFilePath.empty() && !Path::IsRelative(relativeOrAbsoluteAudioFilePath))
+		const std::string reference = NormalizeChartAssetReference(relativeOrAbsoluteAudioFilePath, context.ChartFilePath);
+		RememberRelatedFileDirectory(reference, context.ChartFilePath, PersistentApp.RelatedFileDirectories.Audio);
+		if (reference == context.Chart.SongFileName)
 		{
-			context.Chart.SongFileName = Path::TryMakeRelative(relativeOrAbsoluteAudioFilePath, context.ChartFilePath);
-			if (context.Chart.SongFileName.empty())
-				context.Chart.SongFileName = relativeOrAbsoluteAudioFilePath;
+			StartAsyncLoadingSongAudioFile(AssetSave::ResolveSource(reference, context.ChartFilePath), false);
+			return;
 		}
-		else
-		{
-			context.Chart.SongFileName = relativeOrAbsoluteAudioFilePath;
-		}
-
-		Path::NormalizeInPlace(context.Chart.SongFileName);
-		undo.NotifyChangesWereMade();
-
-		// NOTE: Construct a new absolute path even if the input path was already absolute
-		//		 so that there won't ever be any discrepancy in case the relative path code is behaving unexpectedly
-		StartAsyncLoadingSongAudioFile(Path::TryMakeAbsolute(context.Chart.SongFileName, context.ChartFilePath));
+		undo.Execute<Commands::ChangeChartAssetReference>(&context.Chart.SongFileName, &context.ChartFilePath, reference,
+			[this](std::string_view path, b8 firstApply) { StartAsyncLoadingSongAudioFile(path, firstApply); }, UI_Str("UNDO_CHANGE_SONG_FILE"));
 	}
 
 	void ChartEditor::SetAndStartLoadingSongJacketFileName(std::string_view relativeOrAbsoluteAudioFilePath, Undo::UndoHistory& undo)
 	{
-		if (!relativeOrAbsoluteAudioFilePath.empty() && !Path::IsRelative(relativeOrAbsoluteAudioFilePath))
+		const std::string reference = NormalizeChartAssetReference(relativeOrAbsoluteAudioFilePath, context.ChartFilePath);
+		RememberRelatedFileDirectory(reference, context.ChartFilePath, PersistentApp.RelatedFileDirectories.Jacket);
+		if (reference == context.Chart.SongJacket)
 		{
-			context.Chart.SongJacket = Path::TryMakeRelative(relativeOrAbsoluteAudioFilePath, context.ChartFilePath);
-			if (context.Chart.SongJacket.empty())
-				context.Chart.SongJacket = relativeOrAbsoluteAudioFilePath;
+			StartAsyncLoadingSongJacketFile(AssetSave::ResolveSource(reference, context.ChartFilePath));
+			return;
 		}
-		else
-		{
-			context.Chart.SongJacket = relativeOrAbsoluteAudioFilePath;
-		}
-
-		Path::NormalizeInPlace(context.Chart.SongJacket);
-		undo.NotifyChangesWereMade();
-
-		// NOTE: Construct a new absolute path even if the input path was already absolute
-		//		 so that there won't ever be any discrepancy in case the relative path code is behaving unexpectedly
-		StartAsyncLoadingSongJacketFile(Path::TryMakeAbsolute(context.Chart.SongJacket, context.ChartFilePath));
+		undo.Execute<Commands::ChangeChartAssetReference>(&context.Chart.SongJacket, &context.ChartFilePath, reference,
+			[this](std::string_view path, b8) { StartAsyncLoadingSongJacketFile(path); }, UI_Str("UNDO_CHANGE_JACKET_FILE"));
 	}
 
 	void ChartEditor::SetChartBackgroundMovieFileName(std::string_view relativeOrAbsoluteMovieFilePath, Undo::UndoHistory& undo)
 	{
-		SetBackgroundMovieFileName(context.Chart.OtherMetadata, relativeOrAbsoluteMovieFilePath, context.ChartFilePath);
-		undo.NotifyChangesWereMade();
+		const std::string reference = NormalizeChartAssetReference(ASCII::Trim(relativeOrAbsoluteMovieFilePath), context.ChartFilePath);
+		RememberRelatedFileDirectory(reference, context.ChartFilePath, PersistentApp.RelatedFileDirectories.Movie);
+		auto metadata = context.Chart.OtherMetadata;
+		SetBackgroundMovieFileName(metadata, reference, {});
+		if (metadata == context.Chart.OtherMetadata) return;
+		undo.Execute<Commands::ChangeBackgroundMovieReference>(&context.Chart.OtherMetadata, &context.ChartFilePath, reference, UI_Str("UNDO_CHANGE_MOVIE_FILE"));
 	}
 
 	b8 ChartEditor::OpenLoadChartFileDialog(ChartContext& context)
 	{
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Open Chart File";
+		const std::string openDirectory = GetChartOpenDirectory(*Settings.General.ChartOpenDirectory);
+		fileDialog.InInitialDirectory = openDirectory;
 		fileDialog.InFilters = { { "Chart Files", "*.tja;*.mc;*.osu;*.osz" }, { TJA::FilterName, TJA::FilterSpec }, { MC::FilterName, MC::FilterSpec }, { OSU::FilterName, OSU::FilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
 
@@ -2496,6 +2536,8 @@ namespace PeepoDrumKit
 	{
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Open Audio File";
+		const std::string directory = GetRelatedFileOpenDirectory(context.Chart.SongFileName, context.ChartFilePath, PersistentApp.RelatedFileDirectories.Audio);
+		fileDialog.InInitialDirectory = directory;
 		fileDialog.InFilters = { { "Audio Files", "*.flac;*.ogg;*.mp3;*.wav" }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
 
@@ -2510,6 +2552,8 @@ namespace PeepoDrumKit
 	{
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Open Jacket File";
+		const std::string directory = GetRelatedFileOpenDirectory(context.Chart.SongJacket, context.ChartFilePath, PersistentApp.RelatedFileDirectories.Jacket);
+		fileDialog.InInitialDirectory = directory;
 		fileDialog.InFilters = { { "Image Files", "*.jpg;*.jpeg;*.png" }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
 
@@ -2524,6 +2568,9 @@ namespace PeepoDrumKit
 	{
 		Shell::FileDialog fileDialog {};
 		fileDialog.InTitle = "Open Video File";
+		const std::string directory = GetRelatedFileOpenDirectory(ReadBackgroundMovieDefinition(context.Chart.OtherMetadata).FileName,
+			context.ChartFilePath, PersistentApp.RelatedFileDirectories.Movie);
+		fileDialog.InInitialDirectory = directory;
 		fileDialog.InFilters = { { "Video Files", BackgroundMovieFilterSpec }, { Shell::AllFilesFilterName, Shell::AllFilesFilterSpec }, };
 		fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
 
@@ -2536,6 +2583,7 @@ namespace PeepoDrumKit
 
 	void ChartEditor::CheckOpenSaveConfirmationPopupThenCall(std::function<void()> onSuccess)
 	{
+		if (assetSave.Active) return;
 		if (context.Undo.HasPendingChanges)
 		{
 			saveConfirmationPopup.OpenOnNextFrame = true;
@@ -2593,44 +2641,61 @@ namespace PeepoDrumKit
 		static constexpr Time maxWaveformFadeOutDelaySafetyLimit = Time::FromSec(0.5);
 		const b8 waveformHasFadedOut = (context.SongWaveformFadeAnimationCurrent <= 0.01f || loadSongStopwatch.GetElapsed() >= maxWaveformFadeOutDelaySafetyLimit);
 
-		if (loadSongFuture.valid() && loadSongFuture._Is_ready() && waveformHasFadedOut)
+		if (loadSongFuture.valid() && loadSongFuture._Is_ready() && (waveformHasFadedOut || pendingSongLoad.has_value()))
 		{
 			loadSongStopwatch.Stop();
 			AsyncLoadSongResult loadResult = loadSongFuture.get();
-			context.SongSourceFilePath = std::move(loadResult.SongFilePath);
-			context.SongWaveformL = std::move(loadResult.WaveformL);
-			context.SongWaveformR = std::move(loadResult.WaveformR);
-			context.SongWaveformFadeAnimationTarget = context.SongWaveformL.IsEmpty() ? 0.0f : 1.0f;
+			if (pendingSongLoad)
+			{
+				auto request = std::move(*pendingSongLoad);
+				pendingSongLoad.reset();
+				StartAsyncLoadingSongAudioFile(request.FilePath, request.UpdateChartMetadata);
+			}
+			else
+			{
+				context.SongSourceFilePath = std::move(loadResult.SongFilePath);
+				context.SongWaveformL = std::move(loadResult.WaveformL);
+				context.SongWaveformR = std::move(loadResult.WaveformR);
+				context.SongWaveformFadeAnimationTarget = context.SongWaveformL.IsEmpty() ? 0.0f : 1.0f;
 
-			// TODO: Maybe handle this differently...
-			if (context.Chart.ChartTitle.empty() && !context.SongSourceFilePath.empty())
-				context.Chart.ChartTitle = Path::GetFileName(context.SongSourceFilePath, false);
+				// TODO: Maybe handle this differently...
+				if (loadResult.UpdateChartMetadata && context.Chart.ChartTitle.empty() && !context.SongSourceFilePath.empty())
+					context.Chart.ChartTitle = Path::GetFileName(context.SongSourceFilePath, false);
 
-			if (context.Chart.ChartDuration.Seconds <= 0.0 && loadResult.SampleBuffer.SampleRate > 0)
-				context.Chart.ChartDuration = Audio::FramesToTime(loadResult.SampleBuffer.FrameCount, loadResult.SampleBuffer.SampleRate);
+				if (loadResult.UpdateChartMetadata && context.Chart.ChartDuration.Seconds <= 0.0 && loadResult.SampleBuffer.SampleRate > 0)
+					context.Chart.ChartDuration = Audio::FramesToTime(loadResult.SampleBuffer.FrameCount, loadResult.SampleBuffer.SampleRate);
 
-			if (context.SongSource != Audio::SourceHandle::Invalid)
-				Audio::Engine.UnloadSource(context.SongSource);
+				if (context.SongSource != Audio::SourceHandle::Invalid)
+					Audio::Engine.UnloadSource(context.SongSource);
 
-			context.SongSource = Audio::Engine.LoadSourceFromBufferMove(Path::GetFileName(context.SongSourceFilePath), std::move(loadResult.SampleBuffer));
-			context.SongVoice.SetSource(context.SongSource);
+				context.SongSource = Audio::Engine.LoadSourceFromBufferMove(Path::GetFileName(context.SongSourceFilePath), std::move(loadResult.SampleBuffer));
+				context.SongVoice.SetSource(context.SongSource);
 
-			Audio::Engine.EnsureStreamRunning();
+				Audio::Engine.EnsureStreamRunning();
+			}
 		}
 
 		static constexpr Time maxJacketFadeOutDelaySafetyLimit = Time::FromSec(0.5);
 		const b8 jacketHasFadedOut = (context.SongJacketFadeAnimationCurrent <= 0.01f || loadJacketStopwatch.GetElapsed() >= maxJacketFadeOutDelaySafetyLimit);
 
-		if (loadJacketFuture.valid() && loadJacketFuture._Is_ready() && jacketHasFadedOut)
+		if (loadJacketFuture.valid() && loadJacketFuture._Is_ready() && (jacketHasFadedOut || pendingJacketLoad.has_value()))
 		{
 			AsyncLoadJacketResult loadResult = loadJacketFuture.get();
-
-			context.SongJacketFilePath = std::move(loadResult.JacketFilePath);
-			context.JacketTexture.Unload();
-			const RasterizedBitmap& bitmap = loadResult.JacketBitmap;
-			if (bitmap.Resolution.x > 0 && bitmap.Resolution.y > 0)
-				context.JacketTexture.Load({ CustomDraw::GPUPixelFormat::BGRA, CustomDraw::GPUAccessType::Static, bitmap.Resolution, bitmap.BGRA.get() });
-			context.SongJacketFadeAnimationTarget = !context.JacketTexture.IsValid() ? 0.0f : 1.0f;
+			if (pendingJacketLoad)
+			{
+				auto path = std::move(*pendingJacketLoad);
+				pendingJacketLoad.reset();
+				StartAsyncLoadingSongJacketFile(path);
+			}
+			else
+			{
+				context.SongJacketFilePath = std::move(loadResult.JacketFilePath);
+				context.JacketTexture.Unload();
+				const RasterizedBitmap& bitmap = loadResult.JacketBitmap;
+				if (bitmap.Resolution.x > 0 && bitmap.Resolution.y > 0)
+					context.JacketTexture.Load({ CustomDraw::GPUPixelFormat::BGRA, CustomDraw::GPUAccessType::Static, bitmap.Resolution, bitmap.BGRA.get() });
+				context.SongJacketFadeAnimationTarget = !context.JacketTexture.IsValid() ? 0.0f : 1.0f;
+			}
 		}
 		if (!loadJacketFuture.valid() && !context.JacketTexture.IsValid() &&
 			context.SongJacketFadeAnimationTarget > 0.0f && !context.SongJacketFilePath.empty())

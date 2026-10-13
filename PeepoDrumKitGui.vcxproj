@@ -134,6 +134,9 @@
     <ClCompile Include="src\peepo_drum_kit\chart.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_file_drop.cpp" />
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_save.cpp" />
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_paths.cpp" />
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_asset_save_gui.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_graphics.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_i18n.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_settings_gui.cpp" />
@@ -206,6 +209,8 @@
     <ClInclude Include="src\peepo_drum_kit\chart.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_file_drop.h" />
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_asset_save.h" />
+    <ClInclude Include="src\peepo_drum_kit\chart_editor_asset_paths.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_settings.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_timeline.h" />
     <ClInclude Include="src\peepo_drum_kit\chart_editor_delay_conversion.h" />
