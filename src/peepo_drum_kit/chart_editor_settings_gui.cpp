@@ -1371,25 +1371,30 @@ namespace PeepoDrumKit
 				}
 				if (testPlayCalibrationActive)
 				{
+					static constexpr i32 calibrationCountInCues = 4;
 					const f64 elapsedTicks = (Gui::GetTime() - testPlayCalibrationFirstTick) * 2.0;
+					const f64 measurementTicks = elapsedTicks - calibrationCountInCues;
 					const i32 cueIndex = static_cast<i32>(Floor(elapsedTicks));
-					if (cueIndex >= 0 && cueIndex < 8 && cueIndex > testPlayCalibrationLastCue)
+					if (cueIndex >= 0 && cueIndex < calibrationCountInCues + 8 && cueIndex > testPlayCalibrationLastCue)
 					{
-						context.SfxVoicePool.PlaySound(SoundEffectType::TaikoDon);
+						context.SfxVoicePool.PlaySound(cueIndex < calibrationCountInCues ? SoundEffectType::MetronomeBeat : SoundEffectType::TaikoDon);
 						testPlayCalibrationLastCue = cueIndex;
 					}
 					if (Gui::IsKeyPressed(ImGuiKey_Space, false))
 					{
-						const i32 tapIndex = static_cast<i32>(Round(elapsedTicks));
-						const i32 error = static_cast<i32>(Round((elapsedTicks - tapIndex) * 500.0));
+						const i32 tapIndex = static_cast<i32>(Round(measurementTicks));
+						const i32 error = static_cast<i32>(Round((measurementTicks - tapIndex) * 500.0));
 						if (tapIndex >= 0 && tapIndex < 8 && tapIndex != testPlayCalibrationLastTap && Absolute(error) <= 160)
 						{
 							testPlayCalibrationErrors.push_back(error);
 							testPlayCalibrationLastTap = tapIndex;
 						}
 					}
-					Gui::Text("%d / 8", static_cast<i32>(testPlayCalibrationErrors.size()));
-					if (elapsedTicks > 7.8)
+					if (elapsedTicks < calibrationCountInCues)
+						Gui::Text(UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_COUNT_IN"), Clamp(testPlayCalibrationLastCue + 1, 0, calibrationCountInCues), calibrationCountInCues);
+					else
+						Gui::Text("%d / 8", static_cast<i32>(testPlayCalibrationErrors.size()));
+					if (measurementTicks > 7.8)
 					{
 						testPlayCalibrationActive = false;
 						if (testPlayCalibrationErrors.size() >= 4)

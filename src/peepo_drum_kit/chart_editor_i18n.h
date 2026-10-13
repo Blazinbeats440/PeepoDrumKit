@@ -98,6 +98,11 @@ X("UTILITY_JPOS_EASE_OUT_IN", "Ease Out In") \
 X("UTILITY_JPOS_MOTION", "JPOS Motion Generator") \
 X("UTILITY_JPOS_MOTION_DESC", "Generate movement in the current range. All positions are relative to the position at the start of the range.") \
 X("UTILITY_JPOS_MOTION_TYPE", "Motion") \
+X("UTILITY_JPOS_NUMBER_FORMAT", "Number format") \
+X("UTILITY_JPOS_FORMAT_STANDARD", "Standard (current)") \
+X("UTILITY_JPOS_FORMAT_INTEGER", "Integers only") \
+X("UTILITY_JPOS_FORMAT_DECIMAL6", "Up to 6 decimal places") \
+X("UTILITY_JPOS_FORMAT_COMPAT_DESC", "Round X/Y arrival positions to the selected precision. Movement times use decimals, and JPOSSCROLL numbers are saved without scientific notation.") \
 X("UTILITY_JPOS_ONE_WAY", "One way") \
 X("UTILITY_JPOS_ROUND_TRIP", "Round trip") \
 X("UTILITY_JPOS_SHAKE", "Shake") \
@@ -178,7 +183,10 @@ X("UTILITY_JPOS_GENERATE", "Generate") \
 X("UTILITY_JPOS_GENERATED", "Last generation: %d JPOS commands. Undo once to remove them before adjusting and regenerating.") \
 X("UTILITY_BARLINE_GIMMICK", "Bar Line Gimmick Generator") \
 X("UTILITY_BARLINE_DESC", "Split the selected range into short measures. Original boundaries inside the range are replaced; surrounding bar positions and note/event timing are preserved. Undo once to restore the state before generation.") \
-X("UTILITY_BARLINE_RATE", "Target bar lines per second") \
+X("UTILITY_BARLINE_RATE", "Base bar lines per second") \
+X("UTILITY_BARLINE_MULTIPLIER", "Density multiplier") \
+X("UTILITY_BARLINE_TARGET_RATE", "Target density after multiplier: %.6g bar lines/s") \
+X("UTILITY_BARLINE_INVALID_MULTIPLIER", "Enter a finite, positive density multiplier.") \
 X("UTILITY_BARLINE_APPLY_SCROLL", "Apply SCROLL") \
 X("UTILITY_BARLINE_SCROLL_MODE", "SCROLL mode") \
 X("UTILITY_BARLINE_SCROLL_SINGLE", "Single value") \
@@ -385,7 +393,8 @@ X("SETTINGS_TEST_PLAY_LOOP_RANGE", "Repeat selected range") \
 X("SETTINGS_TEST_PLAY_LOOP_DELAY", "Delay between repeats (ms)") \
 X("SETTINGS_TEST_PLAY_PLAYBACK_SPEED", "Playback speed (%)") \
 X("SETTINGS_TEST_PLAY_PLAYBACK_SPEED_DESC", "Judgement windows stay measured in real milliseconds.") \
-X("SETTINGS_TEST_PLAY_CALIBRATION_DESC", "Tap Space with the eight evenly spaced drum sounds to estimate input latency.") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_DESC", "After four metronome count-in sounds, tap Space with the eight evenly spaced drum sounds to estimate input latency.") \
+X("SETTINGS_TEST_PLAY_CALIBRATION_COUNT_IN", "Count-in: %d / %d") \
 X("SETTINGS_TEST_PLAY_CALIBRATION_START", "Measure input latency") \
 X("SETTINGS_TEST_PLAY_CALIBRATION_STOP", "Stop measuring") \
 X("SETTINGS_TEST_PLAY_CALIBRATION_CANDIDATE", "Suggested compensation") \
@@ -519,6 +528,14 @@ X("SETTINGS_TIMELINE_LOOP_PLAYBACK", "Timeline: Loop Playback") \
 X("SETTINGS_TIMELINE_LOOP_PLAYBACK_DESC", "When enabled, playback repeats the selected range on the timeline.") \
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Auto-Step After Note Input") \
 X("SETTINGS_TIMELINE_AUTO_STEP_AFTER_NOTE_INPUT_DESC", "When enabled, the cursor advances by the current grid interval after placing a note. The shortcut is F7.") \
+X("TIMELINE_STATUS_GRID_BAR", "Grid origin: Bar start") \
+X("TIMELINE_STATUS_GRID_SONG", "Grid origin: Song start") \
+X("TIMELINE_STATUS_AUTO_STEP_ON", "Auto-step after note input: On") \
+X("TIMELINE_STATUS_AUTO_STEP_OFF", "Auto-step after note input: Off") \
+X("TIMELINE_STATUS_CURSOR_FOLLOW_ON", "Follow cursor during playback: On") \
+X("TIMELINE_STATUS_CURSOR_FOLLOW_OFF", "Follow cursor during playback: Off") \
+X("TIMELINE_STATUS_LOOP_PLAYBACK_ON", "Loop playback: On") \
+X("TIMELINE_STATUS_LOOP_PLAYBACK_OFF", "Loop playback: Off") \
 X("SETTINGS_EVENT_SHOW_SUDDEN", "Chart Events: Show Sudden") \
 X("SETTINGS_EVENT_SHOW_SUDDEN_DESC", "Show the Sudden field in the Chart Events window. It is always shown when the chart contains #SUDDEN.") \
 X("SETTINGS_EVENT_SHOW_JPOS_SCROLL", "Chart Events: Show JPOS Scroll") \

@@ -391,6 +391,7 @@ namespace PeepoDrumKit
 		Complex Move;
 		f32 Duration;
 		b8 IsSelected;
+		JPOSNumberFormat NumberFormat = JPOSNumberFormat::Standard;
 	};
 	template <> constexpr std::string_view DisplayNameOfChartEvent<JPOSScrollChange> = "JPOSScroll";
 

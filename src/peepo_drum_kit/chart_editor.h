@@ -133,8 +133,6 @@ namespace PeepoDrumKit
 		i32 screenshotWindowDelay = 0;
 		ChartGamePreview screenshotPreview = {};
 		ImDrawList* screenshotDrawList = nullptr;
-		std::string screenshotStatus;
-		f64 screenshotStatusUntil = 0.0;
 		struct VideoExportData
 		{
 			enum class RangeMode { Full, SelectedRange, Preview, Marker };

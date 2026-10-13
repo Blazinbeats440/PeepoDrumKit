@@ -1984,6 +1984,15 @@ namespace PeepoDrumKit
 		}
 
 		DrawVideoExportWindow();
+		if (!context.StatusMessage.empty() && Gui::GetTime() < context.StatusMessageUntil)
+		{
+			Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
+			Gui::SetNextWindowPos(vec2(Gui::GetMainViewport()->WorkPos) + vec2(16.0f));
+			if (Gui::Begin("##EditorStatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+				ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoFocusOnAppearing))
+				Gui::TextUnformatted(context.StatusMessage.c_str());
+			Gui::End();
+		}
 		DrawScreenshotPreview();
 		context.Undo.FlushAndExecuteEndOfFrameCommands();
 		for (auto& recording : gamePreview.RecordedVideoRoutes)

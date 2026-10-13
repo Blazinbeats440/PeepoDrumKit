@@ -112,9 +112,9 @@ int main()
 			check(original.JPOSScrollChanges[index].Move == actual.JPOSScrollChanges[index].Move
 				&& original.JPOSScrollChanges[index].Duration == actual.JPOSScrollChanges[index].Duration, "JPOS values stay unchanged");
 	};
-	const auto verify = [&](const std::string& body, Beat start, Beat end, int rate, int bpm = 120)
+	const auto verify = [&](const std::string& body, Beat start, Beat end, int rate, int bpm = 120, float multiplier = 1.0f)
 	{
-		scenario = "BPM " + std::to_string(bpm) + ", rate " + std::to_string(rate) + ", ticks "
+		scenario = "BPM " + std::to_string(bpm) + ", rate " + std::to_string(rate) + ", multiplier " + std::to_string(multiplier) + ", ticks "
 			+ std::to_string(start.Ticks) + ".." + std::to_string(end.Ticks) + "\n" + body;
 		ChartContext editor;
 		parse(body, editor.Chart, bpm);
@@ -127,7 +127,7 @@ int main()
 		editor.RangeSelection = { end, start, true, true };
 		editor.Marker = { end, true };
 		editor.SetCursorBeat(start);
-		auto plan = BuildBarLineGimmickPlan(edited, start, end, rate);
+		auto plan = BuildBarLineGimmickPlan(edited, start, end, rate, multiplier);
 		check(plan.Error == BarLineGimmickError::None, "Supported selection produces a valid generation plan");
 		if (plan.Error != BarLineGimmickError::None) return;
 		const Beat firstBar = plan.FirstBar, afterBar = plan.AfterBar;
@@ -169,7 +169,7 @@ int main()
 		editor.Undo.Redo();
 		check(sameSignatures(generated, edited), "One redo restores the same generation");
 		verifyUnchanged(original, edited); verifyBars(edited);
-		const auto repeated = BuildBarLineGimmickPlan(edited, start, end, rate);
+		const auto repeated = BuildBarLineGimmickPlan(edited, start, end, rate, multiplier);
 		editor.Undo.Execute<Commands::GenerateBarLineGimmick>(&edited, repeated);
 		check(editor.Undo.UndoStack.size() == 2 && sameSignatures(generated, edited), "Repeating generation is a separate undo operation without accumulating signatures");
 		editor.Undo.Undo();
@@ -202,6 +202,14 @@ int main()
 	verify("#DELAY 0.25\n1000,\n2000,\n#DELAY -0.125\n3000,\n4000,", Beat::FromBeats(3), Beat::FromBeats(5), 120);
 	verify("1000,\n2000,\n#BRANCHSTART p,50,80\n#N\n1000,\n#E\n2000,\n#M\n3000,\n#BRANCHEND\n4000,", Beat::FromBeats(3), Beat::FromBeats(5), 120);
 	verify("#JPOSSCROLL 0.5 100 1\n1000,\n2000,\n3000,\n4000,", Beat::FromBeats(3), Beat::FromBeats(5), 120);
+	verify(plain, Beat::FromBeats(3), Beat::FromBeats(5), 120, 120, 2.0f);
+	verify(plain, Beat::FromBeats(3), Beat::FromBeats(5), 120, 120, 0.5f);
+	verify(plain, Beat::FromBeats(3) + Beat::FromTicks(1), Beat::FromBeats(5) + Beat::FromTicks(2), 60, 123, 0.75f);
+	verify(plain, Beat::FromBeats(3), Beat::FromBeats(5), 30, 175, 1.5f);
+	verify("1000,\n#BPMCHANGE 180\n2000,\n3000,", Beat::FromBeats(3), Beat::FromBeats(5) + Beat::FromTicks(1), 120, 120, 1.25f);
+	verify(plain, Beat::FromBeats(3), Beat::FromBeats(5), 120, 120, 0.01f);
+	verify(plain, Beat::FromBeats(3), Beat::FromBeats(5), 120, 120, std::numeric_limits<float>::min());
+	verify(plain, Beat::FromTicks(1), Beat::FromTicks(21), 120, 120, std::numeric_limits<float>::max());
 	const auto sameScrolls = [](const ChartCourse& first, const ChartCourse& second)
 	{
 		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
@@ -230,9 +238,9 @@ int main()
 		return true;
 	};
 	const auto verifyScroll = [&](const std::string& body, Beat start, Beat end, float startValue, float endValue, bool interpolate,
-		bool hideNoteBars = false, bool applyScroll = true)
+		bool hideNoteBars = false, bool applyScroll = true, float multiplier = 1.0f)
 	{
-		scenario = "SCROLL " + std::to_string(startValue) + ".." + std::to_string(endValue) + ", ticks "
+		scenario = "SCROLL " + std::to_string(startValue) + ".." + std::to_string(endValue) + ", multiplier " + std::to_string(multiplier) + ", ticks "
 			+ std::to_string(start.Ticks) + ".." + std::to_string(end.Ticks) + "\n" + body;
 		ChartContext editor;
 		parse(body, editor.Chart);
@@ -247,7 +255,7 @@ int main()
 		editor.RangeSelection = { start, end, true, true };
 		editor.Marker = { end, true };
 		editor.SetCursorBeat(start);
-		auto plan = BuildBarLineGimmickPlan(edited, start, end, 120);
+		auto plan = BuildBarLineGimmickPlan(edited, start, end, 120, multiplier);
 		if (applyScroll) AddBarLineGimmickScrollToPlan(edited, plan, startValue, endValue, interpolate);
 		if (hideNoteBars) AddBarLineGimmickNoteVisibilityToPlan(edited, plan);
 		check(plan.Error == BarLineGimmickError::None, "SCROLL settings produce a valid plan");
@@ -362,7 +370,32 @@ int main()
 	verifyScroll("1000,", Beat::Zero(), Beat::FromTicks(1), 2.0f, 4.0f, true, true);
 	verifyScroll("#BARLINEOFF\n0000,", Beat::Zero(), Beat::FromBeats(1), 2.0f, 4.0f, true, true);
 	verifyScroll("#SCROLL 1.25\n1111,\n0000,", Beat::Zero(), Beat::FromBars(1), 2.0f, 4.0f, true, true, false);
+	verifyScroll("#SCROLL 1.25\n1111,\n0000,", Beat::Zero(), Beat::FromBars(1), 2.0f, 4.0f, true, true, true, 2.0f);
+	verifyScroll("#SCROLL 1.25\n5000,\n8000,", Beat::FromBeats(3), Beat::FromBeats(5), 2.0f, 2.0f, false, true, true, 0.5f);
+	verifyScroll("1000,\n#BPMCHANGE 180\n2000,\n3000,", Beat::FromBeats(3) + Beat::FromTicks(1), Beat::FromBeats(5) + Beat::FromTicks(2),
+		2.0f, 4.0f, true, true, true, 0.75f);
 	scenario.clear();
+	const auto explicitOne = BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, 1.0f);
+	check(explicitOne.MeasureCount == centralPlan.MeasureCount && explicitOne.Segments[0].Denominator == centralPlan.Segments[0].Denominator,
+		"Multiplier one keeps the existing density");
+	const auto doubled = BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, 2.0f);
+	check(doubled.MeasureCount == centralPlan.MeasureCount * 2 && doubled.Segments[0].Denominator == 480,
+		"Multiplier two doubles a density that fits the tick resolution exactly");
+	const auto halved = BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, 0.5f);
+	check(halved.MeasureCount * 2 == centralPlan.MeasureCount && halved.Segments[0].Denominator == 120,
+		"Multiplier one half halves a density that fits the tick resolution exactly");
+	check(BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 30, 4.0f).Segments[0].Denominator == 240,
+		"Base rate thirty times four matches base rate one hundred twenty");
+	check(BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, std::numeric_limits<float>::max()).Segments[0].Denominator == 40320,
+		"An extremely large multiplier rounds to the maximum supported denominator");
+	check(BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, std::numeric_limits<float>::min()).Segments[0].Denominator == 1,
+		"An extremely small positive multiplier rounds to the minimum supported denominator");
+	for (float invalid : { 0.0f, -1.0f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN() })
+	{
+		const auto invalidPlan = BuildBarLineGimmickPlan(*central.Courses[0], centralPlan.Start, centralPlan.End, 120, invalid);
+		check(invalidPlan.Error == BarLineGimmickError::Multiplier && invalidPlan.ErrorBeat == centralPlan.Start
+			&& invalidPlan.AddItems.empty() && invalidPlan.RemoveItems.empty(), "Nonpositive and nonfinite multipliers are rejected without a partial plan");
+	}
 	for (float invalid : { std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN() })
 	{
 		auto invalidStart = centralPlan;
@@ -378,8 +411,12 @@ int main()
 	ChartCourse rounded = *central.Courses[0];
 	rounded.TempoMap.Tempo[0].Tempo = Tempo(123.0f);
 	check(BuildBarLineGimmickPlan(rounded, Beat::Zero(), Beat::FromBars(1), 120).Segments[0].Denominator == 240, "BPM 123 rounds to supported 1/240");
+	check(BuildBarLineGimmickPlan(rounded, Beat::Zero(), Beat::FromBars(1), 60, 0.75f).Segments[0].Denominator == 90,
+		"A fractional multiplier is included before rounding the denominator");
 	rounded.TempoMap.Tempo[0].Tempo = Tempo(175.0f);
 	check(BuildBarLineGimmickPlan(rounded, Beat::Zero(), Beat::FromBars(1), 120).Segments[0].Denominator == 168, "BPM 175 rounds to the nearest supported unit-fraction denominator");
+	check(BuildBarLineGimmickPlan(rounded, Beat::Zero(), Beat::FromBars(1), 120, 2.0f).Segments[0].Denominator == 336,
+		"A multiplied density rounds to a supported denominator at BPM 175");
 	const Beat shiftedStart = Beat::FromBeats(3) + Beat::FromTicks(1), shiftedEnd = Beat::FromBeats(5) + Beat::FromTicks(2);
 	ChartCourse crossed = *central.Courses[0];
 	Undo::UndoHistory crossedUndo;

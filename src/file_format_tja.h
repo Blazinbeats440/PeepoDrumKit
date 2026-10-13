@@ -3,6 +3,7 @@
 #include "core_io.h"
 #include "core_string.h"
 #include "core_beat.h"
+#include "core_jpos.h"
 #include <vector>
 #include <cstdarg>
 #include <map>
@@ -416,7 +417,7 @@ namespace TJA
 			struct { Time Value; } ChangeDelay;
 			struct { Complex Value; i32 BranchIndex = -1, CommandOrder = -1; } ChangeScrollSpeed;
 			struct { i8 Method;  } ChangeScrollType;
-			struct { Time Duration; Complex Move; } ChangeJPOSScroll;
+			struct { Time Duration; Complex Move; JPOSNumberFormat NumberFormat = JPOSNumberFormat::Standard; } ChangeJPOSScroll;
 			struct { b8 Visible; } ChangeBarLine;
 			struct { BranchCondition Condition; i32 RequirementExpert; i32 RequirementMaster; } BranchStart;
 			struct { std::string Value; } SetLyricLine;
@@ -587,6 +588,7 @@ namespace TJA
 		Beat TimeWithinMeasure;
 		Complex Move;
 		f32 Duration;
+		JPOSNumberFormat NumberFormat = JPOSNumberFormat::Standard;
 	};
 
 	struct ConvertedMeasure

@@ -13,6 +13,7 @@ namespace PeepoDrumKit
 		JPOSEasing Easing = JPOSEasing::EaseOut;
 		f32 EasingStrength = 1.0f;
 		JPOSMotionSettings Motion;
+		JPOSNumberFormat NumberFormat = JPOSNumberFormat::Standard;
 		i32 LastGeneratedCount = 0;
 		void DrawGui(ChartContext& context, const ChartTimeline& timeline);
 	};
@@ -20,6 +21,7 @@ namespace PeepoDrumKit
 	struct BarLineGimmickUtility
 	{
 		i32 Rate = 120, LastGeneratedCount = 0;
+		f32 DensityMultiplier = 1.0f;
 		b8 ApplyScroll = false, InterpolateScroll = false, HideNoteBarLines = false;
 		f32 ScrollStart = 1.0f, ScrollEnd = 1.0f;
 		void DrawGui(ChartContext& context);

@@ -86,8 +86,16 @@ namespace PeepoDrumKit
 		f32 SongJacketFadeAnimationTarget = 0.0f;
 
 		Undo::UndoHistory Undo;
+		std::string StatusMessage;
+		f64 StatusMessageUntil = 0.0;
 
 	public:
+		void ShowStatusMessage(std::string message, f64 durationSeconds = 3.0)
+		{
+			StatusMessage = std::move(message);
+			StatusMessageUntil = Gui::GetTime() + durationSeconds;
+		}
+
 		inline Time BeatToTime(Beat beat) const { return ChartSelectedCourse->TempoMap.BeatToTime(beat); }
 		inline Time BeatToPlaybackTime(Beat beat) const { return ChartSelectedCourse->BeatToPlaybackTime(beat, ChartSelectedBranch); }
 		inline Beat PlaybackTimeToBeat(Time time, bool truncTo0 = false) const { return ChartSelectedCourse->PlaybackTimeToBeat(time, ChartSelectedBranch, PlaybackBeatHint, truncTo0); }

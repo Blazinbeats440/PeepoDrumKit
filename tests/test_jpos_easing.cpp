@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 
 using namespace PeepoDrumKit;
 
@@ -18,7 +19,7 @@ namespace PeepoDrumKit
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap() { return {}; }
 }
 
-int main()
+int wmain(int argc, wchar_t* argv[])
 {
 	int failures = 0;
 	const auto check = [&](bool condition, const char* name)
@@ -768,6 +769,223 @@ int main()
 		check(curveCourse.JPOSScrollChanges.size() == generated.Segments.size() + 1, "Curved motion redo restores every segment");
 	}
 
+	check(FormatJPOSMove({ 0.38443f, 7.29907e-06f }, JPOSNumberFormat::Decimal6) == "0.38443+0.000007i",
+		"Tiny imaginary movements use at most six decimal places without an exponent");
+	check(FormatJPOSMove({ -5.67058e-05f, -0.0000001f }, JPOSNumberFormat::Decimal6) == "-0.000057",
+		"Tiny real movements are rounded and zero imaginary components are omitted");
+	check(FormatJPOSMove({ -0.1f, -0.0f }, JPOSNumberFormat::Integer) == "0" &&
+		FormatJPOSMove({ 1.5f, -2.5f }, JPOSNumberFormat::Integer) == "2-3i", "Integer output rounds both signs and avoids negative zero");
+	check(FormatJPOSDecimal(10000000.0, 6) == "10000000" && FormatJPOSDecimal(0.003f, 6) == "0.003",
+		"Fixed output preserves large integers and short fractional movement times");
+	check(InferJPOSNumberFormat("1e-6+2e-6i") == JPOSNumberFormat::Standard &&
+		InferJPOSNumberFormat("0.0000001i") == JPOSNumberFormat::Standard &&
+		InferJPOSNumberFormat("1-2i") == JPOSNumberFormat::Integer &&
+		InferJPOSNumberFormat("0.000001-2i") == JPOSNumberFormat::Decimal6, "Reload distinguishes exponent, integer and six-place values");
+	JPOSMotionSettings integerMotion;
+	integerMotion.Type = JPOSMotionType::OneWay;
+	const auto integerFine = GenerateJPOSMotionOnGrid(0, endTicks, { 1, -1 }, JPOSEasing::Linear, beatToSeconds, 1.0,
+		integerMotion, nextGrid16, JPOSNumberFormat::Integer);
+	check(sumMoves(integerFine) == std::complex<double>(1, -1) && integerFine.Segments.size() == 16,
+		"Subpixel segments retain the total integer movement and every timing boundary");
+	const auto standardFine = GenerateJPOSMotionOnGrid(0, endTicks, { 1, -1 }, JPOSEasing::Linear, beatToSeconds, 1.0, integerMotion, nextGrid16);
+	check(standardFine.Segments.front().Move == std::complex<float>(0.0625f, -0.0625f), "Standard generation retains fractional movement");
+	const auto integerHalf = GenerateJPOSMotionOnGrid(0, endTicks, { 0.5f, -0.5f }, JPOSEasing::EaseOut, beatToSeconds, 4.0,
+		integerMotion, nextGrid16, JPOSNumberFormat::Integer);
+	check(sumMoves(integerHalf) == std::complex<double>(1, -1), "Exact half-pixel destinations round correctly after fine subdivision");
+
+	const auto getJPOSLines = [](std::string_view text)
+	{
+		std::vector<std::string> lines;
+		for (const auto line : TJA::SplitLines(text))
+		{
+			const auto trimmed = ASCII::Trim(line);
+			if (trimmed.substr(0, 12) == "#JPOSSCROLL ") lines.emplace_back(trimmed);
+		}
+		return lines;
+	};
+	for (const auto format : { JPOSNumberFormat::Integer, JPOSNumberFormat::Decimal6 })
+	{
+		const std::regex linePattern(format == JPOSNumberFormat::Integer ?
+			"^#JPOSSCROLL [0-9]+(?:\\.[0-9]{1,6})? -?[0-9]+(?:[+-][0-9]+i)? 1$" :
+			"^#JPOSSCROLL [0-9]+(?:\\.[0-9]{1,6})? -?[0-9]+(?:\\.[0-9]{1,6})?(?:[+-][0-9]+(?:\\.[0-9]{1,6})?i)? 1$");
+		for (const auto type : { JPOSMotionType::OneWay, JPOSMotionType::RoundTrip, JPOSMotionType::Shake, JPOSMotionType::Ellipse,
+			JPOSMotionType::Bounce, JPOSMotionType::Zigzag, JPOSMotionType::Polygon, JPOSMotionType::Waypoints })
+		{
+			JPOSMotionSettings settings;
+			settings.Type = type; settings.Repetitions = 2; settings.RoundTrips = 2;
+			settings.StartAngle = 35; settings.RotationAngle = 17; settings.JumpDamped = true; settings.Damped = true;
+			settings.Waypoints = { { 0, {} }, { 25, { 0.5f, -0.5f } }, { 50, { 0.5f, -0.5f } }, { 100, { 100.375f, -33.125f } } };
+			const auto generated = GenerateJPOSMotionOnGrid(0, endTicks, { 100.375f, -33.125f }, JPOSEasing::EaseOut, beatToSeconds, 2.5,
+				settings, nextGrid16, format);
+			check(generated.Error == JPOSEasingError::None && !generated.Segments.empty(), "Every motion supports both compatibility formats");
+			if (generated.Error != JPOSEasingError::None) continue;
+			std::complex<double> writtenPosition = {};
+			for (const auto& segment : generated.Segments)
+			{
+				writtenPosition += std::complex<double>(RoundJPOSValue(segment.Move.real(), format), RoundJPOSValue(segment.Move.imag(), format));
+				const auto target = segment.TargetPosition;
+				check(std::abs(writtenPosition.real() - RoundJPOSValue(target.real(), format)) < 0.00001 &&
+					std::abs(writtenPosition.imag() - RoundJPOSValue(target.imag(), format)) < 0.00001,
+					"Serialized positions follow rounded targets without accumulating error");
+				if (format == JPOSNumberFormat::Integer)
+					check(segment.Move.real() == std::round(segment.Move.real()) && segment.Move.imag() == std::round(segment.Move.imag()),
+						"Integer mode only inserts integral X and Y values");
+			}
+			const bool returns = type == JPOSMotionType::RoundTrip || type == JPOSMotionType::Shake || type == JPOSMotionType::Ellipse || type == JPOSMotionType::Polygon;
+			check(std::abs(writtenPosition - (returns ? std::complex<double>{} : std::complex<double>(RoundJPOSValue(100.375, format), RoundJPOSValue(-33.125, format)))) < 0.00001,
+				"Compatibility motions finish at the rounded destination or return to the origin");
+			converted.Measures[0].JPOSScrollChanges.clear();
+			for (const auto& segment : generated.Segments)
+				converted.Measures[0].JPOSScrollChanges.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move), segment.DurationSeconds, format });
+			parsed.Courses[0].ChartCommands.clear();
+			TJA::ConvertConvertedMeasuresToParsedCommands(converted.Measures, parsed.Courses[0].ChartCommands);
+			output.clear(); TJA::ConvertParsedToText(parsed, output, TJA::SaveFormat::Current);
+			if (UTF8::HasBOM(output)) output.erase(0, sizeof(UTF8::BOM_UTF8));
+			int commandCount = 0;
+			for (const auto line : TJA::SplitLines(output))
+			{
+				const auto trimmed = ASCII::Trim(line);
+				if (trimmed.substr(0, 12) != "#JPOSSCROLL ") continue;
+				++commandCount;
+				check(std::regex_match(trimmed.begin(), trimmed.end(), linePattern), "Saved compatibility commands have no exponents and respect decimal limits");
+			}
+			check(commandCount == generated.Segments.size(), "Compatibility saving retains zero moves and all timing boundaries");
+			TJA::ErrorList errors;
+			const auto compatibleParsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(output)), errors);
+			check(errors.Errors.empty() && compatibleParsed.Courses.size() == 1, "Compatibility output reparses without errors");
+			if (compatibleParsed.Courses.empty()) continue;
+			const auto compatibleReloaded = TJA::ConvertParsedToConvertedCourse(compatibleParsed, compatibleParsed.Courses[0]);
+			TJA::ParsedTJA savedAgain = compatibleParsed;
+			savedAgain.Courses[0].ChartCommands.clear();
+			TJA::ConvertConvertedMeasuresToParsedCommands(compatibleReloaded.Measures, savedAgain.Courses[0].ChartCommands);
+			std::string secondOutput;
+			TJA::ConvertParsedToText(savedAgain, secondOutput, TJA::SaveFormat::Current);
+			if (UTF8::HasBOM(secondOutput)) secondOutput.erase(0, sizeof(UTF8::BOM_UTF8));
+			check(getJPOSLines(secondOutput) == getJPOSLines(output), "Save, reload and resave preserve compatible command text");
+			ChartCourse compatibleCourse;
+			std::vector<JPOSScrollChange> compatibleEvents;
+			for (const auto& segment : generated.Segments)
+				compatibleEvents.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move), segment.DurationSeconds, false, format });
+			Undo::UndoHistory compatibleUndo;
+			compatibleUndo.Execute<Commands::AddMultipleChartEvents<JPOSScrollChange>>(&compatibleCourse, &compatibleCourse.JPOSScrollChanges, std::move(compatibleEvents));
+			compatibleUndo.Undo(); compatibleUndo.Redo();
+			check(compatibleCourse.JPOSScrollChanges.size() == generated.Segments.size() &&
+				std::all_of(compatibleCourse.JPOSScrollChanges.begin(), compatibleCourse.JPOSScrollChanges.end(),
+					[&](const JPOSScrollChange& event) { return event.NumberFormat == format; }), "Undo and redo retain each generated command's number format");
+		}
+	}
+
+	const std::regex exponentPattern("[0-9][eE][+-]?[0-9]");
+	const auto hasNumericExponent = [&](std::string_view text)
+	{
+		for (const auto line : TJA::SplitLines(text))
+		{
+			const auto trimmed = ASCII::Trim(line);
+			for (const cstr prefix : { "BPM:", "OFFSET:", "DEMOSTART:", "SONGVOL:", "SEVOL:",
+				"#BPMCHANGE ", "#DELAY ", "#SCROLL ", "#SUDDEN ", "#JPOSSCROLL " })
+				if (ASCII::StartsWith(trimmed, prefix) && std::regex_search(trimmed.begin(), trimmed.end(), exponentPattern)) return true;
+		}
+		return false;
+	};
+	TJA::ErrorList regressionErrors;
+	const auto exponentFixture = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+		"TITLE:1e-6 title\nWAVE:song1e-6.ogg\nBPM:1.25e+6\nDEMOSTART:1e-6\nSONGVOL:1e-6\nSEVOL:2e-6\nCOURSE:Oni\n#START\n"
+		"// Keep 1e-6 in comments\n#BPMCHANGE 2e-5\n#DELAY 1e-6\n#SCROLL 1e-5-2e-5i\n#SUDDEN 1e-5 2e-6\n"
+		"#JPOSSCROLL 0.045 0.104665-2.82554e-15i 1\n#LYRIC 1e-6 lyric\n1000,\n#END\n")), regressionErrors);
+	check(regressionErrors.Errors.empty(), "Reported tiny JPOS residue and exponent-valued numeric headers parse");
+	for (const auto saveFormat : { TJA::SaveFormat::Current, TJA::SaveFormat::ANSI_CRLF })
+	{
+		auto fixture = exponentFixture;
+		for (const auto numberFormat : { JPOSNumberFormat::Standard, JPOSNumberFormat::Decimal6, JPOSNumberFormat::Integer })
+		{
+			for (auto& command : fixture.Courses[0].ChartCommands)
+				if (command.Type == TJA::ParsedChartCommandType::SetJPOSScroll) command.Param.ChangeJPOSScroll.NumberFormat = numberFormat;
+			std::string text;
+			TJA::ConvertParsedToText(fixture, text, saveFormat);
+			check(!hasNumericExponent(text), "Final TJA numeric output has no exponents, including standard-mode commands");
+			check(text.find("TITLE:1e-6 title") != std::string::npos && text.find("WAVE:song1e-6.ogg") != std::string::npos &&
+				text.find("#LYRIC 1e-6 lyric") != std::string::npos && text.find("Keep 1e-6 in comments") != std::string::npos,
+				"Numeric exponent expansion leaves titles, file paths, lyrics and comments intact");
+			if (numberFormat == JPOSNumberFormat::Decimal6)
+				check(text.find("#JPOSSCROLL 0.045 0.104665 1") != std::string::npos, "Reported imaginary residue is omitted in six-place mode");
+			if (numberFormat == JPOSNumberFormat::Standard)
+				check(text.find("0.104665-0.00000000000000282554i") != std::string::npos, "Standard mode expands tiny values without changing their magnitude");
+			for (int iteration = 0; iteration < 3; ++iteration)
+			{
+				if (UTF8::HasBOM(text)) text.erase(0, sizeof(UTF8::BOM_UTF8));
+				TJA::ErrorList rereadErrors;
+				const auto reread = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(text)), rereadErrors);
+				check(rereadErrors.Errors.empty(), "Expanded numeric commands reparse without errors");
+				text.clear(); TJA::ConvertParsedToText(reread, text, saveFormat);
+				check(!hasNumericExponent(text), "Repeated saves never restore scientific notation");
+			}
+		}
+	}
+	const auto denseSeconds = [](int32_t ticks) { return ticks * 0.045; };
+	const auto denseGrid = [](int32_t ticks) { return ticks + 1; };
+	for (const float damping : { 0.0f, 1.0f, 2.5f, 4.0f })
+	{
+		JPOSMotionSettings dampedBounce;
+		dampedBounce.Type = JPOSMotionType::Bounce; dampedBounce.Repetitions = 4;
+		dampedBounce.JumpHeight = 180; dampedBounce.JumpDamped = true; dampedBounce.JumpDampingStrength = damping;
+		const auto bounce = GenerateJPOSMotionOnGrid(0, 1000, { 100, 0 }, JPOSEasing::EaseOut, denseSeconds, 2.5,
+			dampedBounce, denseGrid, JPOSNumberFormat::Decimal6);
+		check(bounce.Error == JPOSEasingError::None && !bounce.Segments.empty(), "Dense damped jumps generate in six-place mode");
+		if (bounce.Error != JPOSEasingError::None) continue;
+		for (const auto& segment : bounce.Segments)
+			for (const float component : { segment.Move.real(), segment.Move.imag() })
+				check(component == 0.0f || std::abs(component) >= 0.0000005f, "Generated data contains no sub-six-place cancellation residues");
+		check(std::abs(sumMoves(bounce) - std::complex<double>(100, 0)) < 0.0001, "Dense damped jumps retain their destination");
+		TJA::ParsedTJA bounceTJA = exponentFixture;
+		bounceTJA.Courses[0].ChartCommands.clear();
+		for (const auto& segment : bounce.Segments)
+		{
+			auto& command = bounceTJA.Courses[0].ChartCommands.emplace_back();
+			command.Type = TJA::ParsedChartCommandType::SetJPOSScroll;
+			command.Param.ChangeJPOSScroll.Duration = Time::FromSec(segment.DurationSeconds);
+			command.Param.ChangeJPOSScroll.Move = Complex(segment.Move);
+			// Simulate a legacy edit or clipboard path that loses the format flag.
+			command.Param.ChangeJPOSScroll.NumberFormat = JPOSNumberFormat::Standard;
+		}
+		std::string text;
+		TJA::ConvertParsedToText(bounceTJA, text, TJA::SaveFormat::Current);
+		check(!hasNumericExponent(text), "Final saved jumps have no exponents even if format metadata was lost");
+	}
+
+	if (argc > 1)
+	{
+		std::ifstream chartFile(argv[1], std::ios::binary);
+		check(chartFile.is_open(), "User chart opens for read-only final-output verification");
+		if (chartFile.is_open())
+		{
+			std::string chartText{ std::istreambuf_iterator<char>(chartFile), std::istreambuf_iterator<char>() };
+			if (UTF8::HasBOM(chartText)) chartText.erase(0, sizeof(UTF8::BOM_UTF8));
+			TJA::ErrorList chartErrors;
+			const auto chartParsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(chartText)), chartErrors);
+			check(chartErrors.Errors.empty(), "User chart parses for output verification");
+			for (const auto saveFormat : { TJA::SaveFormat::Current, TJA::SaveFormat::ANSI_CRLF })
+			{
+				TJA::ParsedTJA current = chartParsed;
+				for (int iteration = 0; iteration < 3; ++iteration)
+				{
+					for (auto& course : current.Courses)
+					{
+						const auto measures = TJA::ConvertParsedToConvertedCourse(current, course);
+						course.ChartCommands.clear();
+						TJA::ConvertConvertedMeasuresToParsedCommands(measures.Measures, course.ChartCommands);
+					}
+					std::string savedText;
+					TJA::ConvertParsedToText(current, savedText, saveFormat);
+					check(!hasNumericExponent(savedText), "User chart's final numeric output contains no scientific notation");
+					if (UTF8::HasBOM(savedText)) savedText.erase(0, sizeof(UTF8::BOM_UTF8));
+					TJA::ErrorList savedErrors;
+					current = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(savedText)), savedErrors);
+					check(savedErrors.Errors.empty(), "User chart reparses after exponent-free saving");
+				}
+			}
+			std::cout << "User chart output verification completed in memory\n";
+		}
+	}
 	std::cout << (failures ? "JPOS easing tests failed\n" : "JPOS easing tests passed\n");
 	return failures ? 1 : 0;
 }

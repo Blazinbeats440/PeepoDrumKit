@@ -3,7 +3,7 @@
 
 namespace PeepoDrumKit
 {
-	enum class BarLineGimmickError : u8 { None, InvalidRange, Branches, Delay, Tempo, Signature, Scroll };
+	enum class BarLineGimmickError : u8 { None, InvalidRange, Branches, Delay, Tempo, Signature, Scroll, Multiplier };
 	struct BarLineGimmickSegment
 	{
 		Beat Start = {}, End = {}, Remainder = {};
@@ -57,13 +57,15 @@ namespace PeepoDrumKit
 		}
 	}
 
-	inline BarLineGimmickPlan BuildBarLineGimmickPlan(const ChartCourse& course, Beat start, Beat end, i32 rate)
+	inline BarLineGimmickPlan BuildBarLineGimmickPlan(const ChartCourse& course, Beat start, Beat end, i32 rate, f32 multiplier = 1.0f)
 	{
 		BarLineGimmickPlan plan;
 		plan.Start = start; plan.End = end;
 		const auto fail = [&](BarLineGimmickError error, Beat beat) { plan.Error = error; plan.ErrorBeat = beat; return plan; };
 		if (start < Beat::Zero() || end <= start || (rate != 120 && rate != 60 && rate != 30))
 			return fail(BarLineGimmickError::InvalidRange, start);
+		if (!std::isfinite(multiplier) || multiplier <= 0.0f)
+			return fail(BarLineGimmickError::Multiplier, start);
 		for (const BranchRange& branch : course.Branches)
 			if (branch.GetStart() < end && (GetBranchRangeEnd(course.Branches, branch) > start || branch.GetStart() >= start))
 				return fail(BarLineGimmickError::Branches, Max(start, branch.GetStart()));
@@ -126,7 +128,7 @@ namespace PeepoDrumKit
 			const auto nextTempo = std::upper_bound(course.TempoMap.Tempo.begin(), course.TempoMap.Tempo.end(), segmentStart,
 				[](Beat beat, const TempoChange& change) { return beat < change.Beat; });
 			if (nextTempo != course.TempoMap.Tempo.end()) segmentEnd = Min(segmentEnd, nextTempo->Beat);
-			const f64 targetDenominator = 240.0 * rate / bpm;
+			const f64 targetDenominator = std::clamp(240.0 * rate * multiplier / bpm, 1.0, static_cast<f64>(Beat::FromBars(1).Ticks));
 			i32 denominator = 1;
 			f64 bestDistance = std::abs(targetDenominator - denominator);
 			for (i32 candidate : supportedDenominators)
