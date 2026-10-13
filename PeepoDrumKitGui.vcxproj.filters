@@ -206,6 +206,9 @@
     <ClInclude Include="src\core_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\core_jpos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src_res\resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>

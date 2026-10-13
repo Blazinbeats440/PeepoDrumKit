@@ -165,6 +165,9 @@ namespace PeepoDrumKit
 				if (Gui::Selectable(labels[index], Rate == rates[index])) Rate = rates[index];
 			Gui::EndCombo();
 		}
+		Gui::InputFloat(UI_Str("UTILITY_BARLINE_MULTIPLIER"), &DensityMultiplier, 0.1f, 1.0f, "%g");
+		if (std::isfinite(DensityMultiplier) && DensityMultiplier > 0.0f)
+			Gui::Text(UI_Str("UTILITY_BARLINE_TARGET_RATE"), static_cast<f64>(Rate) * DensityMultiplier);
 		Gui::Checkbox(UI_Str("UTILITY_BARLINE_APPLY_SCROLL"), &ApplyScroll);
 		if (ApplyScroll)
 		{
@@ -190,7 +193,7 @@ namespace PeepoDrumKit
 		BarLineGimmickPlan plan;
 		if (hasRange)
 		{
-			plan = BuildBarLineGimmickPlan(*course, context.RangeSelection.GetMin(), context.RangeSelection.GetMax(), Rate);
+			plan = BuildBarLineGimmickPlan(*course, context.RangeSelection.GetMin(), context.RangeSelection.GetMax(), Rate, DensityMultiplier);
 			if (plan.Error == BarLineGimmickError::None && ApplyScroll && (!std::isfinite(ScrollStart) || (InterpolateScroll && !std::isfinite(ScrollEnd))))
 			{
 				plan.Error = BarLineGimmickError::Scroll;
@@ -225,6 +228,7 @@ namespace PeepoDrumKit
 				if (plan.Error == BarLineGimmickError::Tempo) error = UI_Str("UTILITY_BARLINE_TEMPO");
 				if (plan.Error == BarLineGimmickError::Signature) error = UI_Str("UTILITY_BARLINE_SIGNATURE");
 				if (plan.Error == BarLineGimmickError::Scroll) error = UI_Str("UTILITY_BARLINE_SCROLL_INVALID");
+				if (plan.Error == BarLineGimmickError::Multiplier) error = UI_Str("UTILITY_BARLINE_INVALID_MULTIPLIER");
 				Gui::TextWrapped("%s", error);
 				Gui::Text(UI_Str("UTILITY_BARLINE_ERROR_BEAT"), plan.ErrorBeat.BeatsFraction());
 			}
@@ -246,6 +250,14 @@ namespace PeepoDrumKit
 	void JPOSMotionUtility::DrawGui(ChartContext& context, const ChartTimeline& timeline)
 	{
 		Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_MOTION_DESC"));
+		const cstr numberFormats[] = { UI_Str("UTILITY_JPOS_FORMAT_STANDARD"), UI_Str("UTILITY_JPOS_FORMAT_INTEGER"), UI_Str("UTILITY_JPOS_FORMAT_DECIMAL6") };
+		if (Gui::BeginCombo(UI_Str("UTILITY_JPOS_NUMBER_FORMAT"), numberFormats[static_cast<i32>(NumberFormat)]))
+		{
+			for (i32 index = 0; index < ArrayCountI32(numberFormats); ++index)
+				if (Gui::Selectable(numberFormats[index], index == static_cast<i32>(NumberFormat))) NumberFormat = static_cast<JPOSNumberFormat>(index);
+			Gui::EndCombo();
+		}
+		if (NumberFormat != JPOSNumberFormat::Standard) Gui::TextWrapped("%s", UI_Str("UTILITY_JPOS_FORMAT_COMPAT_DESC"));
 		const cstr types[] = { UI_Str("UTILITY_JPOS_ONE_WAY"), UI_Str("UTILITY_JPOS_ROUND_TRIP"), UI_Str("UTILITY_JPOS_SHAKE"),
 			UI_Str("UTILITY_JPOS_ELLIPSE"), UI_Str("UTILITY_JPOS_BOUNCE"), UI_Str("UTILITY_JPOS_ZIGZAG"), UI_Str("UTILITY_JPOS_POLYGON"), UI_Str("UTILITY_JPOS_WAYPOINTS") };
 		if (Gui::BeginCombo(UI_Str("UTILITY_JPOS_MOTION_TYPE"), types[static_cast<i32>(Motion.Type)]))
@@ -361,7 +373,7 @@ namespace PeepoDrumKit
 			if (timeline.CurrentGridBarDivision > 0 && GetGridBeatSnap(timeline.CurrentGridBarDivision).Ticks > 0)
 			{
 				const auto nextGridTick = [&](int32_t ticks) { return timeline.CeilBeatToCurrentGrid(context, Beat::FromTicks(ticks + 1)).Ticks; };
-				generated = GenerateJPOSMotionOnGrid(start.Ticks, end.Ticks, { MoveX, MoveY }, Easing, beatToSeconds, EasingStrength, Motion, nextGridTick);
+				generated = GenerateJPOSMotionOnGrid(start.Ticks, end.Ticks, { MoveX, MoveY }, Easing, beatToSeconds, EasingStrength, Motion, nextGridTick, NumberFormat);
 			}
 			else generated.Error = JPOSEasingError::InvalidGrid;
 			const JPOSScrollChange* preceding = nullptr;
@@ -405,7 +417,7 @@ namespace PeepoDrumKit
 			std::vector<JPOSScrollChange> events;
 			events.reserve(generated.Segments.size());
 			for (const JPOSEasingSegment& segment : generated.Segments)
-				events.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move.real(), segment.Move.imag()), segment.DurationSeconds, false });
+				events.push_back({ Beat::FromTicks(segment.BeatTicks), Complex(segment.Move.real(), segment.Move.imag()), segment.DurationSeconds, false, NumberFormat });
 			LastGeneratedCount = static_cast<i32>(events.size());
 			context.Undo.Execute<Commands::AddMultipleChartEvents<JPOSScrollChange>>(course, &course->JPOSScrollChanges, std::move(events));
 		}

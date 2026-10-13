@@ -50,7 +50,8 @@ namespace ImGui
 	b8 ButtonPlusMinusInt(char plusOrMinus, i32* inOutValue, i32 step, i32 stepFast, vec2 buttonSize = {});
 
 	struct InputScalarWithButtonsResult { u32 ValueChanged, ButtonClicked, IsTextItemActive; Rect TextItemRect[4]; };
-	struct InputScalarWithButtonsExData { u32 TextColor; b8 SpinButtons; ImGuiInputTextCallback TextCallback = nullptr; };
+	struct InputScalarWithButtonsExData { u32 TextColor; b8 SpinButtons; ImGuiInputTextCallback TextCallback = nullptr; b8 PreferDecimal6 = false; };
+	i32 DataTypeFormatStringDecimal6(char* buffer, i32 bufferSize, ImGuiDataType dataType, const void* data, cstr format);
 	InputScalarWithButtonsResult InputScalar_WithExtraStuff(cstr label, ImGuiDataType data_type, void* p_data, const void* p_step = nullptr, const void* p_step_fast = nullptr, cstr format = nullptr, ImGuiInputTextFlags flags = 0, const InputScalarWithButtonsExData* ex_data = nullptr);
 	InputScalarWithButtonsResult InputScalarN_WithExtraStuff(cstr label, ImGuiDataType data_type, void* p_data, i32 components, const void* p_step = nullptr, const void* p_step_fast = nullptr, cstr format = nullptr, ImGuiInputTextFlags flags = 0, const InputScalarWithButtonsExData* ex_data = nullptr);
 

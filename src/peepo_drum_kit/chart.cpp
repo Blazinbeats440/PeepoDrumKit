@@ -382,7 +382,7 @@ namespace PeepoDrumKit
 					outCourse.SuddenChanges.Sorted.push_back(SuddenChange{ (inMeasure.StartTime + inSuddenChange.TimeWithinMeasure), inSuddenChange.AppearanceOffset, inSuddenChange.MovementOffset, inSuddenChange.HideRoll });
 
 				for (const TJA::ConvertedJPOSScroll& inJPOSScrollChange : inMeasure.JPOSScrollChanges)
-					outCourse.JPOSScrollChanges.Sorted.push_back(JPOSScrollChange{ (inMeasure.StartTime + inJPOSScrollChange.TimeWithinMeasure), inJPOSScrollChange.Move, inJPOSScrollChange.Duration });
+					outCourse.JPOSScrollChanges.Sorted.push_back(JPOSScrollChange{ (inMeasure.StartTime + inJPOSScrollChange.TimeWithinMeasure), inJPOSScrollChange.Move, inJPOSScrollChange.Duration, false, inJPOSScrollChange.NumberFormat });
 
 
 				for (const TJA::ConvertedBarLineChange& barLineChange : inMeasure.BarLineChanges)
@@ -630,7 +630,7 @@ namespace PeepoDrumKit
 			{
 				TJA::ConvertedMeasure* outConvertedMeasure = tryFindMeasureForBeat(outConvertedMeasures, JPOSScroll.BeatTime);
 				if (assert(outConvertedMeasure != nullptr); outConvertedMeasure != nullptr)
-					outConvertedMeasure->JPOSScrollChanges.push_back(TJA::ConvertedJPOSScroll { (JPOSScroll.BeatTime - outConvertedMeasure->StartTime), JPOSScroll.Move, JPOSScroll.Duration });
+					outConvertedMeasure->JPOSScrollChanges.push_back(TJA::ConvertedJPOSScroll { (JPOSScroll.BeatTime - outConvertedMeasure->StartTime), JPOSScroll.Move, JPOSScroll.Duration, JPOSScroll.NumberFormat });
 			}
 
 			for (const BarLineChange& barLineChange : inCourse.BarLineChanges)

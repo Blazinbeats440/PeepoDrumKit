@@ -983,6 +983,7 @@ namespace TJA
 					case Key::Chart_JPOSSCROLL:
 					{
 						decltype(ParsedChartCommand::ParamData::ChangeJPOSScroll) param = { Time::Zero(), Complex(0, 0) };
+						param.NumberFormat = JPOSNumberFormat::Integer;
 						i32 valueIndex = 0;
 						b8 valid = true;
 						i32 direction = 0;
@@ -995,11 +996,13 @@ namespace TJA
 							if (value.empty())
 								return;
 							if (valueIndex == 0) {
+								if (InferJPOSNumberFormat(value) == JPOSNumberFormat::Standard) param.NumberFormat = JPOSNumberFormat::Standard;
 								if (!tryParseTime(value, &param.Duration)) {
 									outErrors.Push(lineIndex, "Invalid duration time '%.*s'", FmtStrViewArgs(value));
 									valid = false;
 								}
 							} else if (valueIndex == 1) {
+								param.NumberFormat = MergeJPOSNumberFormats(param.NumberFormat, InferJPOSNumberFormat(value));
 								if (!ASCII::TryParse(value, param.Move)) {
 									outErrors.Push(lineIndex, "Invalid complex number '%.*s'", FmtStrViewArgs(value));
 									valid = false;
@@ -1009,6 +1012,7 @@ namespace TJA
 							}
 							else if (valueIndex == 2) {
 								if (ASCII::ToLowerCase(value.back()) == 'i') {
+									param.NumberFormat = MergeJPOSNumberFormats(param.NumberFormat, InferJPOSNumberFormat(value));
 									// arg 2 is move y
 									if (Complex val; splitComplex && std::regex_match(begin(value), end(value), Complex::PatPureImaginary) && ASCII::TryParse(value, val))
 										param.Move.SetImaginaryPart(val.cpx.imag());
@@ -1113,6 +1117,43 @@ namespace TJA
 	static const ParsedMainMetadata DefaultMainMetadata = {};
 	static const ParsedCourseMetadata DefaultCourseMetadata = {};
 
+	static std::string ExpandNumericExponents(std::string_view value)
+	{
+		if (value.find_first_of("eE") == std::string_view::npos) return std::string(value);
+		static const std::regex pattern("([+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))[eE]([+-]?[0-9]+)");
+		std::string out;
+		const char* previous = value.data();
+		for (std::cregex_iterator it(value.data(), value.data() + value.size(), pattern), end; it != end; ++it)
+		{
+			const auto& match = *it;
+			out.append(previous, match[0].first);
+			const std::string_view exponentText(match[2].first, static_cast<size_t>(match[2].length()));
+			i32 exponent = 0;
+			if (!ASCII::TryParse(ASCII::TrimPrefix(exponentText, "+"), exponent) || exponent < -10000 || exponent > 10000)
+				out.append(match[0].first, match[0].second);
+			else
+			{
+				std::string digits = match[1].str();
+				if (digits.front() == '+' || digits.front() == '-') { out += digits.front(); digits.erase(0, 1); }
+				const size_t point = digits.find('.');
+				const i32 decimalPosition = static_cast<i32>(point == std::string::npos ? digits.size() : point) + exponent;
+				if (point != std::string::npos) digits.erase(point, 1);
+				if (decimalPosition <= 0)
+					out += "0." + std::string(static_cast<size_t>(-decimalPosition), '0') + digits;
+				else if (decimalPosition >= static_cast<i32>(digits.size()))
+					out += digits + std::string(static_cast<size_t>(decimalPosition) - digits.size(), '0');
+				else
+				{
+					digits.insert(static_cast<size_t>(decimalPosition), 1, '.');
+					out += digits;
+				}
+			}
+			previous = match[0].second;
+		}
+		out.append(previous, value.data() + value.size());
+		return out;
+	}
+
 	void ConvertParsedToText(const ParsedTJA& inContent, std::string& out, SaveFormat format)
 	{
 		// TODO: ... or maybe tokenize first instead of going right to text..?
@@ -1132,10 +1173,21 @@ namespace TJA
 					start = i + 1;
 				}
 		};
-		auto appendProperyLine = [&](std::string& out, Key key, std::string_view value) { out += KeyStrings[EnumToIndex(key)]; out += ':'; out += value; out += lineEnding; };
+		auto appendValue = [&](std::string& out, Key key, std::string_view value)
+		{
+			switch (key)
+			{
+			case Key::Main_BPM: case Key::Main_OFFSET: case Key::Main_DEMOSTART: case Key::Main_SONGVOL: case Key::Main_SEVOL:
+			case Key::Main_HEADSCROLL: case Key::Main_MOVIEOFFSET: case Key::Course_LEVEL:
+			case Key::Chart_BPMCHANGE: case Key::Chart_DELAY: case Key::Chart_SCROLL: case Key::Chart_SUDDEN: case Key::Chart_JPOSSCROLL:
+				out += ExpandNumericExponents(value); break;
+			default: out += value; break;
+			}
+		};
+		auto appendProperyLine = [&](std::string& out, Key key, std::string_view value) { out += KeyStrings[EnumToIndex(key)]; out += ':'; appendValue(out, key, value); out += lineEnding; };
 		auto appendSuffixedPropertyLine = [&](std::string& out, Key key, std::string_view suffix, std::string_view value)
 		{ out += KeyStrings[EnumToIndex(key)]; out += suffix; out += ':'; out += value; out += lineEnding; };
-		auto appendCommandLine = [&](std::string& out, Key key, std::string_view value) { out += '#'; out += KeyStrings[EnumToIndex(key)]; if (!value.empty()) { out += ' '; out += value; }out += lineEnding; };
+		auto appendCommandLine = [&](std::string& out, Key key, std::string_view value) { out += '#'; out += KeyStrings[EnumToIndex(key)]; if (!value.empty()) { out += ' '; appendValue(out, key, value); }out += lineEnding; };
 		auto appendBalloonProperyLine = [&](std::string& out, Key key, const std::vector<i32>& popCounts)
 		{
 			out += KeyStrings[EnumToIndex(key)];
@@ -1487,11 +1539,15 @@ namespace TJA
 				{
 					// Convert back from logical time
 					auto param = ToTJATime(command.Param.SetSudden);
-					appendCommandLine(out, Key::Chart_SUDDEN, std::string_view(buffer, sprintf_s(buffer, "%g %g", param.AppearanceOffset, param.MovementOffset)));
+					appendCommandLine(out, Key::Chart_SUDDEN, std::string_view(buffer, sprintf_s(buffer, "%g %g", param.AppearanceOffset.ToSec(), param.MovementOffset.ToSec())));
 				} break;
 				case ParsedChartCommandType::SetJPOSScroll:
 				{
-					appendCommandLine(out, Key::Chart_JPOSSCROLL, std::string_view(buffer, sprintf_s(buffer, "%g %s 1", command.Param.ChangeJPOSScroll.Duration.ToSec(), command.Param.ChangeJPOSScroll.Move.toStringCompat().c_str())));
+					const auto& param = command.Param.ChangeJPOSScroll;
+					if (param.NumberFormat == JPOSNumberFormat::Standard)
+						appendCommandLine(out, Key::Chart_JPOSSCROLL, std::string_view(buffer, sprintf_s(buffer, "%g %s 1", param.Duration.ToSec(), param.Move.toStringCompat().c_str())));
+					else
+						appendCommandLine(out, Key::Chart_JPOSSCROLL, FormatJPOSDecimal(param.Duration.ToSec(), 6) + " " + FormatJPOSMove(param.Move.cpx, param.NumberFormat) + " 1");
 				} break;
 				default: { assert(!"Unhandled ParsedChartCommandType switch case"); } break;
 				}
@@ -1581,6 +1637,7 @@ namespace TJA
 				tempCommand.Type = ParsedChartCommandType::SetJPOSScroll;
 				tempCommand.Param.ChangeJPOSScroll.Duration = Time(JPOSscrollChange.Duration);
 				tempCommand.Param.ChangeJPOSScroll.Move = JPOSscrollChange.Move;
+				tempCommand.Param.ChangeJPOSScroll.NumberFormat = JPOSscrollChange.NumberFormat;
 			}
 
 			for (const ConvertedSudden& SuddenChange : inMeasure.SuddenChanges)
@@ -1855,7 +1912,8 @@ namespace TJA
 					currentMeasure->JPOSScrollChanges.push_back(ConvertedJPOSScroll{
 						currentTimeWithinMeasure,
 						command.Param.ChangeJPOSScroll.Move,
-						command.Param.ChangeJPOSScroll.Duration.ToSec_F32()
+						command.Param.ChangeJPOSScroll.Duration.ToSec_F32(),
+						command.Param.ChangeJPOSScroll.NumberFormat
 						});
 				}
 				else if (command.Type == ParsedChartCommandType::SetSudden)

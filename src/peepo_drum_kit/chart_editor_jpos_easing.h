@@ -1,4 +1,5 @@
 #pragma once
+#include "core_jpos.h"
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -147,6 +148,7 @@ namespace PeepoDrumKit
 		int32_t BeatTicks;
 		std::complex<float> Move;
 		float DurationSeconds;
+		std::complex<double> TargetPosition = {};
 	};
 
 	struct JPOSEasingResult
@@ -156,6 +158,28 @@ namespace PeepoDrumKit
 		int ErrorInterval = 0;
 		int RequiredDivisions = 0;
 	};
+
+	inline JPOSEasingResult ApplyJPOSNumberFormat(JPOSEasingResult result, JPOSNumberFormat format)
+	{
+		if (format == JPOSNumberFormat::Standard || result.Error != JPOSEasingError::None) return result;
+		std::complex<double> accumulated = {};
+		for (auto& segment : result.Segments)
+		{
+			const auto target = segment.TargetPosition;
+			const std::complex<double> rounded = { RoundJPOSValue(target.real(), format), RoundJPOSValue(target.imag(), format) };
+			segment.Move = { static_cast<float>(RoundJPOSValue(rounded.real() - accumulated.real(), format)),
+				static_cast<float>(RoundJPOSValue(rounded.imag() - accumulated.imag(), format)) };
+			if (!std::isfinite(segment.Move.real()) || !std::isfinite(segment.Move.imag()))
+			{
+				result.Error = JPOSEasingError::InvalidMove;
+				result.Segments.clear();
+				return result;
+			}
+			// Feed back the values written to TJA, rather than rounding each move independently.
+			accumulated += std::complex<double>(RoundJPOSValue(segment.Move.real(), format), RoundJPOSValue(segment.Move.imag(), format));
+		}
+		return result;
+	}
 
 	inline std::vector<int32_t> GetJPOSIntervalBoundaries(int32_t startTicks, int32_t endTicks, int divisionCount,
 		const std::vector<int32_t>* gridBoundaries)
@@ -227,7 +251,7 @@ namespace PeepoDrumKit
 			const std::complex<float> segmentMove = static_cast<std::complex<float>>(targetMove - accumulatedMove);
 			if (!std::isfinite(segmentMove.real()) || !std::isfinite(segmentMove.imag()))
 				return fail(JPOSEasingError::InvalidMove);
-			result.Segments.push_back({ previousTicks, segmentMove, moveSeconds });
+			result.Segments.push_back({ previousTicks, segmentMove, moveSeconds, targetMove });
 			accumulatedMove += std::complex<double>(segmentMove);
 			previousTicks = nextTicks;
 			previousSeconds = nextSeconds;
@@ -393,7 +417,7 @@ namespace PeepoDrumKit
 				const auto segmentMove = static_cast<std::complex<float>>(target - accumulatedMove);
 				if (!std::isfinite(segmentMove.real()) || !std::isfinite(segmentMove.imag())) return fail(JPOSEasingError::InvalidMove);
 				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid);
-				result.Segments.push_back({ previousTicks, segmentMove, duration });
+				result.Segments.push_back({ previousTicks, segmentMove, duration, target });
 				accumulatedMove += std::complex<double>(segmentMove);
 				previousTicks = nextTicks; previousSeconds = nextSeconds;
 			}
@@ -460,6 +484,8 @@ namespace PeepoDrumKit
 				local += std::complex<double>(segment.Move);
 				const auto target = index + 1 == leg.Segments.size() ? std::complex<double>(destination.Position) : local;
 				segment.Move = static_cast<std::complex<float>>(target - accumulated);
+				segment.TargetPosition = index + 1 == leg.Segments.size() ? std::complex<double>(destination.Position) :
+					std::complex<double>(points[interval].Position) + segment.TargetPosition;
 				if (!std::isfinite(segment.Move.real()) || !std::isfinite(segment.Move.imag())) return fail(JPOSEasingError::InvalidMove, interval + 1);
 				accumulated += std::complex<double>(segment.Move);
 				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid, interval + 1);
@@ -527,9 +553,13 @@ namespace PeepoDrumKit
 			for (size_t index = 0; index < legResult.Segments.size(); ++index)
 			{
 				JPOSEasingSegment segment = legResult.Segments[index];
+				segment.TargetPosition += outbound ? std::complex<double>{} : std::complex<double>(move);
 				// Anchor every turn and return to prevent drift across repeated trips.
 				if (index + 1 == legResult.Segments.size())
+				{
+					segment.TargetPosition = outbound ? std::complex<double>(move) : std::complex<double>{};
 					segment.Move = static_cast<std::complex<float>>((outbound ? std::complex<double>(move) : std::complex<double>{}) - accumulatedMove);
+				}
 				accumulatedMove += std::complex<double>(segment.Move);
 				if (result.Segments.size() >= MaxJPOSEasingGrid) return fail(JPOSEasingError::InvalidGrid);
 				result.Segments.push_back(segment);
@@ -541,7 +571,8 @@ namespace PeepoDrumKit
 
 	template <typename BeatToSeconds, typename NextGridTick>
 	JPOSEasingResult GenerateJPOSMotionOnGrid(int32_t startTicks, int32_t endTicks, std::complex<float> move,
-		JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, NextGridTick nextGridTick)
+		JPOSEasing easing, BeatToSeconds beatToSeconds, double strength, const JPOSMotionSettings& motion, NextGridTick nextGridTick,
+		JPOSNumberFormat numberFormat = JPOSNumberFormat::Standard)
 	{
 		if (startTicks < 0 || endTicks <= startTicks) return { JPOSEasingError::InvalidRange, {} };
 		std::vector<int32_t> grid = { startTicks };
@@ -551,7 +582,7 @@ namespace PeepoDrumKit
 			if (next <= grid.back() || grid.size() > MaxJPOSEasingGrid) return { JPOSEasingError::InvalidGrid, {} };
 			grid.push_back(std::min(next, endTicks));
 		}
-		return GenerateJPOSMotion(startTicks, endTicks, move, static_cast<int>(grid.size()) - 1,
-			easing, beatToSeconds, strength, motion, &grid);
+		return ApplyJPOSNumberFormat(GenerateJPOSMotion(startTicks, endTicks, move, static_cast<int>(grid.size()) - 1,
+			easing, beatToSeconds, strength, motion, &grid), numberFormat);
 	}
 }

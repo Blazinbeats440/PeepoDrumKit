@@ -71,15 +71,6 @@ namespace PeepoDrumKit
 
 	void ChartEditor::DrawScreenshotPreview()
 	{
-		if (!screenshotStatus.empty() && Gui::GetTime() < screenshotStatusUntil)
-		{
-			Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
-			Gui::SetNextWindowPos(vec2(Gui::GetMainViewport()->WorkPos) + vec2(16.0f));
-			if (Gui::Begin("##ScreenshotStatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-				ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoFocusOnAppearing))
-				Gui::TextUnformatted(screenshotStatus.c_str());
-			Gui::End();
-		}
 		if (!screenshotPreviewRequested) return;
 		screenshotPreviewRequested = false;
 		if (!context.ChartSelectedCourse || videoExport.Exporting || videoExport.Preparing)
@@ -121,8 +112,7 @@ namespace PeepoDrumKit
 				{
 					IM_DELETE(screenshotDrawList);
 					screenshotDrawList = nullptr;
-					screenshotStatus = std::string(UI_Str("BACKGROUND_MOVIE_FAILED")) + "\n" + screenshotPreview.MovieError;
-					screenshotStatusUntil = Gui::GetTime() + 6.0;
+					context.ShowStatusMessage(std::string(UI_Str("BACKGROUND_MOVIE_FAILED")) + "\n" + screenshotPreview.MovieError, 6.0);
 				}
 			}
 		}
@@ -133,8 +123,7 @@ namespace PeepoDrumKit
 	{
 		const auto report = [&](b8 success, const std::string& path)
 		{
-			screenshotStatus = std::string(success ? UI_Str("SCREENSHOT_SAVED") : UI_Str("SCREENSHOT_FAILED")) + (path.empty() ? "" : "\n" + path);
-			screenshotStatusUntil = Gui::GetTime() + 6.0;
+			context.ShowStatusMessage(std::string(success ? UI_Str("SCREENSHOT_SAVED") : UI_Str("SCREENSHOT_FAILED")) + (path.empty() ? "" : "\n" + path), 6.0);
 		};
 		if (screenshotWindowRequested && screenshotWindowDelay++ > 0)
 		{

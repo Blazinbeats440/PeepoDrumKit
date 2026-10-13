@@ -2425,7 +2425,8 @@ namespace PeepoDrumKit
 				case GenericList::JPOSScroll:
 				{
 					const auto& in = item.Value.POD.JPOSScroll;
-					bufferLength = sprintf_s(buffer, "JPOSScroll { %d, %s, %g };\n", (in.BeatTime - baseBeat).Ticks, in.Move.toString().c_str(), in.Duration);
+					const std::string move = in.NumberFormat == JPOSNumberFormat::Standard ? in.Move.toString() : FormatJPOSMove(in.Move.cpx, in.NumberFormat);
+					bufferLength = sprintf_s(buffer, "JPOSScroll { %d, %s, %g, %d };\n", (in.BeatTime - baseBeat).Ticks, move.c_str(), in.Duration, static_cast<i32>(in.NumberFormat));
 				} break;
 				case GenericList::Sudden:
 				{
@@ -2583,6 +2584,8 @@ namespace PeepoDrumKit
 						newItemValue.BeatTime.Ticks = parsedParams[0].I32;
 						newItemValue.Move = parsedParams[1].CPX;
 						newItemValue.Duration = parsedParams[2].F32;
+						if (parsedParams[3].IsValidI32 && parsedParams[3].I32 >= 0 && parsedParams[3].I32 <= static_cast<i32>(JPOSNumberFormat::Decimal6))
+							newItemValue.NumberFormat = static_cast<JPOSNumberFormat>(parsedParams[3].I32);
 					}
 					else if (itemType == "Sudden")
 					{
@@ -4483,6 +4486,7 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.TimelineLoopPlayback.Value = !Settings.General.TimelineLoopPlayback.Value;
 				Settings_Mutable.General.TimelineLoopPlayback.SetHasValueIfNotDefault();
 				Settings_Mutable.IsDirty = true;
+				context.ShowStatusMessage(*Settings.General.TimelineLoopPlayback ? UI_Str("TIMELINE_STATUS_LOOP_PLAYBACK_ON") : UI_Str("TIMELINE_STATUS_LOOP_PLAYBACK_OFF"));
 			}
 
 			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_TogglePlaybackCursorFollow, false, InputModifierBehavior::Relaxed))
@@ -4490,6 +4494,7 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.TimelinePlaybackCursorFollow.Value = !Settings.General.TimelinePlaybackCursorFollow.Value;
 				Settings_Mutable.General.TimelinePlaybackCursorFollow.SetHasValueIfNotDefault();
 				Settings_Mutable.IsDirty = true;
+				context.ShowStatusMessage(*Settings.General.TimelinePlaybackCursorFollow ? UI_Str("TIMELINE_STATUS_CURSOR_FOLLOW_ON") : UI_Str("TIMELINE_STATUS_CURSOR_FOLLOW_OFF"));
 			}
 
 			if (hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleAutoStepAfterNoteInput, false, InputModifierBehavior::Relaxed))
@@ -4497,6 +4502,7 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.TimelineAutoStepAfterNoteInput.Value = !Settings.General.TimelineAutoStepAfterNoteInput.Value;
 				Settings_Mutable.General.TimelineAutoStepAfterNoteInput.SetHasValueIfNotDefault();
 				Settings_Mutable.IsDirty = true;
+				context.ShowStatusMessage(*Settings.General.TimelineAutoStepAfterNoteInput ? UI_Str("TIMELINE_STATUS_AUTO_STEP_ON") : UI_Str("TIMELINE_STATUS_AUTO_STEP_OFF"));
 			}
 			const b8 gridModeToggledThisFrame = hasTimelineOrGamePreviewFocus && Gui::IsAnyPressed(*Settings.Input.Timeline_ToggleGridStartsAtBar, false);
 			if (gridModeToggledThisFrame)
@@ -4504,6 +4510,7 @@ namespace PeepoDrumKit
 				Settings_Mutable.General.TimelineGridStartsAtBar.Value = !Settings.General.TimelineGridStartsAtBar.Value;
 				Settings_Mutable.General.TimelineGridStartsAtBar.SetHasValueIfNotDefault();
 				Settings_Mutable.IsDirty = true;
+				context.ShowStatusMessage(*Settings.General.TimelineGridStartsAtBar ? UI_Str("TIMELINE_STATUS_GRID_BAR") : UI_Str("TIMELINE_STATUS_GRID_SONG"));
 			}
 
 			auto stepCursorForwardByCurrentGrid = [this, &context]

@@ -951,6 +951,7 @@ namespace PeepoDrumKit
 			Gui::SetNextItemWidth(valueWidth);
 			MultiEditDataUnion v = in.Value;
 			Gui::InputScalarWithButtonsExData exData {}; exData.TextColor = showMixedValues ? 0 : (in.TextColorOverride != nullptr) ? *in.TextColorOverride : Gui::GetColorU32(ImGuiCol_Text); exData.SpinButtons = in.UseSpinButtonsInstead;
+			exData.PreferDecimal6 = true;
 			Gui::InputScalarWithButtonsResult result = Gui::InputScalarN_WithExtraStuff("##Input", in.DataType, &v, in.Components, in.EnableStepButtons ? &in.ButtonStep : nullptr, in.EnableStepButtons ? &in.ButtonStepFast : nullptr, formatString, ImGuiInputTextFlags_None, &exData);
 			if (drawTailWidgets)
 				drawTailWidgets(&result, in.DataType, &v);
@@ -991,7 +992,7 @@ namespace PeepoDrumKit
 						char min[64], max[64];
 						ApplySingleImGuiDataType(in.DataType, overloaded{
 							[&](const MultiEditDataUnion& inMin, const auto& inMax) { assert(false && "unsupported type"); min[0] = max[0] = '\0'; return 0; },
-							[&](const auto& inMin, const auto& inMax) { sprintf_s(min, formatString, inMin[c]); sprintf_s(max, formatString, inMax[c]); return 0; },
+							[&](const auto& inMin, const auto& inMax) { Gui::DataTypeFormatStringDecimal6(min, sizeof(min), in.DataType, &inMin[c], formatString); Gui::DataTypeFormatStringDecimal6(max, sizeof(max), in.DataType, &inMax[c], formatString); return 0; },
 							}, 0,
 							in.MixedValuesMin, in.MixedValuesMax);
 						char multiSelectionPreview[128]; sprintf_s(multiSelectionPreview, "(%s ... %s)", min, max);
@@ -1005,7 +1006,7 @@ namespace PeepoDrumKit
 						char preview[64];
 						ApplySingleImGuiDataType(in.DataType, overloaded{
 							[&](const MultiEditDataUnion& inV) { assert(false && "unsupported type"); preview[0] = '\0'; return 0; },
-							[&](const auto& inV) { sprintf_s(preview, formatString, inV[c]); return 0; },
+							[&](const auto& inV) { Gui::DataTypeFormatStringDecimal6(preview, sizeof(preview), in.DataType, &inV[c], formatString); return 0; },
 							}, 0,
 							in.MixedValuesMin);
 						Gui::RenderTextClipped(result.TextItemRect[c].TL + vec2(style.FramePadding.x, 0.0f), result.TextItemRect[c].BR, preview, nullptr, nullptr, { 0.0f, 0.5f });
@@ -1095,11 +1096,14 @@ namespace PeepoDrumKit
 				}
 
 				const cstr randomRangeLabels[] = { UI_Str("INTERPOLATION_RANDOM_MINIMUM"), UI_Str("INTERPOLATION_RANDOM_MAXIMUM") };
+				Gui::InputScalarWithButtonsExData randomExData {};
+				randomExData.TextColor = Gui::GetColorU32(ImGuiCol_Text);
+				randomExData.PreferDecimal6 = true;
 				for (i32 component = 0; component < 2; component++)
 				{
 					Gui::TextUnformatted(randomRangeLabels[component]);
 					Gui::SetNextItemWidth(-1.0f);
-					if (Gui::InputScalar_WithExtraStuff(component == 0 ? "##RandomMinimum" : "##RandomMaximum", TypeToImGuiDataType<T>, &outRandomStartEnd[component], &step, &stepFast, format, ImGuiInputTextFlags_None).ValueChanged && enableClamp)
+					if (Gui::InputScalar_WithExtraStuff(component == 0 ? "##RandomMinimum" : "##RandomMaximum", TypeToImGuiDataType<T>, &outRandomStartEnd[component], &step, &stepFast, format, ImGuiInputTextFlags_None, &randomExData).ValueChanged && enableClamp)
 						outRandomStartEnd[component] = Clamp(outRandomStartEnd[component], minValue, maxValue);
 				}
 				if constexpr (std::is_integral_v<T>)
@@ -1147,6 +1151,7 @@ namespace PeepoDrumKit
 
 				Gui::SetNextItemWidth(isLastComponent ? (Gui::GetContentRegionAvail().x - 1.0f) : perComponentInputFloatWidth);
 				Gui::InputScalarWithButtonsExData exData {}; exData.TextColor = Gui::GetColorU32(ImGuiCol_Text, showPreviewStrings ? 0.0f : 1.0f); exData.SpinButtons = true;
+				exData.PreferDecimal6 = true;
 				Gui::InputScalarWithButtonsResult result = Gui::InputScalar_WithExtraStuff("##Component", TypeToImGuiDataType<T>, &inOutStartEnd[component], &step, &stepFast, format, ImGuiInputTextFlags_None, &exData);
 				if (result.ValueChanged)
 				{
@@ -2241,7 +2246,7 @@ namespace PeepoDrumKit
 			for (int i = 0; i < ArrayCountI32(previewStrings); ++i) {
 				previewStrings[i] = previewBuffersStartEnd[i];
 				strcpy_s(previewBuffersStartEnd[i], "(");
-				sprintf_s(previewBuffersStartEnd[i] + 1, sizeof(previewBuffersStartEnd[i]) - 1, format, inOutStartEnd[i]);
+				Gui::DataTypeFormatStringDecimal6(previewBuffersStartEnd[i] + 1, sizeof(previewBuffersStartEnd[i]) - 2, TypeToImGuiDataType<T>, &inOutStartEnd[i], format);
 				strcat_s(previewBuffersStartEnd[i], ")");
 			}
 		}
@@ -4237,7 +4242,7 @@ namespace PeepoDrumKit
 					if (JPOSScrollChangeAtCursor == nullptr || JPOSScrollChangeAtCursor->BeatTime != cursorBeat)
 						context.Undo.Execute<Commands::AddJPOSScroll>(&course, &course.JPOSScrollChanges, JPOSScrollChange{ cursorBeat, newMove, newDuration });
 					else
-						context.Undo.Execute<Commands::UpdateJPOSScroll>(&course, &course.JPOSScrollChanges, JPOSScrollChange{ cursorBeat, newMove, newDuration });
+						context.Undo.Execute<Commands::UpdateJPOSScroll>(&course, &course.JPOSScrollChanges, JPOSScrollChange{ cursorBeat, newMove, newDuration, false, JPOSScrollChangeAtCursor->NumberFormat });
 				};
 
 				Gui::Property::Property([&]

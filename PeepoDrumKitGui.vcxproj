@@ -189,6 +189,7 @@
     <ClInclude Include="src\core_string.h" />
     <ClInclude Include="src\core_beat.h" />
     <ClInclude Include="src\core_types.h" />
+    <ClInclude Include="src\core_jpos.h" />
     <ClInclude Include="src\file_format_fumen.h" />
     <ClInclude Include="src\imgui\3rdparty\imconfig.h" />
     <ClInclude Include="src\imgui\3rdparty\imgui.h" />

@@ -1,6 +1,7 @@
 #include "imgui_common.h"
 #include "core_io.h"
 #include <array>
+#include <charconv>
 
 namespace ImGui
 {
@@ -202,6 +203,35 @@ namespace ImGui
 		return ButtonPlusMinusScalar(plusOrMinus, ImGuiDataType_S32, inOutValue, &step, &stepFast, buttonSize);
 	}
 
+	i32 DataTypeFormatStringDecimal6(char* buffer, i32 bufferSize, ImGuiDataType dataType, const void* data, cstr format)
+	{
+		if (format == nullptr) format = DataTypeGetInfo(dataType)->PrintFmt;
+		if ((dataType == ImGuiDataType_Float || dataType == ImGuiDataType_Double) && std::strncmp(format, "%g", 2) == 0)
+		{
+			const f64 value = dataType == ImGuiDataType_Float ? *static_cast<const f32*>(data) : *static_cast<const f64*>(data);
+			const f64 minimum = dataType == ImGuiDataType_Float ? static_cast<f64>(0.000001f) : 0.000001;
+			if (std::isfinite(value) && (value == 0.0 || std::abs(value) >= minimum))
+			{
+				char number[384];
+				const auto result = std::to_chars(number, number + sizeof(number), value == 0.0 ? 0.0 : value, std::chars_format::fixed, 6);
+				if (result.ec == std::errc{})
+				{
+					char* end = result.ptr;
+					while (end > number && end[-1] == '0') --end;
+					if (end > number && end[-1] == '.') --end;
+					const size_t numberLength = static_cast<size_t>(end - number), suffixLength = std::strlen(format + 2);
+					if (numberLength + suffixLength < static_cast<size_t>(bufferSize))
+					{
+						std::memcpy(buffer, number, numberLength);
+						std::memcpy(buffer + numberLength, format + 2, suffixLength + 1);
+						return static_cast<i32>(numberLength + suffixLength);
+					}
+				}
+			}
+		}
+		return DataTypeFormatString(buffer, bufferSize, dataType, data, format);
+	}
+
 	// NOTE: Basically ImGui::InputScalar() but with some extra parameters and more detailed return values
 	InputScalarWithButtonsResult InputScalar_WithExtraStuff(cstr label, ImGuiDataType data_type, void* p_data, const void* p_step, const void* p_step_fast, cstr format, ImGuiInputTextFlags flags, const InputScalarWithButtonsExData* ex_data)
 	{
@@ -216,7 +246,10 @@ namespace ImGui
 			format = DataTypeGetInfo(data_type)->PrintFmt;
 
 		char buf[64];
-		DataTypeFormatString(buf, IM_ARRAYSIZE(buf), data_type, p_data, format);
+		if (ex_data != nullptr && ex_data->PreferDecimal6)
+			DataTypeFormatStringDecimal6(buf, IM_ARRAYSIZE(buf), data_type, p_data, format);
+		else
+			DataTypeFormatString(buf, IM_ARRAYSIZE(buf), data_type, p_data, format);
 
 		// Disable the MarkItemEdited() call in InputText but keep ImGuiItemStatusFlags_Edited.
 		// We call MarkItemEdited() ourselves by comparing the actual data rather than the string.
