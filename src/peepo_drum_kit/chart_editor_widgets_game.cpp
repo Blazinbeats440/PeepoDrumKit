@@ -1251,20 +1251,23 @@ namespace PeepoDrumKit
 			(MovieStatus == BackgroundMovieStatus::Pending && !VideoExportTime.has_value() && time >= Time::Zero() && time >= MovieFrame.Start));
 	}
 
-	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
+	void ChartGamePreview::DrawTestPlayControls(ChartContext& context)
 	{
-		const b8 isVideoExport = VideoExportTime.has_value();
-		const b8 isTaikoVideo = isVideoExport && VideoExportLayout == VideoLayout::Taiko;
-		if (isVideoExport) animatedCursorTime = *VideoExportTime;
-		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
-		const b8 IsAnyChildWindowHovered = !isVideoExport && Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-		if (!isVideoExport)
+		IsTestPlayControlsFocused = false;
+		const b8 hasScoreBranch = context.ChartSelectedCourse &&
+			std::any_of(context.ChartSelectedCourse->Branches.begin(), context.ChartSelectedCourse->Branches.end(),
+				[](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
+		if (!IsTestPlaying && !*Settings.TestPlay.ShowStartButtonsInPreview && !hasScoreBranch) return;
+		Gui::SetNextWindowSize(vec2(GuiScale(680.0f), GuiScale(320.0f)), ImGuiCond_FirstUseEver);
+		const b8 isVisible = Gui::Begin(UI_WindowName("TAB_TEST_PLAY"), nullptr, ImGuiWindowFlags_NoFocusOnAppearing);
+		IsTestPlayControlsFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+		if (!isVisible)
 		{
+			Gui::End();
+			return;
+		}
 		if (!IsTestPlaying)
 		{
-			const b8 hasScoreBranch = context.ChartSelectedCourse &&
-				std::any_of(context.ChartSelectedCourse->Branches.begin(), context.ChartSelectedCourse->Branches.end(),
-					[](const BranchRange& range) { return range.Condition == TJA::BranchCondition::Score; });
 			if (hasScoreBranch) Gui::TextUnformatted(UI_Str("TEST_PLAY_SCORE_BRANCH_UNAVAILABLE"));
 			if (*Settings.TestPlay.ShowStartButtonsInPreview)
 			{
@@ -1281,7 +1284,6 @@ namespace PeepoDrumKit
 		}
 		else
 		{
-			Gui::SameLine();
 			if (Gui::Button(context.GetIsPlayback() ? UI_Str("TEST_PLAY_PAUSE") : UI_Str("TEST_PLAY_RESUME")))
 				ToggleTestPlayPause(context);
 			Gui::SameLine();
@@ -1429,8 +1431,15 @@ namespace PeepoDrumKit
 			}
 			Gui::EndChild();
 		}
+		Gui::End();
+	}
 
-		}
+	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
+	{
+		const b8 isVideoExport = VideoExportTime.has_value();
+		if (isVideoExport) animatedCursorTime = *VideoExportTime;
+		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+		const b8 IsAnyChildWindowHovered = !isVideoExport && Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
 		const auto findNoteState = [&](const Note* note) -> const TestPlayNoteState*
 		{
 			const auto found = TestPlayNoteIndices.find(note);
@@ -1457,6 +1466,8 @@ namespace PeepoDrumKit
 					comparedLanes.emplace_back(course.get(), branch);
 		}
 		const i32 nLanes = static_cast<i32>(comparedLanes.size());
+		const VideoLayout layout = isVideoExport ? VideoExportLayout : static_cast<VideoLayout>(Clamp(*Settings.General.GamePreviewLayout, 0, 1));
+		const b8 isTaikoLayout = layout == VideoLayout::Taiko && nLanes > 0 && nLanes <= 2;
 		const b8 hasCommentLane = !isVideoExport && *Settings.General.GamePreviewShowComments && std::any_of(comparedLanes.begin(), comparedLanes.end(), [](const auto& lane) { return !lane.first->Comments.empty(); });
 		f32 commentLaneHeight = 0.0f;
 		if (hasCommentLane)
@@ -1481,7 +1492,14 @@ namespace PeepoDrumKit
 		Camera.ScreenSpaceViewportRect = Gui::GetItemRect();
 		Camera.ScreenSpaceViewportRect.TL = Camera.ScreenSpaceViewportRect.TL + buttonMargin;
 		Camera.ScreenSpaceViewportRect.BR = ClampBot(Camera.ScreenSpaceViewportRect.BR - buttonMargin, Camera.ScreenSpaceViewportRect.TL + (minContentRectSize - vec2(buttonMargin.x, 0.0f)));
-		if (isVideoExport)
+		if (!isVideoExport && isTaikoLayout)
+		{
+			const vec2 referenceSize = vec2(1920.0f, 1080.0f);
+			const vec2 availableSize = Camera.ScreenSpaceViewportRect.GetSize();
+			const f32 scale = std::min(availableSize.x / referenceSize.x, availableSize.y / referenceSize.y);
+			Camera.ScreenSpaceViewportRect = Rect::FromCenterSize(Camera.ScreenSpaceViewportRect.GetCenter(), referenceSize * scale);
+		}
+		else if (isVideoExport)
 			Camera.ScreenSpaceViewportRect = FitInside(Camera.ScreenSpaceViewportRect, 16.0f / 9.0f, EFitInside::Contain);
 		else
 		{
@@ -1497,7 +1515,7 @@ namespace PeepoDrumKit
 		const vec2 standardSize = vec2(GameLaneStandardWidth + GameLanePaddingL + GameLanePaddingR, nLanes * (GameLaneSlice.TotalHeight() + commentLaneHeight) + GameLanePaddingTop + GameLanePaddingBot);
 		const f32 standardAspectRatio = GetAspectRatio(standardSize);
 		const f32 viewportAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
-		if (isTaikoVideo)
+		if (isTaikoLayout)
 		{
 			// 1280x720 reference, shifted 25 pixels up at 1920x1080.
 			Camera.WorldSpaceSize = vec2(1920.0f, 1080.0f);
@@ -1631,7 +1649,7 @@ namespace PeepoDrumKit
 			const Rect jacketUV = { jacketDrawRect.TL / jacketSize, jacketDrawRect.BR / jacketSize };
 			drawList->AddImage(context.JacketTexture.GetTexID(), jacketBoundRect.TL, jacketBoundRect.BR, jacketUV.TL, jacketUV.BR, Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, context.SongJacketFadeAnimationCurrent));
 		}
-		if (isTaikoVideo)
+		if (isTaikoLayout)
 		{
 			drawList->ChannelsSetCurrent(4);
 			drawList->AddRectFilled(Camera.WorldToScreenSpace(vec2(0.0f, laneRectBase.TL.y)),
@@ -1732,7 +1750,7 @@ namespace PeepoDrumKit
 			const b8 isFocusedLane = (!isVideoExport && context.CompareMode && course == context.ChartSelectedCourse && branch == context.ChartSelectedBranch);
 			VideoExportLaneState* videoLane = isVideoExport && VideoExportLaneCount > 0 ? VideoExportLanes[iLane] : nullptr;
 
-			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + commentLaneHeight) };
+			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + (isTaikoLayout ? 0.0f : commentLaneHeight)) };
 
 			const TempoMapAccelerationStructure& tempoChanges = course->GetPlaybackTiming(branch);
 			const SortedJPOSScrollChangesList& jposScrollChanges = course->JPOSScrollChanges;
@@ -1948,8 +1966,13 @@ namespace PeepoDrumKit
 			drawList->ChannelsSetCurrent(2);
 			if (hasCommentLane && !course->Comments.empty())
 			{
-				const vec2 commentClipTL = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(0.0f, 6.0f));
-				const vec2 commentClipBR = Camera.WorldToScreenSpace(Camera.LaneRect.GetBR() + vec2(0.0f, commentLaneHeight - 6.0f));
+				const b8 commentsAbove = isTaikoLayout && nLanes == 2 && iLane == 0;
+				const vec2 commentClipTL = Camera.WorldToScreenSpace(commentsAbove
+					? vec2(Camera.LaneRect.TL.x, 6.0f) : Camera.LaneRect.GetBL() + vec2(0.0f, 6.0f));
+				const vec2 commentClipBR = Camera.WorldToScreenSpace(commentsAbove
+					? Camera.LaneRect.GetTR() - vec2(0.0f, 6.0f)
+					: isTaikoLayout ? vec2(Camera.LaneRect.BR.x, Camera.WorldSpaceSize.y - 6.0f)
+					: Camera.LaneRect.GetBR() + vec2(0.0f, commentLaneHeight - 6.0f));
 				const f32 fontSize = Camera.WorldToScreenScale(static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128)));
 				const i32 holdMeasures = Clamp(*Settings.General.GamePreviewCommentHoldMeasures, 0, 128);
 				const f32 outline = std::max(1.0f, Camera.WorldToScreenScale(1.5f));
@@ -1992,15 +2015,20 @@ namespace PeepoDrumKit
 						alpha = std::min(alpha, Clamp((nextScreenX - (commentClipBR.x - fadeDistance)) / fadeDistance, 0.0f, 1.0f));
 					}
 					if (alpha <= 0.0f) continue;
-					const vec2 screenPosition = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + laneX, 10.0f));
+					const vec2 textSize = font->CalcTextSizeA(fontSize, F32Max, wrapWidth, comment.Text.c_str());
+					vec2 screenPosition = Camera.WorldToScreenSpace((commentsAbove ? Camera.LaneRect.TL : Camera.LaneRect.GetBL())
+						+ vec2(GameHitCircle.Center.x + laneX, commentsAbove ? -10.0f : 10.0f));
+					if (commentsAbove) screenPosition.y -= textSize.y;
 					const f32 markerSize = fontSize * 0.45f;
 					const vec2 textPosition = screenPosition + vec2(markerSize + Camera.WorldToScreenScale(5.0f), 0.0f);
-					const vec2 textSize = font->CalcTextSizeA(fontSize, F32Max, wrapWidth, comment.Text.c_str());
 					if (screenPosition.x > commentClipBR.x || textPosition.x + textSize.x < commentClipTL.x) continue;
 					const u32 textColor = Gui::ColorU32WithAlpha(*Settings.Appearance.PreviewCommentTextColor, alpha);
 					const u32 outlineColor = Gui::ColorU32WithAlpha(*Settings.Appearance.PreviewCommentOutlineColor, alpha);
-					drawList->AddTriangleFilled(screenPosition + vec2(markerSize * 0.5f, fontSize * 0.15f),
-						screenPosition + vec2(0.0f, fontSize * 0.65f), screenPosition + vec2(markerSize, fontSize * 0.65f), textColor);
+					const f32 markerTipY = fontSize * (commentsAbove ? 0.65f : 0.15f);
+					const f32 markerBaseY = fontSize * (commentsAbove ? 0.15f : 0.65f);
+					drawList->AddTriangleFilled(screenPosition + vec2(markerSize * 0.5f, markerTipY),
+						screenPosition + vec2(commentsAbove ? markerSize : 0.0f, markerBaseY),
+						screenPosition + vec2(commentsAbove ? 0.0f : markerSize, markerBaseY), textColor);
 					for (i32 y = -1; y <= 1; y++)
 						for (i32 x = -1; x <= 1; x++)
 							if (x != 0 || y != 0)
@@ -2565,7 +2593,7 @@ namespace PeepoDrumKit
 						constexpr vec2 taikoComboDigitSize = vec2(66.0f, 75.0f);
 						const f32 taikoComboReferenceWidth = taikoComboDigitSize.x * taikoComboReferenceDigits + display.PaddingX * (taikoComboReferenceDigits - 1);
 						vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
-						if (isTaikoVideo && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
+						if (isTaikoLayout && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
 						{
 							const f32 fitScale = std::min(taikoComboDigitSize.x / digitSrcSize.x, taikoComboDigitSize.y / digitSrcSize.y);
 							digitSize = digitSrcSize * (fitScale * Camera.WorldToScreenScaleFactor);
@@ -2575,10 +2603,10 @@ namespace PeepoDrumKit
 						const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
 							: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
 							: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
-						const vec2 comboWorldPos = isTaikoVideo ? vec2(Camera.LaneRect.TL.x - 8.0f - taikoComboReferenceWidth * 0.5f, Camera.LaneRect.TL.y + 107.0f)
+						const vec2 comboWorldPos = isTaikoLayout ? vec2(Camera.LaneRect.TL.x - 8.0f - taikoComboReferenceWidth * 0.5f, Camera.LaneRect.TL.y + 107.0f)
 							: Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
 						vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
-						if (isTaikoVideo && comboLen > taikoComboReferenceDigits && totalSize.x > 0.0f)
+						if (isTaikoLayout && comboLen > taikoComboReferenceDigits && totalSize.x > 0.0f)
 						{
 							const f32 referenceWidth = digitStep.x * taikoComboReferenceDigits - padding.x;
 							const f32 horizontalScale = referenceWidth / totalSize.x;
@@ -2594,7 +2622,7 @@ namespace PeepoDrumKit
 						{
 							if (sheetW <= 0.0f) return;
 							Rect comboBounds = viewport;
-							if (isVideoExport && !isTaikoVideo && nLanes == 2)
+							if (isVideoExport && !isTaikoLayout && nLanes == 2)
 							{
 								comboBounds.TL.y = iLane == 0 ? viewport.TL.y + (VideoTitleVerticalPosition == 0 ? titleBandHeight : 0.0f) : laneRectScreen.BR.y;
 								comboBounds.BR.y = iLane == 0 ? laneRectScreen.TL.y : viewport.BR.y - (VideoTitleVerticalPosition == 1 ? titleBandHeight : 0.0f);
@@ -2622,13 +2650,13 @@ namespace PeepoDrumKit
 								const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
 
 								const float foreOpacity = 63.0f / 255;
-								drawList->ChannelsSetCurrent(isTaikoVideo ? 4 : 2);
+								drawList->ChannelsSetCurrent(isTaikoLayout ? 4 : 2);
 								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
 								drawList->ChannelsSetCurrent(4);
 								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
 							}
 						};
-						if (isVideoExport && !isTaikoVideo && nLanes == 2) videoComboDrawCalls.push_back(drawCombo);
+						if (isVideoExport && !isTaikoLayout && nLanes == 2) videoComboDrawCalls.push_back(drawCombo);
 						else drawCombo(0.0f);
 				}
 			}

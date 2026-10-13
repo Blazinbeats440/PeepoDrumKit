@@ -1485,6 +1485,14 @@ namespace PeepoDrumKit
 		{
 			const b8 noActiveID = (Gui::GetActiveID() == 0);
 			const b8 noOpenPopup = (!assetSave.Active && Gui::GetCurrentContext()->OpenPopupStack.Size <= 0);
+			if (noActiveID && noOpenPopup && Gui::IsAnyPressed(*Settings.Input.Editor_TogglePreviewLayout, false))
+			{
+				auto& layout = Settings_Mutable.General.GamePreviewLayout;
+				layout.Value = layout.Value == 0 ? 1 : 0;
+				layout.SetHasValueIfNotDefault();
+				Settings_Mutable.IsDirty = true;
+				context.ShowStatusMessage(layout.Value == 0 ? UI_Str("PREVIEW_STATUS_LAYOUT_ORIGINAL") : UI_Str("PREVIEW_STATUS_LAYOUT_ARCADE"));
+			}
 			if (noActiveID)
 			{
 				const f32 guiScaleFactorToSetNextFrame = GuiScaleFactorToSetNextFrame;
@@ -1739,19 +1747,20 @@ namespace PeepoDrumKit
 #endif
 
 		gamePreview.UpdateTestPlay(context);
+		gamePreview.DrawTestPlayControls(context);
 		const b8 gamePreviewVisible = Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW"), nullptr, ImGuiWindowFlags_None);
 		if (gamePreviewVisible)
 		{
 			gamePreview.DrawGui(context, timeline.Camera.WorldSpaceXToTime(timeline.WorldSpaceCursorXAnimationCurrent));
-			if (gamePreview.TestPlayJumpTime)
-			{
-				timeline.Camera.PositionTarget.x = std::max(TimelineCameraBaseScrollX,
-					timeline.Camera.TimeToWorldSpaceX(*gamePreview.TestPlayJumpTime) * timeline.Camera.ZoomTarget.x - timeline.Regions.Content.GetWidth() * 0.5f);
-				gamePreview.TestPlayJumpTime.reset();
-			}
 		}
 		else gamePreview.IsAnyChildWindowFocused = false;
 		Gui::End();
+		if (gamePreview.TestPlayJumpTime)
+		{
+			timeline.Camera.PositionTarget.x = std::max(TimelineCameraBaseScrollX,
+				timeline.Camera.TimeToWorldSpaceX(*gamePreview.TestPlayJumpTime) * timeline.Camera.ZoomTarget.x - timeline.Regions.Content.GetWidth() * 0.5f);
+			gamePreview.TestPlayJumpTime.reset();
+		}
 
 		Gui::Begin(UI_WindowName("TAB_TIMELINE"), nullptr, ImGuiWindowFlags_None);
 		timeline.DrawGui(context, gamePreview.HasKeyboardFocus());

@@ -4,6 +4,7 @@
 #include "chart_editor_settings.h"
 #include "chart_editor_i18n.h"
 #include "core_log.h"
+#include <cstdio>
 #include <Windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -177,9 +178,11 @@ namespace PeepoDrumKit
 				if (!RunVideoLayoutSelfTest(error))
 				{
 					Log::Write("Video layout self-test failed: %s", error.c_str());
+					std::fprintf(stderr, "Video layout self-test failed: %s\n", error.c_str());
 					return 1;
 				}
 				Log::Write("Video layout self-test passed");
+				std::puts("Video and preview layout self-test passed");
 				return 0;
 			}
 			if (argv[i] == "--test-screenshot-png")

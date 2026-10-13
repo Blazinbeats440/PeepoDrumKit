@@ -143,7 +143,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout,
 		};
 
 		struct SettingsEntry
@@ -328,6 +328,12 @@ namespace PeepoDrumKit
 						changesWereMade |= Gui::InputScalar("##NewBufferSize", ImGuiDataType_U32, &inOutI32->Value, PtrArg<u32>(8), PtrArg<u32>(64), "%u Frames (Request)");
 						if (changesWereMade)
 							inOutI32->Value = std::clamp(inOutI32->Value, 0, i32{ Audio::Engine.MaxBufferFrameCount });
+					}
+					else if (in.Widget == WidgetType::I32_GamePreviewLayout)
+					{
+						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, layouts, ArrayCountI32(layouts));
 					}
 					else if (in.Widget == WidgetType::I32_GamePreviewMeasureNumbers)
 					{
@@ -1168,6 +1174,12 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_EVENT_SHOW_DELAY_DESC")),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewLayout,
+							UI_Str("SETTINGS_PREVIEW_LAYOUT"),
+							UI_Str("SETTINGS_PREVIEW_LAYOUT_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewLayout),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.ScrollSpeedViewType,
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
@@ -1498,6 +1510,7 @@ namespace PeepoDrumKit
 						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
 						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
 						{ &settings.Input.Editor_TogglePreviewComments, "Editor: Toggle Preview Comments", },
+						{ &settings.Input.Editor_TogglePreviewLayout, UI_Str("SETTINGS_KEY_PREVIEW_LAYOUT"), },
 						{ &settings.Input.Editor_ScreenshotWindow, UI_Str("SCREENSHOT_WINDOW"), },
 						{ &settings.Input.Editor_ScreenshotPreview, UI_Str("SCREENSHOT_PREVIEW"), },
 						{ &settings.Input.Timeline_SelectBranchExpert, "Timeline: Select Expert Branch", },

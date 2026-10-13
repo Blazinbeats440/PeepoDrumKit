@@ -495,12 +495,14 @@ namespace PeepoDrumKit
 		std::vector<DeferredNoteDrawData> ReverseNoteDrawBuffer;
 
 		b8 IsAnyChildWindowFocused = false;
+		b8 IsTestPlayControlsFocused = false;
 
 		using BoxSelectionAction = ChartTimeline::BoxSelectionAction;
 		ChartTimeline::BoxSelectionData BoxSelection = {};
 
 	public:
-		b8 HasKeyboardFocus() const { return IsAnyChildWindowFocused; }
+		b8 HasKeyboardFocus() const { return IsAnyChildWindowFocused || IsTestPlayControlsFocused; }
+		void DrawTestPlayControls(ChartContext& context);
 		void DrawGui(ChartContext& context, Time animatedCursorTime);
 	};
 

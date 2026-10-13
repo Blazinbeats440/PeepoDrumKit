@@ -69,17 +69,33 @@ int main()
 	Check(defaults.General.ChartOpenDirectory->empty() && *defaults.General.RecentFilesShowFullPath, "defaults preserve full path and use exe folder");
 	Check(!ParseSettingsIni("[general]\ndefault_creator_name = Existing\n", defaults).HasError
 		&& defaults.General.ChartOpenDirectory->empty() && *defaults.General.RecentFilesShowFullPath, "old user settings keep new defaults");
+	Check(*defaults.General.GamePreviewLayout == 0, "old user settings retain the original preview layout");
+	Check(*defaults.Input.Editor_TogglePreviewLayout == MultiInputBinding(KeyBinding(ImGuiKey_F4)),
+		"old user settings use F4 as the preview layout shortcut");
 	UserSettingsData configured;
 	configured.General.ChartOpenDirectory.Value = u8"C:/譜面フォルダ/Space Folder";
 	configured.General.ChartOpenDirectory.SetHasValueIfNotDefault();
 	configured.General.RecentFilesShowFullPath.Value = false;
 	configured.General.RecentFilesShowFullPath.SetHasValueIfNotDefault();
+	configured.General.GamePreviewLayout.Value = 1;
+	configured.General.GamePreviewLayout.SetHasValueIfNotDefault();
+	configured.Input.Editor_TogglePreviewLayout.Value = MultiInputBinding(KeyBinding(ImGuiKey_F10));
+	configured.Input.Editor_TogglePreviewLayout.SetHasValueIfNotDefault();
 	std::string userIni;
 	SettingsToIni(configured, userIni);
 	UserSettingsData restoredSettings;
 	Check(!ParseSettingsIni(userIni, restoredSettings).HasError, "file settings ini parses");
 	Check(*restoredSettings.General.ChartOpenDirectory == *configured.General.ChartOpenDirectory
 		&& !*restoredSettings.General.RecentFilesShowFullPath, "unicode folder and file name display survive reload");
+	Check(*restoredSettings.General.GamePreviewLayout == 1 && restoredApp.VideoExport.Layout == 0,
+		"preview layout survives reload independently of the video layout");
+	Check(*restoredSettings.Input.Editor_TogglePreviewLayout == *configured.Input.Editor_TogglePreviewLayout,
+		"custom preview layout shortcut survives reload");
+	UserSettingsData invalidLayout;
+	Check(!ParseSettingsIni("[general]\ngame_preview_layout = 99\n", invalidLayout).HasError
+		&& *invalidLayout.General.GamePreviewLayout == 1, "preview layout clamps a high value");
+	Check(!ParseSettingsIni("[general]\ngame_preview_layout = -1\n", invalidLayout).HasError
+		&& *invalidLayout.General.GamePreviewLayout == 0, "preview layout clamps a negative value");
 	restoredSettings.General.ChartOpenDirectory.ResetToDefault();
 	restoredSettings.General.RecentFilesShowFullPath.ResetToDefault();
 	Check(GetChartOpenDirectory(*restoredSettings.General.ChartOpenDirectory) == executableDirectory
