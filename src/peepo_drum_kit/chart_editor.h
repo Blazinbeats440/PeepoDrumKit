@@ -66,6 +66,7 @@ namespace PeepoDrumKit
 		void SavePendingScreenshots();
 		void OnAfterRender();
 		void RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID);
+		b8 GetIsTestPlayActive() const { return context.TestPlayActive; }
 		ApplicationHost::CloseResponse OnWindowCloseRequest();
 
 	public:

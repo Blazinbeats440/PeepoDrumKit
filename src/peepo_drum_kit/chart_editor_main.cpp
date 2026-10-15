@@ -15,9 +15,43 @@
 
 namespace PeepoDrumKit
 {
+	struct EditorWindowLayouts
+	{
+		cstr EditingIniFileName = "settings_imgui.ini";
+		cstr TestPlayIniFileName = "settings_imgui_test_play.ini";
+		std::string EditingLayout, TestPlayLayout;
+		b8 IsTestPlayActive = false;
+
+		b8 Update(b8 isTestPlayActive)
+		{
+			if (isTestPlayActive == IsTestPlayActive) return false;
+			auto& io = Gui::GetIO();
+			auto& currentLayout = IsTestPlayActive ? TestPlayLayout : EditingLayout;
+			size_t iniSize = 0;
+			const cstr iniData = Gui::SaveIniSettingsToMemory(&iniSize);
+			currentLayout.assign(iniData, iniSize);
+			Gui::SaveIniSettingsToDisk(io.IniFilename);
+
+			auto& nextLayout = isTestPlayActive ? TestPlayLayout : EditingLayout;
+			if (nextLayout.empty() && isTestPlayActive)
+			{
+				const auto fileContent = File::ReadAllBytes(TestPlayIniFileName);
+				if (fileContent.Content != nullptr && fileContent.Size > 0)
+					nextLayout.assign(fileContent.AsString());
+			}
+			if (nextLayout.empty()) nextLayout = currentLayout;
+			Gui::ClearIniSettings();
+			Gui::LoadIniSettingsFromMemory(nextLayout.data(), nextLayout.size());
+			io.IniFilename = isTestPlayActive ? TestPlayIniFileName : EditingIniFileName;
+			IsTestPlayActive = isTestPlayActive;
+			return true;
+		}
+	};
+
 	struct ImGuiApplication
 	{
 		ChartEditor ChartEditor = {};
+		EditorWindowLayouts WindowLayouts = {};
 
 		ImGuiApplication()
 		{
@@ -37,6 +71,9 @@ namespace PeepoDrumKit
 
 		void OnUpdate()
 		{
+			const b8 enteredTestPlay = WindowLayouts.Update(ChartEditor.GetIsTestPlayActive()) && WindowLayouts.IsTestPlayActive;
+			if (enteredTestPlay) Gui::SetWindowCollapsed(UI_WindowName("TAB_TEST_PLAY"), false);
+
 			static constexpr ImGuiWindowFlags fullscreenWindowFlags =
 				ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking |
 				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
@@ -64,6 +101,7 @@ namespace PeepoDrumKit
 			Gui::End();
 
 			ChartEditor.DrawGui();
+			if (enteredTestPlay) Gui::SetWindowFocus(UI_WindowName("TAB_TEST_PLAY"));
 		}
 
 		ApplicationHost::CloseResponse OnWindowCloseRequest()
@@ -71,6 +109,145 @@ namespace PeepoDrumKit
 			return ChartEditor.OnWindowCloseRequest();
 		}
 	};
+
+	static b8 RunWindowLayoutSelfTest(std::string& error)
+	{
+		error.clear();
+		const auto fail = [&](cstr message) { error = message; return false; };
+		const std::string testDirectory = "build/window-layout-tests";
+		if (!Directory::Exists(testDirectory) && !Directory::Create(testDirectory))
+			return fail("Unable to create the window layout test directory");
+		const std::string testPrefix = testDirectory + "/" + std::to_string(::GetCurrentProcessId()) + "-" + std::to_string(::GetTickCount64());
+		const std::string editingFile = testPrefix + "-editing.ini", testPlayFile = testPrefix + "-test-play.ini";
+		ImGuiContext* previousContext = Gui::GetCurrentContext();
+		ImGuiContext* testContext = Gui::CreateContext();
+		Gui::SetCurrentContext(testContext);
+		defer {
+			Gui::SetCurrentContext(testContext);
+			Gui::GetIO().IniFilename = nullptr;
+			Gui::DestroyContext(testContext);
+			Gui::SetCurrentContext(previousContext);
+		};
+		const auto initializeContext = [&]
+		{
+			auto& io = Gui::GetIO();
+			io.IniFilename = editingFile.c_str();
+			io.LogFilename = nullptr;
+			io.DisplaySize = vec2(1280.0f, 720.0f);
+			io.DeltaTime = 1.0f / 60.0f;
+			io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+			io.ConfigErrorRecoveryEnableAssert = io.ConfigErrorRecoveryEnableDebugLog = io.ConfigErrorRecoveryEnableTooltip = false;
+			Gui::GetCurrentContext()->ErrorCallbackUserData = &error;
+			Gui::GetCurrentContext()->ErrorCallback = [](ImGuiContext*, void* userData, cstr message) { *static_cast<std::string*>(userData) += message; };
+			unsigned char* pixels;
+			i32 atlasWidth, atlasHeight;
+			io.Fonts->GetTexDataAsRGBA32(&pixels, &atlasWidth, &atlasHeight);
+		};
+		initializeContext();
+		EditorWindowLayouts layouts;
+		layouts.EditingIniFileName = editingFile.c_str();
+		layouts.TestPlayIniFileName = testPlayFile.c_str();
+		const auto drawFrame = [&](b8 testPlayActive, b8 rearrange = false)
+		{
+			Gui::NewFrame();
+			const b8 changed = layouts.Update(testPlayActive);
+			Gui::SetNextWindowPos(vec2(0.0f));
+			Gui::SetNextWindowSize(Gui::GetIO().DisplaySize);
+			Gui::Begin("Window layout self-test host", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings);
+			const ImGuiID dockSpaceID = Gui::GetID("WindowLayoutSelfTestDockSpace");
+			if (Gui::DockBuilderGetNode(dockSpaceID) == nullptr)
+			{
+				Gui::DockBuilderAddNode(dockSpaceID, ImGuiDockNodeFlags_DockSpace);
+				Gui::DockBuilderSetNodeSize(dockSpaceID, Gui::GetContentRegionAvail());
+				ImGuiID previewDock, timelineDock;
+				Gui::DockBuilderSplitNode(dockSpaceID, ImGuiDir_Down, 0.4f, &timelineDock, &previewDock);
+				Gui::DockBuilderDockWindow(UI_WindowName("TAB_GAME_PREVIEW"), previewDock);
+				Gui::DockBuilderDockWindow(UI_WindowName("TAB_TIMELINE"), timelineDock);
+				Gui::DockBuilderFinish(dockSpaceID);
+			}
+			Gui::DockSpace(dockSpaceID);
+			Gui::End();
+			if (rearrange)
+			{
+				Gui::SetNextWindowDockID(0);
+				Gui::SetNextWindowPos(vec2(160.0f, 80.0f));
+				Gui::SetNextWindowSize(vec2(640.0f, 360.0f));
+			}
+			Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW")); Gui::End();
+			Gui::Begin(UI_WindowName("TAB_TIMELINE")); Gui::End();
+			if (testPlayActive)
+			{
+				Gui::SetNextWindowPos(vec2(820.0f, 80.0f), rearrange ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
+				Gui::SetNextWindowSize(vec2(400.0f, 200.0f), rearrange ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
+				Gui::Begin(UI_WindowName("TAB_TEST_PLAY")); Gui::End();
+			}
+			Gui::Render();
+			return changed;
+		};
+		struct WindowPlacement { ImGuiID DockID; vec2 Position, Size; };
+		const auto placement = [](cstr name)
+		{
+			const auto* window = Gui::FindWindowByName(name);
+			return WindowPlacement { window->DockId, vec2(window->Pos), vec2(window->SizeFull) };
+		};
+		const auto samePlacement = [](const WindowPlacement& first, const WindowPlacement& second)
+		{
+			return first.DockID == second.DockID && first.Position == second.Position && first.Size == second.Size;
+		};
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(false);
+		if (!error.empty()) return false;
+		const auto editingPreview = placement(UI_WindowName("TAB_GAME_PREVIEW"));
+		const auto editingTimeline = placement(UI_WindowName("TAB_TIMELINE"));
+		if (!drawFrame(true)) return fail("Starting test play did not switch window layouts");
+		for (i32 frame = 0; frame < 2; ++frame) drawFrame(true);
+		if (!samePlacement(editingPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+			!samePlacement(editingTimeline, placement(UI_WindowName("TAB_TIMELINE"))))
+			return fail("First test play did not inherit the editing window layout");
+		drawFrame(true, true);
+		drawFrame(true);
+		const auto testPlayPreview = placement(UI_WindowName("TAB_GAME_PREVIEW"));
+		const auto testPlayControls = placement(UI_WindowName("TAB_TEST_PLAY"));
+		if (testPlayPreview.DockID != 0 || samePlacement(editingPreview, testPlayPreview))
+			return fail("The test play window layout fixture did not change");
+		for (i32 frame = 0; frame < 3; ++frame)
+			if (drawFrame(true) || !samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+				!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
+				return fail("Playing or pausing changed the test play window layout");
+		if (!drawFrame(false)) return fail("Exiting test play did not switch window layouts");
+		for (i32 frame = 0; frame < 2; ++frame) drawFrame(false);
+		if (!samePlacement(editingPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+			!samePlacement(editingTimeline, placement(UI_WindowName("TAB_TIMELINE"))))
+			return fail("Exiting test play did not restore the editing window layout");
+		drawFrame(true);
+		for (i32 frame = 0; frame < 2; ++frame) drawFrame(true);
+		if (!samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+			!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
+			return fail("The next test play did not restore its window layout");
+		Gui::SaveIniSettingsToDisk(Gui::GetIO().IniFilename);
+		if (!File::Exists(editingFile) || !File::Exists(testPlayFile)) return fail("Both window layout files were not saved");
+		if (!error.empty()) return false;
+
+		ImGuiContext* restartedContext = Gui::CreateContext();
+		Gui::SetCurrentContext(restartedContext);
+		defer {
+			Gui::SetCurrentContext(restartedContext);
+			Gui::GetIO().IniFilename = nullptr;
+			Gui::DestroyContext(restartedContext);
+			Gui::SetCurrentContext(testContext);
+		};
+		initializeContext();
+		layouts = {};
+		layouts.EditingIniFileName = editingFile.c_str();
+		layouts.TestPlayIniFileName = testPlayFile.c_str();
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(false);
+		if (!samePlacement(editingPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))))
+			return fail("Restarting did not load the editing window layout");
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(true);
+		if (!samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+			!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
+			return fail("Restarting did not load the test play window layout");
+		return error.empty();
+	}
 
 	enum class LoadSettingsResponse { FileNotFound, AllGood, ErrorAbort, ErrorRetry, ErrorIgnore };
 
@@ -115,6 +292,18 @@ namespace PeepoDrumKit
 		auto [argc, argv] = CommandLine::GetCommandLineUTF8();
 		for (size_t i = 1; i < argc; i++)
 		{
+			if (argv[i] == "--test-window-layouts")
+			{
+				i18n::InitBuiltinLocale();
+				std::string error;
+				if (!RunWindowLayoutSelfTest(error))
+				{
+					std::fprintf(stderr, "Window layout self-test failed: %s\n", error.c_str());
+					return 1;
+				}
+				std::puts("Editing and test play window layout self-test passed");
+				return 0;
+			}
 			if (argv[i] == "--test-d3d11-recovery")
 				return ApplicationHost::RunD3D11DeviceRecoverySelfTest() ? 0 : 1;
 			if (argv[i] == "--test-aac-capabilities")
