@@ -7,7 +7,7 @@
 
 namespace PeepoDrumKit
 {
-	enum class ChartSettingsCategory : u8 { General, File, Timeline, Editor, Audio, TestPlay, Appearance, Keys, Count };
+	enum class ChartSettingsCategory : u8 { General, File, Timeline, Editor, Audio, TestPlay, Appearance, Keys, Developer, About, Count };
 
 	struct ChartSettingsWindowTempActiveWidgetGroup
 	{
@@ -44,6 +44,7 @@ namespace PeepoDrumKit
 	private:
 		void SelectSection(std::string_view section);
 		ChartSettingsCategory selectedCategory = ChartSettingsCategory::General;
+		b8 showDeveloperSettings = false;
 		ChartSettingsSectionNavigation sectionNavigation;
 		ImGuiTextFilter settingsFilterMain = {};
 		ImGuiTextFilter settingsFilterInput = {};

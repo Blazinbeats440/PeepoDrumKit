@@ -1,6 +1,7 @@
 ﻿#include "chart_editor_settings_gui.h"
 
 #include "core_io.h"
+#include "core_build_info.h"
 
 namespace PeepoDrumKit
 {
@@ -81,7 +82,7 @@ namespace PeepoDrumKit
 				const b8 isSelected = (*inOutValue == it);
 				if (Gui::Selectable(boolLabels[it], isSelected)) { *inOutValue = it; changesWereMade = true; }
 				if (isSelected) { Gui::SetItemDefaultFocus(); }
-				if (it == defaultValue) { Gui::SameLine(); GuiRightAlignedTextDisabled("(Default)"); }
+				if (it == defaultValue) { Gui::SameLine(); GuiRightAlignedTextDisabled(UI_Str("SETTINGS_VALUE_DEFAULT")); }
 			}
 			Gui::EndCombo();
 		}
@@ -123,9 +124,9 @@ namespace PeepoDrumKit
 		InputFormatBuffer buffer = ToShortcutString(inOutBinding);
 
 		if (buffer.Data[0] == '\0')
-			strcpy_s(buffer.Data, "(None)");
+			strcpy_s(buffer.Data, UI_Str("SETTINGS_BINDING_NONE"));
 		if (inOutAwaitInputBinding == &inOutBinding)
-			strcpy_s(buffer.Data, "[Press any Key]");
+			strcpy_s(buffer.Data, UI_Str("SETTINGS_BINDING_PRESS_KEY"));
 		strcat_s(buffer.Data, "###BindingButton");
 
 		const b8 isBeingAsigned = (inOutAwaitInputBinding == &inOutBinding);
@@ -172,8 +173,8 @@ namespace PeepoDrumKit
 		enum class WidgetType : u32 {
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
-			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout,
+			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, F32_SENoteOffset, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewBarLineMode,
 		};
 
 		struct SettingsEntry
@@ -324,7 +325,7 @@ namespace PeepoDrumKit
 								const b8 isSelected = (it == inOutI32->Value);
 								if (Gui::Selectable(buffer, isSelected)) { inOutI32->Value = it; changesWereMade = true; }
 								if (isSelected) { Gui::SetItemDefaultFocus(); }
-								if (it == inOutI32->Default) { Gui::SameLine(); GuiRightAlignedTextDisabled("(Default)"); }
+								if (it == inOutI32->Default) { Gui::SameLine(); GuiRightAlignedTextDisabled(UI_Str("SETTINGS_VALUE_DEFAULT")); }
 							}
 							Gui::EndCombo();
 						}
@@ -364,6 +365,12 @@ namespace PeepoDrumKit
 						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
 						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
 						changesWereMade |= Gui::Combo("##", &inOutI32->Value, layouts, ArrayCountI32(layouts));
+					}
+					else if (in.Widget == WidgetType::I32_GamePreviewBarLineMode)
+					{
+						const cstr modes[] = { "Normal", "Jiro" };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, modes, ArrayCountI32(modes));
 					}
 					else if (in.Widget == WidgetType::I32_GamePreviewMeasureNumbers)
 					{
@@ -430,7 +437,12 @@ namespace PeepoDrumKit
 				}
 				else if (inOutF32 != nullptr)
 				{
-					if (in.Widget == WidgetType::F32_DrumrollRollsPerSecond)
+					if (in.Widget == WidgetType::F32_SENoteOffset)
+					{
+						changesWereMade |= Gui::InputFloat("##", &inOutF32->Value, 0.1f, 1.0f, "%.2f");
+						if (!std::isfinite(inOutF32->Value)) inOutF32->ResetToDefault();
+					}
+					else if (in.Widget == WidgetType::F32_DrumrollRollsPerSecond)
 					{
 						Gui::SetNextItemWidth(-1.0f);
 						changesWereMade |= Gui::InputFloat("##", &inOutF32->Value, 1.0f, 10.0f, "%.2f rolls/s");
@@ -580,7 +592,7 @@ namespace PeepoDrumKit
 			Gui::PopStyleVar(2);
 			if (beginTable)
 			{
-				Gui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, Gui::CalcTextSize("(Default)").x + Gui::GetFrameHeight());
+				Gui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, Gui::CalcTextSize(UI_Str("SETTINGS_VALUE_DEFAULT")).x + Gui::GetFrameHeight());
 
 				Gui::PushStyleVar(ImGuiStyleVar_ItemSpacing, GuiScale(vec2(8.0f, 8.0f)));
 
@@ -612,7 +624,7 @@ namespace PeepoDrumKit
 
 					Gui::TableSetColumnIndex(0);
 					Gui::AlignTextToFramePadding();
-					(*entry.HasValuePtr) ? Gui::TextUnformatted("(User)") : Gui::TextDisabled("(Default)");
+					(*entry.HasValuePtr) ? Gui::TextUnformatted(UI_Str("SETTINGS_VALUE_USER")) : Gui::TextDisabled("%s", UI_Str("SETTINGS_VALUE_DEFAULT"));
 
 					Gui::TableSetColumnIndex(1);
 
@@ -729,7 +741,7 @@ namespace PeepoDrumKit
 
 				Gui::PushFont(FontMain, GuiScaleI32_AtTarget(FontBaseSizes::Medium));
 				Gui::TableSetupScrollFreeze(0, 1);
-				Gui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, Gui::CalcTextSize("(Default)").x + Gui::GetFrameHeight());
+				Gui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, Gui::CalcTextSize(UI_Str("SETTINGS_VALUE_DEFAULT")).x + Gui::GetFrameHeight());
 				Gui::TableSetupColumn(UI_Str("SETTINGS_ACTION"), ImGuiTableColumnFlags_None);
 				Gui::TableSetupColumn(UI_Str("SETTINGS_BINDING"), ImGuiTableColumnFlags_None);
 				Gui::TableHeadersRow();
@@ -765,7 +777,7 @@ namespace PeepoDrumKit
 						Gui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(190, 135, 25, 190));
 
 					Gui::TableSetColumnIndex(0);
-					(entry.Binding->HasValue) ? Gui::TextUnformatted("(User)") : Gui::TextDisabled("(Default)");
+					(entry.Binding->HasValue) ? Gui::TextUnformatted(UI_Str("SETTINGS_VALUE_USER")) : Gui::TextDisabled("%s", UI_Str("SETTINGS_VALUE_DEFAULT"));
 
 					Gui::TableSetColumnIndex(1);
 
@@ -824,7 +836,7 @@ namespace PeepoDrumKit
 
 			if (state.MultiBindingPopupFadeCurrent >= 0.001f)
 			{
-				cstr selectedBindingName = "Unnamed";
+				cstr selectedBindingName = UI_Str("SETTINGS_BINDING_UNNAMED");
 				for (size_t i = 0; i < entriesCount; i++)
 				{
 					if (entries[i].Binding == state.SelectedMultiBinding)
@@ -976,6 +988,21 @@ namespace PeepoDrumKit
 	b8 ChartSettingsWindow::DrawGui(ChartContext& context, UserSettingsData& settings)
 	{
 		b8 changesWereMade = false;
+		if (Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && inputState.TempAssignedBinding == nullptr &&
+			Gui::GetIO().KeyMods == ImGuiMod_CtrlShiftAlt && Gui::IsKeyPressed(ImGuiKey_D, false))
+		{
+			showDeveloperSettings = !showDeveloperSettings;
+			if (showDeveloperSettings || selectedCategory == ChartSettingsCategory::Developer)
+			{
+				SelectCategory(showDeveloperSettings ? ChartSettingsCategory::Developer : ChartSettingsCategory::General);
+				lastActiveGroup = {};
+				inputState.SelectedMultiBinding = nullptr;
+				inputState.MultiBindingPopupFadeCurrent = inputState.MultiBindingPopupFadeTarget = 0.0f;
+				testPlayCalibrationActive = false;
+			}
+		}
+		if (!showDeveloperSettings && selectedCategory == ChartSettingsCategory::Developer)
+			SelectCategory(ChartSettingsCategory::General);
 
 		const ImVec2 originalFramePadding = Gui::GetStyle().FramePadding;
 		cstr categoryLabels[] =
@@ -988,12 +1015,16 @@ namespace PeepoDrumKit
 			UI_Str("SETTINGS_TAB_TEST_PLAY"),
 			UI_Str("SETTINGS_CATEGORY_APPEARANCE"),
 			UI_Str("SETTINGS_CATEGORY_KEYS"),
+			UI_Str("SETTINGS_CATEGORY_DEVELOPER"),
+			UI_Str("SETTINGS_CATEGORY_ABOUT"),
 		};
 		static_assert(ArrayCount(categoryLabels) == static_cast<size_t>(ChartSettingsCategory::Count));
 
 		f32 categoryWidth = 0.0f;
-		for (cstr label : categoryLabels)
-			categoryWidth = Max(categoryWidth, Gui::CalcTextSize(label).x);
+		const size_t visibleCategoryCount = ArrayCount(categoryLabels);
+		for (size_t categoryIndex = 0; categoryIndex < visibleCategoryCount; ++categoryIndex)
+			if (showDeveloperSettings || categoryIndex != static_cast<size_t>(ChartSettingsCategory::Developer))
+				categoryWidth = Max(categoryWidth, Gui::CalcTextSize(categoryLabels[categoryIndex]).x);
 		for (const std::string& section : sectionNavigation.Sections)
 			categoryWidth = Max(categoryWidth, Gui::CalcTextSize(section).x + GuiScale(14.0f));
 		categoryWidth += GuiScale(24.0f) + Gui::GetStyle().ScrollbarSize;
@@ -1002,9 +1033,10 @@ namespace PeepoDrumKit
 		if (Gui::BeginChild("SettingsCategories", vec2(categoryWidth, 0.0f), ImGuiChildFlags_Borders))
 		{
 			Gui::PushStyleVar(ImGuiStyleVar_FramePadding, GuiScale(vec2(10.0f, 5.0f)));
-			for (size_t categoryIndex = 0; categoryIndex < ArrayCount(categoryLabels); categoryIndex++)
+			for (size_t categoryIndex = 0; categoryIndex < visibleCategoryCount; categoryIndex++)
 			{
 				const auto category = static_cast<ChartSettingsCategory>(categoryIndex);
+				if (!showDeveloperSettings && category == ChartSettingsCategory::Developer) continue;
 				if (Gui::Selectable(categoryLabels[categoryIndex], selectedCategory == category, ImGuiSelectableFlags_None, vec2(0.0f, Gui::GetFrameHeight())) && selectedCategory != category)
 				{
 					SelectCategory(category);
@@ -1035,6 +1067,30 @@ namespace PeepoDrumKit
 			sectionNavigation.Sections.clear();
 			Gui::UpdateSmoothScrollWindow();
 			Gui::SeparatorText(categoryLabels[static_cast<size_t>(selectedCategory)]);
+			if (selectedCategory == ChartSettingsCategory::About)
+			{
+				Gui::TextUnformatted("PeepoDrumKit");
+				Gui::Spacing();
+				if (Gui::BeginTable("AboutInformation", 2, ImGuiTableFlags_SizingFixedFit))
+				{
+					const struct { cstr Label; cstr Value; } information[] =
+					{
+						{ UI_Str("INFO_HELP_COPYRIGHT_YEAR"), "Samyuu" },
+						{ UI_Str("INFO_HELP_MODIFIED_BY"), "Blazinbeats440" },
+						{ UI_Str("INFO_HELP_BUILD_TIME"), BuildInfo::CompilationTime() },
+						{ UI_Str("INFO_HELP_BUILD_DATE"), BuildInfo::CompilationDate() },
+						{ UI_Str("INFO_HELP_BUILD_CONFIGURATION"), UI_Str(BuildInfo::BuildConfiguration()) },
+						{ UI_Str("INFO_HELP_CURRENT_VERSION"), BuildInfo::CurrentVersion() },
+					};
+					for (const auto& row : information)
+					{
+						Gui::TableNextRow();
+						Gui::TableSetColumnIndex(0); Gui::TextUnformatted(row.Label);
+						Gui::TableSetColumnIndex(1); Gui::TextUnformatted(row.Value);
+					}
+					Gui::EndTable();
+				}
+			}
 
 			if (selectedCategory == ChartSettingsCategory::General)
 			{
@@ -1277,6 +1333,12 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewBarLineMode,
+							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE"),
+							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewBarLineMode),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.GamePreviewBarLinesBehindNotes,
 							UI_Str("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES"),
 							UI_Str("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC")),
@@ -1329,6 +1391,30 @@ namespace PeepoDrumKit
 
 					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), selectedCategory == ChartSettingsCategory::Appearance ? nullptr : &settingsFilterMain, lastActiveGroup, sectionNavigation, selectedCategory);
 				}
+				Gui::PopStyleVar();
+			}
+
+			if (selectedCategory == ChartSettingsCategory::Developer)
+			{
+				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
+				Gui::TextWrapped(UI_Str("SETTINGS_DEVELOPER_HINT"));
+				Gui::TextWrapped(UI_Str("SETTINGS_SENOTES_OFFSET_DESC"));
+				cstr labels[] =
+				{
+					UI_Str("SETTINGS_SENOTES_DO"), UI_Str("SETTINGS_SENOTES_KO"), UI_Str("SETTINGS_SENOTES_DON"),
+					UI_Str("SETTINGS_SENOTES_DON_BIG"), UI_Str("SETTINGS_SENOTES_DON_HAND"), UI_Str("SETTINGS_SENOTES_KA"),
+					UI_Str("SETTINGS_SENOTES_KATSU"), UI_Str("SETTINGS_SENOTES_KATSU_BIG"), UI_Str("SETTINGS_SENOTES_KATSU_HAND"),
+					UI_Str("SETTINGS_SENOTES_KADON"), UI_Str("SETTINGS_SENOTES_DRUMROLL"), UI_Str("SETTINGS_SENOTES_DRUMROLL_BIG"),
+					UI_Str("SETTINGS_SENOTES_BALLOON"), UI_Str("SETTINGS_SENOTES_BALLOON_SPECIAL"), UI_Str("SETTINGS_SENOTES_BOMB"),
+					UI_Str("SETTINGS_SENOTES_ADLIB"), UI_Str("SETTINGS_SENOTES_FUSE"),
+				};
+				static_assert(ArrayCount(labels) == std::extent_v<decltype(UserSettingsData::DeveloperData::SENoteOffsetX)>);
+				std::vector<SettingsGui::SettingsEntry> entries;
+				entries.reserve(ArrayCount(labels));
+				for (size_t index = 0; index < ArrayCount(labels); ++index)
+					entries.emplace_back(ChartSettingsCategory::Developer, UI_Str("SETTINGS_SECTION_SENOTES"),
+						settings.Developer.SENoteOffsetX[index], labels[index], "", SettingsGui::WidgetType::F32_SENoteOffset);
+				changesWereMade |= SettingsGui::DrawEntriesListTableGui(entries.data(), entries.size(), &settingsFilterMain, lastActiveGroup, sectionNavigation);
 				Gui::PopStyleVar();
 			}
 
@@ -1560,143 +1646,143 @@ namespace PeepoDrumKit
 
 					SettingsGui::InputSettingsEntry settingsEntriesInput[] =
 					{
-						{ &settings.Input.Editor_ToggleFullscreen, "Editor: Toggle Fullscreen", },
-						{ &settings.Input.Editor_ToggleVSync, "Editor: Toggle VSync", },
-						{ &settings.Input.Editor_IncreaseGuiScale, "Editor: Zoom In", },
-						{ &settings.Input.Editor_DecreaseGuiScale, "Editor: Zoom Out", },
-						{ &settings.Input.Editor_ResetGuiScale, "Editor: Reset Zoom", },
-						{ &settings.Input.Editor_Undo, "Editor: Undo", },
-						{ &settings.Input.Editor_Redo, "Editor: Redo", },
-						{ &settings.Input.Editor_OpenHelp, "Editor: Open Help", },
-						{ &settings.Input.Editor_OpenUpdateNotes, "Editor: Open Update Notes", },
-						{ &settings.Input.Editor_OpenChartStats, "Editor: Open Chart Stats", },
-						{ &settings.Input.Editor_OpenLyrics, "Editor: Open Chart Lyrics", },
-						{ &settings.Input.Editor_OpenTextEditor, "Editor: Open Text Editor", },
+						{ &settings.Input.Editor_ToggleFullscreen, UI_Str("SETTINGS_KEY_EDITOR_TOGGLE_FULLSCREEN"), },
+						{ &settings.Input.Editor_ToggleVSync, UI_Str("SETTINGS_KEY_EDITOR_TOGGLE_V_SYNC"), },
+						{ &settings.Input.Editor_IncreaseGuiScale, UI_Str("SETTINGS_KEY_EDITOR_INCREASE_GUI_SCALE"), },
+						{ &settings.Input.Editor_DecreaseGuiScale, UI_Str("SETTINGS_KEY_EDITOR_DECREASE_GUI_SCALE"), },
+						{ &settings.Input.Editor_ResetGuiScale, UI_Str("SETTINGS_KEY_EDITOR_RESET_GUI_SCALE"), },
+						{ &settings.Input.Editor_Undo, UI_Str("SETTINGS_KEY_EDITOR_UNDO"), },
+						{ &settings.Input.Editor_Redo, UI_Str("SETTINGS_KEY_EDITOR_REDO"), },
+						{ &settings.Input.Editor_OpenHelp, UI_Str("SETTINGS_KEY_EDITOR_OPEN_HELP"), },
+						{ &settings.Input.Editor_OpenUpdateNotes, UI_Str("SETTINGS_KEY_EDITOR_OPEN_UPDATE_NOTES"), },
+						{ &settings.Input.Editor_OpenChartStats, UI_Str("SETTINGS_KEY_EDITOR_OPEN_CHART_STATS"), },
+						{ &settings.Input.Editor_OpenLyrics, UI_Str("SETTINGS_KEY_EDITOR_OPEN_LYRICS"), },
+						{ &settings.Input.Editor_OpenTextEditor, UI_Str("SETTINGS_KEY_EDITOR_OPEN_TEXT_EDITOR"), },
 						{ &settings.Input.Editor_OpenUtilities, UI_Str("SHORTCUT_OPEN_UTILITIES"), },
-						{ &settings.Input.Editor_OpenSettings, "Editor: Open Settings", },
-						{ &settings.Input.Editor_OpenTemplate, "Editor: Open Templates", },
-						{ &settings.Input.Editor_OpenChartBranches, "Editor: Open Chart Branches", },
-						{ &settings.Input.Editor_IncreaseMasterVolume10, "Editor: Increase Master Volume 10%", },
-						{ &settings.Input.Editor_DecreaseMasterVolume10, "Editor: Decrease Master Volume 10%", },
-						{ &settings.Input.Editor_ChartNew, "Editor: Chart New", },
-						{ &settings.Input.Editor_ChartOpen, "Editor: Chart Open", },
-						{ &settings.Input.Editor_ChartOpenDirectory, "Editor: Chart Open Directory", },
-						{ &settings.Input.Editor_ChartSave, "Editor: Chart Save", },
-						{ &settings.Input.Editor_ChartSaveAs, "Editor: Chart Save As", },
+						{ &settings.Input.Editor_OpenSettings, UI_Str("SETTINGS_KEY_EDITOR_OPEN_SETTINGS"), },
+						{ &settings.Input.Editor_OpenTemplate, UI_Str("SETTINGS_KEY_EDITOR_OPEN_TEMPLATE"), },
+						{ &settings.Input.Editor_OpenChartBranches, UI_Str("SETTINGS_KEY_EDITOR_OPEN_CHART_BRANCHES"), },
+						{ &settings.Input.Editor_IncreaseMasterVolume10, UI_Str("SETTINGS_KEY_EDITOR_INCREASE_MASTER_VOLUME10"), },
+						{ &settings.Input.Editor_DecreaseMasterVolume10, UI_Str("SETTINGS_KEY_EDITOR_DECREASE_MASTER_VOLUME10"), },
+						{ &settings.Input.Editor_ChartNew, UI_Str("SETTINGS_KEY_EDITOR_CHART_NEW"), },
+						{ &settings.Input.Editor_ChartOpen, UI_Str("SETTINGS_KEY_EDITOR_CHART_OPEN"), },
+						{ &settings.Input.Editor_ChartOpenDirectory, UI_Str("SETTINGS_KEY_EDITOR_CHART_OPEN_DIRECTORY"), },
+						{ &settings.Input.Editor_ChartSave, UI_Str("SETTINGS_KEY_EDITOR_CHART_SAVE"), },
+						{ &settings.Input.Editor_ChartSaveAs, UI_Str("SETTINGS_KEY_EDITOR_CHART_SAVE_AS"), },
 						{},
-						{ &settings.Input.Timeline_PlaceNoteDon, "Timeline: Place Note Don", },
-						{ &settings.Input.Timeline_PlaceNoteKa, "Timeline: Place Note Ka", },
-						{ &settings.Input.Timeline_PlaceNoteBalloon, "Timeline: Place Note Balloon", },
-						{ &settings.Input.Timeline_PlaceNoteDrumroll, "Timeline: Place Note Drumroll", },
+						{ &settings.Input.Timeline_PlaceNoteDon, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_NOTE_DON"), },
+						{ &settings.Input.Timeline_PlaceNoteKa, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_NOTE_KA"), },
+						{ &settings.Input.Timeline_PlaceNoteBalloon, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_NOTE_BALLOON"), },
+						{ &settings.Input.Timeline_PlaceNoteDrumroll, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_NOTE_DRUMROLL"), },
 						{ &settings.Input.Timeline_PlaceNoteAdlib, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_ADLIB"), },
 						{ &settings.Input.Timeline_PlaceNoteKaDon, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_KADON"), },
 						{ &settings.Input.Timeline_PlaceNoteBomb, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_BOMB"), },
 						{ &settings.Input.Timeline_PlaceNoteFuse, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_FUSE"), },
-						{ &settings.Input.Timeline_PlaceRestAndStepCursor, "Timeline: Place Rest / Step Cursor", },
-						{ &settings.Input.Timeline_SelectBranchNormal, "Timeline: Select Normal Branch", },
-						{ &settings.Input.Editor_TogglePreviewComments, "Editor: Toggle Preview Comments", },
+						{ &settings.Input.Timeline_PlaceRestAndStepCursor, UI_Str("SETTINGS_KEY_TIMELINE_PLACE_REST_AND_STEP_CURSOR"), },
+						{ &settings.Input.Timeline_SelectBranchNormal, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_NORMAL"), },
+						{ &settings.Input.Editor_TogglePreviewComments, UI_Str("SETTINGS_KEY_EDITOR_TOGGLE_PREVIEW_COMMENTS"), },
 						{ &settings.Input.Editor_TogglePreviewLayout, UI_Str("SETTINGS_KEY_PREVIEW_LAYOUT"), },
 						{ &settings.Input.Editor_ScreenshotWindow, UI_Str("SCREENSHOT_WINDOW"), },
 						{ &settings.Input.Editor_ScreenshotPreview, UI_Str("SCREENSHOT_PREVIEW"), },
-						{ &settings.Input.Timeline_SelectBranchExpert, "Timeline: Select Expert Branch", },
-						{ &settings.Input.Timeline_SelectBranchMaster, "Timeline: Select Master Branch", },
-						{ &settings.Input.Timeline_Cut, "Timeline: Cut", },
-						{ &settings.Input.Timeline_Copy, "Timeline: Copy", },
-						{ &settings.Input.Timeline_Paste, "Timeline: Paste", },
-						{ &settings.Input.Timeline_DeleteSelection, "Timeline: Delete Selection", },
-						{ &settings.Input.Timeline_ToggleMarkerAtCursor, "Timeline: Place/Remove Marker", },
-						{ &settings.Input.Timeline_JumpToMarker, "Timeline: Jump to Marker", },
-						{ &settings.Input.Timeline_SelectRangeToMarker, "Timeline: Select Range to Marker", },
-						{ &settings.Input.Timeline_StartEndRangeSelection, "Timeline: Start/End Range Selection", },
-						{ &settings.Input.Timeline_SelectAll, "Timeline: Select All", },
-						{ &settings.Input.Timeline_ClearSelection, "Timeline: Clear Selection", },
-						{ &settings.Input.Timeline_InvertSelection, "Timeline: Invert Selection", },
-						{ &settings.Input.Timeline_SelectToChartEnd, "Timeline: Select to End of Chart", },
-						{ &settings.Input.Timeline_SelectAllWithinRangeSelection, "Timeline: Select All within Range Selection", },
-						{ &settings.Input.Timeline_ShiftSelectionLeft, "Timeline: Shift selection Left", },
-						{ &settings.Input.Timeline_ShiftSelectionRight, "Timeline: Shift selection Right", },
-						{ &settings.Input.Timeline_SelectItemPattern_xo, "Timeline: Select Item Pattern xo", },
-						{ &settings.Input.Timeline_SelectItemPattern_xoo, "Timeline: Select Item Pattern xoo", },
-						{ &settings.Input.Timeline_SelectItemPattern_xooo, "Timeline: Select Item Pattern xooo", },
-						{ &settings.Input.Timeline_SelectItemPattern_xxoo, "Timeline: Select Item Pattern xxoo", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomA, "Timeline: Select Item Pattern Custom A", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomB, "Timeline: Select Item Pattern Custom B", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomC, "Timeline: Select Item Pattern Custom C", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomD, "Timeline: Select Item Pattern Custom D", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomE, "Timeline: Select Item Pattern Custom E", },
-						{ &settings.Input.Timeline_SelectItemPattern_CustomF, "Timeline: Select Item Pattern Custom F", },
-						{ &settings.Input.Timeline_InsertTempoChangeAtSelectedItems, "Timeline: Insert Tempo Change at Selected Items", },
-						{ &settings.Input.Timeline_InsertTimeSignatureChangeAtSelectedItems, "Timeline: Insert Time Signature Change at Selected Items", },
-						{ &settings.Input.Timeline_InsertScrollChangeAtSelectedItems, "Timeline: Insert Scroll Change at Selected Items", },
-						{ &settings.Input.Timeline_InsertBarLineChangeAtSelectedItems, "Timeline: Insert Bar Line Change at Selected Items", },
-						{ &settings.Input.Timeline_InsertScrollTypeAtSelectedItems, "Timeline: Insert Scroll Type at Selected Items", },
-						{ &settings.Input.Timeline_InsertJPOSScrollAtSelectedItems, "Timeline: Insert JPOS Scroll at Selected Items", },
-						{ &settings.Input.Timeline_InsertSuddenAtSelectedItems, "Timeline: Insert Sudden at Selected Items", },
-						{ &settings.Input.Timeline_InsertGoGoRangeAtSelectedItems, "Timeline: Insert Go-Go Range at Selected Items", },
-						{ &settings.Input.Timeline_InsertLyricAtSelectedItems, "Timeline: Insert Lyric at Selected Items", },
-						{ &settings.Input.Timeline_SetTimeSignatureFromRangeSelection, "Timeline: Set Time Signature from Range Selection", },
-						{ &settings.Input.Timeline_SetJPOSScrollDurationFromRangeSelection, "Timeline: Set JPOS Scroll Duration from Range Selection", },
-						{ &settings.Input.Timeline_SetSuddenAppearanceOffsetFromRangeSelection, "Timeline: Set Sudden Appearance Offset from Range Selection", },
-						{ &settings.Input.Timeline_SetSuddenMovementOffsetFromRangeSelection, "Timeline: Set Sudden Movement Offset from Range Selection", },
-						{ &settings.Input.Timeline_SetGoGoRangeFromRangeSelection, "Timeline: Set Go-Go Range from Range Selection", },
-						{ &settings.Input.Timeline_ConvertSelectionToScrollChanges, "Timeline: Convert Selection to Scroll Changes", },
-						{ &settings.Input.Timeline_FlipNoteType, "Timeline: Flip Note Type", },
-						{ &settings.Input.Timeline_ToggleNoteSize, "Timeline: Toggle Note Size", },
-						{ &settings.Input.Timeline_ExpandItemTime_2To1, "Timeline: Expand Item/Range Time 2:1", },
-						{ &settings.Input.Timeline_ExpandItemTime_3To2, "Timeline: Expand Item/Range Time 3:2", },
-						{ &settings.Input.Timeline_ExpandItemTime_4To3, "Timeline: Expand Item/Range Time 4:3", },
-						{ &settings.Input.Timeline_CompressItemTime_1To2, "Timeline: Compress Item/Range Time 1:2", },
-						{ &settings.Input.Timeline_CompressItemTime_2To3, "Timeline: Compress Item/Range Time 2:3", },
-						{ &settings.Input.Timeline_CompressItemTime_3To4, "Timeline: Compress Item/Range Time 3:4", },
-						{ &settings.Input.Timeline_CompressItemTime_0To1, "Timeline: Compress Item/Range Time 0:1", },
-						{ &settings.Input.Timeline_QuantizeItemTime_1To1, "Timeline: Quantize Selected Items", },
+						{ &settings.Input.Timeline_SelectBranchExpert, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_EXPERT"), },
+						{ &settings.Input.Timeline_SelectBranchMaster, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_MASTER"), },
+						{ &settings.Input.Timeline_Cut, UI_Str("SETTINGS_KEY_TIMELINE_CUT"), },
+						{ &settings.Input.Timeline_Copy, UI_Str("SETTINGS_KEY_TIMELINE_COPY"), },
+						{ &settings.Input.Timeline_Paste, UI_Str("SETTINGS_KEY_TIMELINE_PASTE"), },
+						{ &settings.Input.Timeline_DeleteSelection, UI_Str("SETTINGS_KEY_TIMELINE_DELETE_SELECTION"), },
+						{ &settings.Input.Timeline_ToggleMarkerAtCursor, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_MARKER_AT_CURSOR"), },
+						{ &settings.Input.Timeline_JumpToMarker, UI_Str("SETTINGS_KEY_TIMELINE_JUMP_TO_MARKER"), },
+						{ &settings.Input.Timeline_SelectRangeToMarker, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_RANGE_TO_MARKER"), },
+						{ &settings.Input.Timeline_StartEndRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_START_END_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_SelectAll, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ALL"), },
+						{ &settings.Input.Timeline_ClearSelection, UI_Str("SETTINGS_KEY_TIMELINE_CLEAR_SELECTION"), },
+						{ &settings.Input.Timeline_InvertSelection, UI_Str("SETTINGS_KEY_TIMELINE_INVERT_SELECTION"), },
+						{ &settings.Input.Timeline_SelectToChartEnd, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_TO_CHART_END"), },
+						{ &settings.Input.Timeline_SelectAllWithinRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ALL_WITHIN_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_ShiftSelectionLeft, UI_Str("SETTINGS_KEY_TIMELINE_SHIFT_SELECTION_LEFT"), },
+						{ &settings.Input.Timeline_ShiftSelectionRight, UI_Str("SETTINGS_KEY_TIMELINE_SHIFT_SELECTION_RIGHT"), },
+						{ &settings.Input.Timeline_SelectItemPattern_xo, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XO"), },
+						{ &settings.Input.Timeline_SelectItemPattern_xoo, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XOO"), },
+						{ &settings.Input.Timeline_SelectItemPattern_xooo, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XOOO"), },
+						{ &settings.Input.Timeline_SelectItemPattern_xxoo, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XXOO"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomA, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_A"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomB, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_B"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomC, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_C"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomD, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_D"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomE, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_E"), },
+						{ &settings.Input.Timeline_SelectItemPattern_CustomF, UI_Str("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_F"), },
+						{ &settings.Input.Timeline_InsertTempoChangeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_TEMPO_CHANGE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertTimeSignatureChangeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_TIME_SIGNATURE_CHANGE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertScrollChangeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_SCROLL_CHANGE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertBarLineChangeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_BAR_LINE_CHANGE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertScrollTypeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_SCROLL_TYPE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertJPOSScrollAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_JPOS_SCROLL_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertSuddenAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_SUDDEN_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertGoGoRangeAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_GO_GO_RANGE_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_InsertLyricAtSelectedItems, UI_Str("SETTINGS_KEY_TIMELINE_INSERT_LYRIC_AT_SELECTED_ITEMS"), },
+						{ &settings.Input.Timeline_SetTimeSignatureFromRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SET_TIME_SIGNATURE_FROM_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_SetJPOSScrollDurationFromRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SET_JPOS_SCROLL_DURATION_FROM_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_SetSuddenAppearanceOffsetFromRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SET_SUDDEN_APPEARANCE_OFFSET_FROM_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_SetSuddenMovementOffsetFromRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SET_SUDDEN_MOVEMENT_OFFSET_FROM_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_SetGoGoRangeFromRangeSelection, UI_Str("SETTINGS_KEY_TIMELINE_SET_GO_GO_RANGE_FROM_RANGE_SELECTION"), },
+						{ &settings.Input.Timeline_ConvertSelectionToScrollChanges, UI_Str("SETTINGS_KEY_TIMELINE_CONVERT_SELECTION_TO_SCROLL_CHANGES"), },
+						{ &settings.Input.Timeline_FlipNoteType, UI_Str("SETTINGS_KEY_TIMELINE_FLIP_NOTE_TYPE"), },
+						{ &settings.Input.Timeline_ToggleNoteSize, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_NOTE_SIZE"), },
+						{ &settings.Input.Timeline_ExpandItemTime_2To1, UI_Str("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_2_TO1"), },
+						{ &settings.Input.Timeline_ExpandItemTime_3To2, UI_Str("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_3_TO2"), },
+						{ &settings.Input.Timeline_ExpandItemTime_4To3, UI_Str("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_4_TO3"), },
+						{ &settings.Input.Timeline_CompressItemTime_1To2, UI_Str("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_1_TO2"), },
+						{ &settings.Input.Timeline_CompressItemTime_2To3, UI_Str("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_2_TO3"), },
+						{ &settings.Input.Timeline_CompressItemTime_3To4, UI_Str("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_3_TO4"), },
+						{ &settings.Input.Timeline_CompressItemTime_0To1, UI_Str("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_0_TO1"), },
+						{ &settings.Input.Timeline_QuantizeItemTime_1To1, UI_Str("SETTINGS_KEY_TIMELINE_QUANTIZE_ITEM_TIME_1_TO1"), },
 						{ &settings.Input.Timeline_ConvertRangeToDelay, UI_Str("SETTINGS_KEY_CONVERT_RANGE_DELAY"), },
-						{ &settings.Input.Timeline_ReverseItemTime_N1To1, "Timeline: Reverse Item/Range Time -1:1", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomA, "Timeline: Scale Item/Range Time Custom A", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomB, "Timeline: Scale Item/Range Time Custom B", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomC, "Timeline: Scale Item/Range Time Custom C", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomD, "Timeline: Scale Item/Range Time Custom D", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomE, "Timeline: Scale Item/Range Time Custom E", },
-						{ &settings.Input.Timeline_ScaleItemTime_CustomF, "Timeline: Scale Item/Range Time Custom F", },
-						{ &settings.Input.Timeline_StepCursorLeft, "Timeline: Step Cursor Left", },
-						{ &settings.Input.Timeline_StepCursorRight, "Timeline: Step Cursor Right", },
-						{ &settings.Input.Timeline_JumpToTimelineStart, "Timeline: Jump to Timeline Start", },
-						{ &settings.Input.Timeline_JumpToTimelineEnd, "Timeline: Jump to Timeline End", },
-						{ &settings.Input.Timeline_IncreaseGridDivision, "Timeline: Increase Grid Division", },
-						{ &settings.Input.Timeline_DecreaseGridDivision, "Timeline: Decrease Grid Division", },
-						{ &settings.Input.Timeline_SetGridDivision_1_4, "Timeline: Set Grid Division 1 / 4", },
-						{ &settings.Input.Timeline_SetGridDivision_1_5, "Timeline: Set Grid Division 1 / 5 (Quintuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_6, "Timeline: Set Grid Division 1 / 6", },
-						{ &settings.Input.Timeline_SetGridDivision_1_7, "Timeline: Set Grid Division 1 / 7 (Septuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_8, "Timeline: Set Grid Division 1 / 8", },
-						{ &settings.Input.Timeline_SetGridDivision_1_9, "Timeline: Set Grid Division 1 / 9 (Nonuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_10, "Timeline: Set Grid Division 1 / 10 (Quintuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_12, "Timeline: Set Grid Division 1 / 12", },
-						{ &settings.Input.Timeline_SetGridDivision_1_14, "Timeline: Set Grid Division 1 / 14 (Septuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_16, "Timeline: Set Grid Division 1 / 16", },
-						{ &settings.Input.Timeline_SetGridDivision_1_18, "Timeline: Set Grid Division 1 / 18 (Nonuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_20, "Timeline: Set Grid Division 1 / 20 (Quintuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_24, "Timeline: Set Grid Division 1 / 24", },
-						{ &settings.Input.Timeline_SetGridDivision_1_28, "Timeline: Set Grid Division 1 / 28 (Septuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_32, "Timeline: Set Grid Division 1 / 32", },
-						{ &settings.Input.Timeline_SetGridDivision_1_36, "Timeline: Set Grid Division 1 / 36 (Nonuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_40, "Timeline: Set Grid Division 1 / 40 (Quintuplets)", },
-						{ &settings.Input.Timeline_SetGridDivision_1_48, "Timeline: Set Grid Division 1 / 48", },
-						{ &settings.Input.Timeline_SetGridDivision_1_64, "Timeline: Set Grid Division 1 / 64", },
-						{ &settings.Input.Timeline_SetGridDivision_1_96, "Timeline: Set Grid Division 1 / 96", },
-						{ &settings.Input.Timeline_SetGridDivision_1_192, "Timeline: Set Grid Division 1 / 192", },
-						{ &settings.Input.Timeline_IncreasePlaybackSpeed, "Timeline: Increase Playback Speed", },
-						{ &settings.Input.Timeline_DecreasePlaybackSpeed, "Timeline: Decrease Playback Speed", },
-						{ &settings.Input.Timeline_SetPlaybackSpeed_100, "Timeline: Set Playback Speed 100%", },
-						{ &settings.Input.Timeline_SetPlaybackSpeed_75, "Timeline: Set Playback Speed 75%", },
-						{ &settings.Input.Timeline_SetPlaybackSpeed_50, "Timeline: Set Playback Speed 50%", },
-						{ &settings.Input.Timeline_SetPlaybackSpeed_25, "Timeline: Set Playback Speed 25%", },
-						{ &settings.Input.Timeline_TogglePlayback, "Timeline: Toggle Playback", },
-						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, "Timeline: Toggle Playback Cursor Follow", },
-						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, "Timeline: Toggle Auto-Step After Note Input", },
-						{ &settings.Input.Timeline_ToggleGridStartsAtBar, "Timeline: Toggle Grid Origin Between Bar and Song Start", },
-						{ &settings.Input.Timeline_ToggleLoopPlayback, "Timeline: Toggle Loop Playback", },
-						{ &settings.Input.Timeline_ToggleMetronome, "Timeline: Toggle Metronome", },
+						{ &settings.Input.Timeline_ReverseItemTime_N1To1, UI_Str("SETTINGS_KEY_TIMELINE_REVERSE_ITEM_TIME_N1_TO1"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomA, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_A"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomB, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_B"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomC, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_C"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomD, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_D"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomE, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_E"), },
+						{ &settings.Input.Timeline_ScaleItemTime_CustomF, UI_Str("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_F"), },
+						{ &settings.Input.Timeline_StepCursorLeft, UI_Str("SETTINGS_KEY_TIMELINE_STEP_CURSOR_LEFT"), },
+						{ &settings.Input.Timeline_StepCursorRight, UI_Str("SETTINGS_KEY_TIMELINE_STEP_CURSOR_RIGHT"), },
+						{ &settings.Input.Timeline_JumpToTimelineStart, UI_Str("SETTINGS_KEY_TIMELINE_JUMP_TO_TIMELINE_START"), },
+						{ &settings.Input.Timeline_JumpToTimelineEnd, UI_Str("SETTINGS_KEY_TIMELINE_JUMP_TO_TIMELINE_END"), },
+						{ &settings.Input.Timeline_IncreaseGridDivision, UI_Str("SETTINGS_KEY_TIMELINE_INCREASE_GRID_DIVISION"), },
+						{ &settings.Input.Timeline_DecreaseGridDivision, UI_Str("SETTINGS_KEY_TIMELINE_DECREASE_GRID_DIVISION"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_4, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_4"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_5, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_5"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_6, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_6"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_7, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_7"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_8, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_8"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_9, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_9"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_10, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_10"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_12, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_12"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_14, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_14"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_16, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_16"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_18, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_18"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_20, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_20"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_24, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_24"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_28, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_28"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_32, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_32"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_36, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_36"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_40, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_40"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_48, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_48"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_64, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_64"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_96, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_96"), },
+						{ &settings.Input.Timeline_SetGridDivision_1_192, UI_Str("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_192"), },
+						{ &settings.Input.Timeline_IncreasePlaybackSpeed, UI_Str("SETTINGS_KEY_TIMELINE_INCREASE_PLAYBACK_SPEED"), },
+						{ &settings.Input.Timeline_DecreasePlaybackSpeed, UI_Str("SETTINGS_KEY_TIMELINE_DECREASE_PLAYBACK_SPEED"), },
+						{ &settings.Input.Timeline_SetPlaybackSpeed_100, UI_Str("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_100"), },
+						{ &settings.Input.Timeline_SetPlaybackSpeed_75, UI_Str("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_75"), },
+						{ &settings.Input.Timeline_SetPlaybackSpeed_50, UI_Str("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_50"), },
+						{ &settings.Input.Timeline_SetPlaybackSpeed_25, UI_Str("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_25"), },
+						{ &settings.Input.Timeline_TogglePlayback, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_PLAYBACK"), },
+						{ &settings.Input.Timeline_TogglePlaybackCursorFollow, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_PLAYBACK_CURSOR_FOLLOW"), },
+						{ &settings.Input.Timeline_ToggleAutoStepAfterNoteInput, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_AUTO_STEP_AFTER_NOTE_INPUT"), },
+						{ &settings.Input.Timeline_ToggleGridStartsAtBar, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_GRID_STARTS_AT_BAR"), },
+						{ &settings.Input.Timeline_ToggleLoopPlayback, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_LOOP_PLAYBACK"), },
+						{ &settings.Input.Timeline_ToggleMetronome, UI_Str("SETTINGS_KEY_TIMELINE_TOGGLE_METRONOME"), },
 						{},
 						{ &settings.Input.TestPlay_DonLeft, UI_Str("SETTINGS_KEY_TEST_PLAY_DON_LEFT"), true },
 						{ &settings.Input.TestPlay_DonRight, UI_Str("SETTINGS_KEY_TEST_PLAY_DON_RIGHT"), true },
@@ -1709,14 +1795,14 @@ namespace PeepoDrumKit
 						{ &settings.Input.TestPlay_Retry, UI_Str("SETTINGS_KEY_TEST_PLAY_RETRY"), },
 						{ &settings.Input.TestPlay_Exit, UI_Str("SETTINGS_KEY_TEST_PLAY_EXIT"), },
 						{},
-						{ &settings.Input.TempoCalculator_Tap, "Tempo Calculator: Tap", },
-						{ &settings.Input.TempoCalculator_Reset, "Tempo Calculator: Reset", },
+						{ &settings.Input.TempoCalculator_Tap, UI_Str("SETTINGS_KEY_TEMPO_CALCULATOR_TAP"), },
+						{ &settings.Input.TempoCalculator_Reset, UI_Str("SETTINGS_KEY_TEMPO_CALCULATOR_RESET"), },
 						{},
-						{ &settings.Input.Dialog_YesOrOk, "Dialog: Yes/Ok", },
-						{ &settings.Input.Dialog_No, "Dialog: No", },
-						{ &settings.Input.Dialog_Cancel, "Dialog: Cancel", },
-						{ &settings.Input.Dialog_SelectNextTab, "Dialog: Select Next Tab", },
-						{ &settings.Input.Dialog_SelectPreviousTab, "Dialog: Select Previous Tab", },
+						{ &settings.Input.Dialog_YesOrOk, UI_Str("SETTINGS_KEY_DIALOG_YES_OR_OK"), },
+						{ &settings.Input.Dialog_No, UI_Str("SETTINGS_KEY_DIALOG_NO"), },
+						{ &settings.Input.Dialog_Cancel, UI_Str("SETTINGS_KEY_DIALOG_CANCEL"), },
+						{ &settings.Input.Dialog_SelectNextTab, UI_Str("SETTINGS_KEY_DIALOG_SELECT_NEXT_TAB"), },
+						{ &settings.Input.Dialog_SelectPreviousTab, UI_Str("SETTINGS_KEY_DIALOG_SELECT_PREVIOUS_TAB"), },
 					};
 
 					changesWereMade |= SettingsGui::DrawInputEntriesListTableGui(settingsEntriesInput, ArrayCount(settingsEntriesInput), &settingsFilterInput, inputState, sectionNavigation);

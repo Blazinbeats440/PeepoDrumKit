@@ -460,6 +460,7 @@ namespace PeepoDrumKit
 					if (context.ChartFilePath.empty()) OpenChartSaveAsDialog(context, true);
 					else StartAssetSave(context.ChartFilePath);
 				}
+				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("SCREENSHOT_WINDOW"), ToShortcutString(*Settings.Input.Editor_ScreenshotWindow).Data)) screenshotWindowRequested = true;
 				if (Gui::MenuItem(UI_Str("SCREENSHOT_PREVIEW"), ToShortcutString(*Settings.Input.Editor_ScreenshotPreview).Data, false,
 					context.ChartSelectedCourse != nullptr && !videoExport.Exporting && !videoExport.Preparing)) screenshotPreviewRequested = true;
@@ -859,8 +860,6 @@ namespace PeepoDrumKit
 				if (Gui::MenuItem(UI_Str("TAB_UTILITIES"), ToShortcutString(*Settings.Input.Editor_OpenUtilities).Data, &PersistentApp.LastSession.ShowWindow_Utilities))
 					focusUtilitiesWindowNextFrame = true;
 				if (Gui::MenuItem(UI_Str("TAB_CHART_STATS"), ToShortcutString(*Settings.Input.Editor_OpenChartStats).Data)) { PersistentApp.LastSession.ShowWindow_ChartStats = focusChartStatsWindowNextFrame = true; }
-				if (Gui::MenuItem(UI_Str("TAB_SETTINGS"), ToShortcutString(*Settings.Input.Editor_OpenSettings).Data)) { PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true; }
-
 				Gui::EndMenu();
 			}
 
@@ -895,12 +894,7 @@ namespace PeepoDrumKit
 
 			if (Gui::BeginMenu(UI_Str("MENU_HELP")))
 			{
-				Gui::MenuItem(UI_Str("INFO_HELP_COPYRIGHT_YEAR"), "Samyuu", false, false);
-				Gui::MenuItem(UI_Str("INFO_HELP_MODIFIED_BY"), "Blazinbeats440", false, false);
-				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_TIME"), BuildInfo::CompilationTime(), false, false);
-				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_DATE"), BuildInfo::CompilationDate(), false, false);
-				Gui::MenuItem(UI_Str("INFO_HELP_BUILD_CONFIGURATION"), UI_Str(BuildInfo::BuildConfiguration()), false, false);
-				Gui::MenuItem(UI_Str("INFO_HELP_CURRENT_VERSION"), BuildInfo::CurrentVersion(), false, false);
+				if (Gui::MenuItem(UI_Str("TAB_SETTINGS"), ToShortcutString(*Settings.Input.Editor_OpenSettings).Data)) { PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true; }
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("TAB_USAGE_GUIDE"), ToShortcutString(*Settings.Input.Editor_OpenHelp).Data)) { PersistentApp.LastSession.ShowWindow_Help = focusHelpWindowNextFrame = true; }
 				if (Gui::MenuItem(UI_Str("TAB_UPDATE_NOTES"), ToShortcutString(*Settings.Input.Editor_OpenUpdateNotes).Data)) { PersistentApp.LastSession.ShowWindow_UpdateNotes = focusUpdateNotesWindowNextFrame = true; }

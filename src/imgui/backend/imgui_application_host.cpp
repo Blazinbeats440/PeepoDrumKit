@@ -649,7 +649,11 @@ namespace ApplicationHost
 		ImGui::Render();
 		ImGui_UpdateInternalInputExtraDataAtEndOfFrame();
 		if (GlobalIsWindowMinimized && GlobalState.AllowIdleThrottling && ImGui::GetPlatformIO().Viewports.Size <= 1)
+		{
+			if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+				ImGui::UpdatePlatformWindows();
 			return;
+		}
 
 		static auto lastPresentation = std::chrono::steady_clock::time_point {};
 		const auto presentationTime = std::chrono::steady_clock::now();
@@ -1274,6 +1278,76 @@ namespace ApplicationHost
 		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
 		GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
 		return afterRecoveryTest();
+	}
+
+	b8 RunWindowLifecycleSelfTest(std::string& error)
+	{
+		error.clear();
+		const auto fail = [&](cstr message) { error = message; return false; };
+		const State previousState = GlobalState;
+		const auto previousUpdate = GlobalOnUserUpdate;
+		const auto previousAfterRender = GlobalOnUserAfterRender;
+		const auto previousCloseRequest = GlobalOnUserWindowCloseRequest;
+		const b8 previousMinimized = GlobalIsWindowMinimized;
+		ImFont* previousFont = FontMain;
+		const std::string previousFontFileName = FontMainFileNameCurrent;
+		const ImGuiConfigFlags previousConfigFlags = ImGui::GetIO().ConfigFlags;
+		defer {
+			GlobalState = previousState;
+			GlobalOnUserUpdate = previousUpdate;
+			GlobalOnUserAfterRender = previousAfterRender;
+			GlobalOnUserWindowCloseRequest = previousCloseRequest;
+			GlobalIsWindowMinimized = previousMinimized;
+			FontMain = previousFont;
+			FontMainFileNameCurrent = previousFontFileName;
+			ImGui::GetIO().ConfigFlags = previousConfigFlags;
+		};
+		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+		ImGui::UpdatePlatformWindows();
+		const HWND hwnd = static_cast<HWND>(ImGui::GetMainViewport()->PlatformHandle);
+		GlobalState.NativeWindowHandle = hwnd;
+		GlobalState.SwapInterval = 0;
+		GlobalState.AllowIdleThrottling = true;
+		FontMain = ImGui::GetIO().Fonts->Fonts[0];
+		FontMainFileNameCurrent = FontMainFileNameTarget;
+		GlobalOnUserUpdate = [] { ImGui::GetForegroundDrawList()->AddText(ImVec2(10, 10), IM_COL32_WHITE, "Window lifecycle test"); };
+		static i32 renderedFrames = 0;
+		renderedFrames = 0;
+		GlobalOnUserAfterRender = [] { ++renderedFrames; };
+		GlobalOnUserWindowCloseRequest = []
+		{
+			if (GlobalState.RequestExitNextFrame.has_value()) return CloseResponse::Exit;
+			GlobalState.RequestExitNextFrame = 0;
+			return CloseResponse::SupressExit;
+		};
+		i32 expectedRenderedFrames = 0;
+		for (const b8 minimized : { false, true, true, false, true })
+		{
+			GlobalIsWindowMinimized = minimized;
+			const i32 previousFrame = GImGui->FrameCount;
+			ImGuiAndUserUpdateThenRenderAndPresentFrame();
+			if (GImGui->FrameCount != previousFrame + 1 || GImGui->FrameCountPlatformEnded != GImGui->FrameCount)
+				return fail("Platform windows were not updated after a minimized or restored frame");
+			if (ImGui::GetPlatformIO().Viewports.Size != 1)
+				return fail("The minimized rendering skip was not exercised");
+			expectedRenderedFrames += !minimized;
+			if (renderedFrames != expectedRenderedFrames)
+				return fail("Minimized idle frames no longer skip rendering");
+		}
+		MainWindowProc(hwnd, WM_CLOSE, 0, 0);
+		if (!::IsWindow(hwnd) || !GlobalState.RequestExitNextFrame.has_value())
+			return fail("A deferred close request did not keep the window alive");
+		GlobalState.AllowIdleThrottling = false;
+		GlobalState.UnthrottledRendering = GlobalState.ThrottleWindowPresentation = true;
+		for (i32 frame = 0; frame < 2; ++frame)
+		{
+			ImGuiAndUserUpdateThenRenderAndPresentFrame();
+			if (GImGui->FrameCountPlatformEnded != GImGui->FrameCount || renderedFrames != ++expectedRenderedFrames)
+				return fail("Minimized export frames stopped updating before a deferred close");
+		}
+		MainWindowProc(hwnd, WM_CLOSE, 0, 0);
+		if (::IsWindow(hwnd)) return fail("The accepted close request did not destroy the window");
+		return true;
 	}
 
 	static b8 CreateGlobalD3D11SwapchainRenderTarget()

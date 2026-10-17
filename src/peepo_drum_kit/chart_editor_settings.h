@@ -172,6 +172,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> TimelineShowBranchStartLines = true;
 			WithDefault<i32> GamePreviewLayout = 0; // 0: original, 1: arcade
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
+			WithDefault<i32> GamePreviewBarLineMode = 0; // 0: Normal, 1: Jiro
 			WithDefault<b8> GamePreviewBarLinesBehindNotes = true;
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
 			WithDefault<b8> GamePreviewUseBackgroundMovie = false;
@@ -222,6 +223,30 @@ namespace PeepoDrumKit
 			static inline WithDefault<vec2> GameViewportAspectRatioMin = vec2(0.0f, 0.0f);
 			static inline WithDefault<vec2> GameViewportAspectRatioMax = vec2(0.0f, 0.0f);
 		} General;
+
+		struct DeveloperData
+		{
+			WithDefault<f32> SENoteOffsetX[17] =
+			{
+				5.0f, // Do
+				2.0f, // Ko
+				6.2f, // Don
+				2.0f, // DonBig
+				2.0f, // DonHand
+				3.0f, // Ka
+				4.0f, // Katsu
+				2.0f, // KatsuBig
+				2.0f, // KatsuHand
+				2.0f, // KaDon
+				3.0f, // Drumroll
+				0.0f, // DrumrollBig
+				4.0f, // Balloon
+				4.0f, // BalloonSpecial
+				0.0f, // Bomb
+				0.0f, // Adlib
+				0.0f, // Fuse
+			};
+		} Developer;
 
 		struct AudioData
 		{
@@ -490,7 +515,7 @@ namespace PeepoDrumKit
 		IniVoidPtrTypeFromStringFunc FromStringFunc;
 		IniVoidPtrTypeToStringFunc ToStringFunc;
 	};
-	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[272]; size_t MemberCount; };
+	struct SettingsReflectionMap { SettingsReflectionMember MemberSlots[288]; size_t MemberCount; };
 
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap();
 	inline const SettingsReflectionMap AppSettingsReflectionMap = StaticallyInitializeAppSettingsReflectionMap();

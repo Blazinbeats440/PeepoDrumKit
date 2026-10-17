@@ -79,11 +79,16 @@ int main()
 	Check(defaults.General.TaikojiroExecutablePath->empty(), "Taikojiro executable is initially unconfigured");
 	Check(!*defaults.General.AutoPrefixChartSubtitle, "subtitle prefix completion is off by default");
 	Check(!*defaults.General.VideoExportHardwareEncoding, "hardware encoding is off by default");
+	constexpr f32 expectedSENoteOffsets[] = { 5.0f, 2.0f, 6.2f, 2.0f, 2.0f, 3.0f, 4.0f, 2.0f, 2.0f, 2.0f, 3.0f, 0.0f, 4.0f, 4.0f, 0.0f, 0.0f, 0.0f };
+	static_assert(ArrayCount(expectedSENoteOffsets) == std::extent_v<decltype(UserSettingsData::DeveloperData::SENoteOffsetX)>);
+	for (size_t index = 0; index < ArrayCount(defaults.Developer.SENoteOffsetX); ++index)
+		Check(*defaults.Developer.SENoteOffsetX[index] == expectedSENoteOffsets[index], "SENOTES defaults match the calibrated horizontal corrections");
 	Check(!ParseSettingsIni("[general]\ndefault_creator_name = Existing\n", defaults).HasError
 		&& defaults.General.ChartOpenDirectory->empty() && *defaults.General.RecentFilesShowFullPath
 		&& defaults.General.TaikojiroExecutablePath->empty(), "old user settings keep new defaults");
 	Check(!*defaults.General.AutoPrefixChartSubtitle, "old settings preserve subtitle editing behavior");
 	Check(*defaults.General.GamePreviewLayout == 0, "old user settings retain the original preview layout");
+	Check(*defaults.General.GamePreviewBarLineMode == 0, "old user settings retain Normal bar lines");
 	Check(*defaults.Input.Editor_TogglePreviewLayout == MultiInputBinding(KeyBinding(ImGuiKey_F4)),
 		"old user settings use F4 as the preview layout shortcut");
 	UserSettingsData configured;
@@ -99,12 +104,31 @@ int main()
 	configured.General.RecentFilesShowFullPath.SetHasValueIfNotDefault();
 	configured.General.GamePreviewLayout.Value = 1;
 	configured.General.GamePreviewLayout.SetHasValueIfNotDefault();
+	configured.General.GamePreviewBarLineMode.Value = 1;
+	configured.General.GamePreviewBarLineMode.SetHasValueIfNotDefault();
 	configured.Input.Editor_TogglePreviewLayout.Value = MultiInputBinding(KeyBinding(ImGuiKey_F10));
 	configured.Input.Editor_TogglePreviewLayout.SetHasValueIfNotDefault();
+	for (size_t index = 0; index < ArrayCount(configured.Developer.SENoteOffsetX); ++index)
+	{
+		configured.Developer.SENoteOffsetX[index].Value = -5.0f + static_cast<f32>(index) * 0.25f;
+		configured.Developer.SENoteOffsetX[index].SetHasValueIfNotDefault();
+	}
 	std::string userIni;
 	SettingsToIni(configured, userIni);
 	UserSettingsData restoredSettings;
 	Check(!ParseSettingsIni(userIni, restoredSettings).HasError, "file settings ini parses");
+	for (size_t index = 0; index < ArrayCount(configured.Developer.SENoteOffsetX); ++index)
+		Check(*restoredSettings.Developer.SENoteOffsetX[index] == *configured.Developer.SENoteOffsetX[index],
+			"every SENOTES correction retains its sign and fractional value after reload");
+	restoredSettings.Developer.SENoteOffsetX[2].ResetToDefault();
+	Check(*restoredSettings.Developer.SENoteOffsetX[2] == 6.2f, "reset restores the calibrated Don correction");
+	UserSettingsData zeroCorrection;
+	Check(!ParseSettingsIni("[developer]\nsenote_offset_x_don = 0\n", zeroCorrection).HasError
+		&& *zeroCorrection.Developer.SENoteOffsetX[2] == 0.0f, "zero disables a correction independently of its default");
+	UserSettingsData nonfiniteCorrection;
+	const auto nonfiniteResult = ParseSettingsIni("[developer]\nsenote_offset_x_don = nan\n", nonfiniteCorrection);
+	Check(nonfiniteResult.HasError || std::isfinite(*nonfiniteCorrection.Developer.SENoteOffsetX[2]),
+		"nonfinite SENOTES coordinates cannot reach the renderer");
 	Check(*restoredSettings.General.AutoPrefixChartSubtitle, "subtitle prefix setting survives reload");
 	Check(*restoredSettings.General.VideoExportHardwareEncoding, "hardware encoding preference survives reload");
 	restoredSettings.General.AutoPrefixChartSubtitle.ResetToDefault();
@@ -120,6 +144,14 @@ int main()
 		&& !*restoredSettings.General.RecentFilesShowFullPath, "unicode folder and file name display survive reload");
 	Check(*restoredSettings.General.GamePreviewLayout == 1 && restoredApp.VideoExport.Layout == 0,
 		"preview layout survives reload independently of the video layout");
+	Check(*restoredSettings.General.GamePreviewBarLineMode == 1, "Jiro bar line mode survives reload");
+	restoredSettings.General.GamePreviewBarLineMode.ResetToDefault();
+	Check(*restoredSettings.General.GamePreviewBarLineMode == 0, "reset restores Normal bar lines");
+	UserSettingsData invalidBarLineMode;
+	Check(!ParseSettingsIni("[general]\ngame_preview_bar_line_mode = 99\n", invalidBarLineMode).HasError
+		&& *invalidBarLineMode.General.GamePreviewBarLineMode == 1, "bar line mode clamps a high value");
+	Check(!ParseSettingsIni("[general]\ngame_preview_bar_line_mode = -1\n", invalidBarLineMode).HasError
+		&& *invalidBarLineMode.General.GamePreviewBarLineMode == 0, "bar line mode clamps a negative value");
 	Check(*restoredSettings.Input.Editor_TogglePreviewLayout == *configured.Input.Editor_TogglePreviewLayout,
 		"custom preview layout shortcut survives reload");
 	UserSettingsData invalidLayout;

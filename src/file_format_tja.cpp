@@ -1428,6 +1428,35 @@ namespace TJA
 
 			appendLine(out, "");
 
+			const auto scrollModeKey = [](ParsedChartCommandType type)
+			{
+				switch (type)
+				{
+				case ParsedChartCommandType::HBScroll: return Key::Chart_HBSCROLL;
+				case ParsedChartCommandType::BMScroll: return Key::Chart_BMSCROLL;
+				case ParsedChartCommandType::NMScroll: return Key::Chart_NMSCROLL;
+				default: return Key::Chart_Invalid;
+				}
+			};
+			size_t initialCommandCount = 0;
+			b8 moveInitialScrollModes = false;
+			for (const ParsedChartCommand& command : course.ChartCommands)
+			{
+				if ((command.Type == ParsedChartCommandType::MeasureNotes && !command.Param.MeasureNotes.Notes.empty()) ||
+					command.Type == ParsedChartCommandType::MeasureEnd || command.Type == ParsedChartCommandType::SetNextSong ||
+					(command.Type >= ParsedChartCommandType::BranchStart && command.Type <= ParsedChartCommandType::BranchEnd))
+					break;
+				moveInitialScrollModes |= command.Type == ParsedChartCommandType::HBScroll || command.Type == ParsedChartCommandType::BMScroll;
+				++initialCommandCount;
+			}
+			if (moveInitialScrollModes)
+			{
+				// Keep initial mode changes, including NMSCROLL, in their original order.
+				for (size_t index = 0; index < initialCommandCount; ++index)
+					if (const Key key = scrollModeKey(course.ChartCommands[index].Type); key != Key::Chart_Invalid)
+						appendCommandLine(out, key, "");
+			}
+
 			if (course.Metadata.STYLE <= 1)
 				appendCommandLine(out, Key::Chart_START, "");
 			else
@@ -1435,6 +1464,9 @@ namespace TJA
 
 			for (const ParsedChartCommand& command : course.ChartCommands)
 			{
+				if (moveInitialScrollModes && ArrayItToIndex(&command, course.ChartCommands.data()) < initialCommandCount &&
+					scrollModeKey(command.Type) != Key::Chart_Invalid)
+					continue;
 				switch (command.Type)
 				{
 				case ParsedChartCommandType::Comment: { appendComment(command.Param.Comment.Value); } break;
@@ -1512,16 +1544,10 @@ namespace TJA
 					appendCommandLine(out, Key::Chart_LYRIC, command.Param.SetLyricLine.Value);
 				} break;
 				case ParsedChartCommandType::NMScroll:
-				{
-					appendCommandLine(out, Key::Chart_NMSCROLL, "");
-				} break;
 				case ParsedChartCommandType::BMScroll:
-				{
-					appendCommandLine(out, Key::Chart_BMSCROLL, "");
-				} break;
 				case ParsedChartCommandType::HBScroll:
 				{
-					appendCommandLine(out, Key::Chart_HBSCROLL, "");
+					appendCommandLine(out, scrollModeKey(command.Type), "");
 				} break;
 				case ParsedChartCommandType::SENoteChange:
 				{
