@@ -44,17 +44,18 @@ int main()
 		check(errors.Errors.empty(), "Fixture parses without errors");
 		check(CreateChartProjectFromTJA(parsed, chart), "Chart imports");
 	};
-	const auto roundTrip = [&](const ChartProject& chart, ChartProject& restored)
+	const auto roundTrip = [&](const ChartProject& chart, ChartProject& restored, TJA::SaveFormat format = TJA::SaveFormat::Current)
 	{
 		TJA::ParsedTJA output;
 		check(ConvertChartProjectToTJA(chart, output, false), "Chart exports");
 		std::string text;
-		TJA::ConvertParsedToText(output, text, TJA::SaveFormat::Current);
+		TJA::ConvertParsedToText(output, text, format);
 		if (UTF8::HasBOM(text)) text.erase(0, sizeof(UTF8::BOM_UTF8));
 		TJA::ErrorList errors;
 		const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(text)), errors);
 		check(errors.Errors.empty(), "Exported text parses");
 		check(CreateChartProjectFromTJA(parsed, restored), "Exported chart imports");
+		return text;
 	};
 
 	ChartProject accumulated;
@@ -297,6 +298,14 @@ int main()
 		ChartProject preview;
 		const std::string command = mode == ScrollMethod::BMSCROLL ? "#BMSCROLL\n" : mode == ScrollMethod::HBSCROLL ? "#HBSCROLL\n" : "#NMSCROLL\n";
 		parse(command + "1000,\n#DELAY 1\n2000,\n1000,", preview);
+		if (mode == ScrollMethod::NMSCROLL)
+		{
+			ChartProject restored;
+			const std::string text = roundTrip(preview, restored);
+			const size_t modePosition = text.find("#NMSCROLL"), startPosition = text.find("#START");
+			check(modePosition != std::string::npos && startPosition != std::string::npos && modePosition > startPosition,
+				"Normal scroll mode alone retains its existing output position");
+		}
 		const auto& previewCourse = *preview.Courses[0];
 		const auto& timing = previewCourse.GetPlaybackTiming();
 		auto position = [&](Beat noteBeat, Time cursorTime)
@@ -320,6 +329,59 @@ int main()
 			check(close(resumed.x, bm ? 350.0 : 700.0) && close(resumed.y, bm ? 0.0 : 175.0), "BM/HB movement resumes after a positive delay");
 		}
 	}
+	for (const std::string command : { "#HBSCROLL", "#BMSCROLL" })
+	{
+		struct PlacementCase { std::string Body; bool BeforeStart; };
+		const PlacementCase cases[] =
+		{
+			{ command + "\n1000,", true },
+			{ "#BPMCHANGE 150\n#SCROLL 2\n#DELAY 0.25\n// initial commands\n" + command + "\n1000,", true },
+			{ "00\n" + command + "\n00,", false },
+			{ "0000,\n" + command + "\n1000,", false },
+		};
+		for (const auto format : { TJA::SaveFormat::Current, TJA::SaveFormat::ANSI_CRLF })
+			for (const auto& testCase : cases)
+			{
+				ChartProject original, restored;
+				parse(testCase.Body, original);
+				const std::string text = roundTrip(original, restored, format);
+				const size_t modePosition = text.find(command), startPosition = text.find("#START");
+				check(modePosition != std::string::npos && startPosition != std::string::npos &&
+					(modePosition < startPosition) == testCase.BeforeStart, "Only initial BM/HB modes are written before START");
+				check(text.find(command, modePosition + command.size()) == std::string::npos, "Moving an initial mode does not duplicate it");
+				if (testCase.BeforeStart)
+					check(text.find(command + (format == TJA::SaveFormat::Current ? "\n" : "\r\n") + "#START") != std::string::npos,
+						"The initial mode is immediately above START in both save formats");
+				const auto& before = original.Courses[0]->ScrollTypes;
+				const auto& after = restored.Courses[0]->ScrollTypes;
+				check(before.size() == after.size(), "Scroll mode count survives relocation");
+				for (size_t index = 0; index < std::min(before.size(), after.size()); ++index)
+					check(before[index].BeatTime == after[index].BeatTime && before[index].Method == after[index].Method,
+						"Scroll mode type and beat survive relocation");
+			}
+		TJA::ErrorList branchErrors;
+		const auto branched = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Branch\nCOURSE:Oni\n#START\n#BRANCHSTART p,50,60\n#N\n" + command +
+			"\n1000,\n#E\n2000,\n#M\n3000,\n#BRANCHEND\n#END\n")), branchErrors);
+		check(branchErrors.Errors.empty(), "Branched scroll mode fixture parses");
+		std::string branchText;
+		TJA::ConvertParsedToText(branched, branchText, TJA::SaveFormat::Current);
+		const size_t branchModePosition = branchText.find(command), branchStartPosition = branchText.find("#BRANCHSTART");
+		check(branchModePosition != std::string::npos && branchStartPosition != std::string::npos && branchModePosition > branchStartPosition,
+			"A mode inside a branch stays inside the branch");
+	}
+	TJA::ErrorList initialModesErrors;
+	const auto initialModes = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+		"TITLE:Modes\nCOURSE:Easy\n#START\n#HBSCROLL\n#NMSCROLL\n#BMSCROLL\n1000,\n#END\n"
+		"COURSE:Oni\n#START\n#HBSCROLL\n2000,\n#END\n")), initialModesErrors);
+	check(initialModesErrors.Errors.empty(), "Multiple courses and initial modes parse");
+	std::string initialModesText;
+	TJA::ConvertParsedToText(initialModes, initialModesText, TJA::SaveFormat::Current);
+	check(initialModesText.find("#HBSCROLL\n#NMSCROLL\n#BMSCROLL\n#START") != std::string::npos,
+		"Initial scroll modes retain their order when normal mode is included");
+	const size_t secondCoursePosition = initialModesText.find("COURSE:Oni"), secondModePosition = initialModesText.rfind("#HBSCROLL\n#START");
+	check(secondCoursePosition != std::string::npos && secondModePosition != std::string::npos && secondCoursePosition < secondModePosition,
+		"Each course writes its own initial scroll mode before START");
 	for (const Time cursorTime : { Time::FromSec(1.125), Time::FromSec(1.375) })
 	{
 		const f64 cursorScroll = camera.GetCursorHBScrollBeatTick(Beat::FromBeats(2), cursorTime, rollTiming);

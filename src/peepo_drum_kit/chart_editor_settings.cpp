@@ -536,6 +536,7 @@ namespace PeepoDrumKit
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
 		out.General.VSyncOffFPSLimit.Value = Max(0, out.General.VSyncOffFPSLimit.Value);
 		out.General.GamePreviewLayout.Value = Clamp(out.General.GamePreviewLayout.Value, 0, 1);
+		out.General.GamePreviewBarLineMode.Value = Clamp(out.General.GamePreviewBarLineMode.Value, 0, 1);
 		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
 		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
 		out.TestPlay.GoodWindowMilliseconds.Value = Clamp(out.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
@@ -555,6 +556,8 @@ namespace PeepoDrumKit
 		out.Audio.MetronomeVolume.Value = Clamp(out.Audio.MetronomeVolume.Value, 0.0f, 1.0f);
 		out.General.TJAFileSaveFormat.Value = Clamp(out.General.TJAFileSaveFormat.Value, 0, 1);
 		out.General.InspectorScrollInputMode.Value = Clamp(out.General.InspectorScrollInputMode.Value, 0, 1);
+		for (auto& offset : out.Developer.SENoteOffsetX)
+			if (!std::isfinite(offset.Value)) offset.ResetToDefault();
 
 		return parser.Result;
 	}
@@ -610,8 +613,8 @@ namespace PeepoDrumKit
 			out.SourceCodeName = #member;																		\
 			out.SerializedSection = currentSection;																\
 			out.SerializedName = serializedName;																\
-			out.FromStringFunc = Ini::VoidPtrToTypeWrapper<decltype(UserSettingsData::member)::UnderlyingType>;	\
-			out.ToStringFunc = Ini::VoidPtrToTypeWrapper<decltype(UserSettingsData::member)::UnderlyingType>;	\
+			out.FromStringFunc = Ini::VoidPtrToTypeWrapper<typename std::remove_reference_t<decltype(UserSettingsData::member)>::UnderlyingType>;	\
+			out.ToStringFunc = Ini::VoidPtrToTypeWrapper<typename std::remove_reference_t<decltype(UserSettingsData::member)>::UnderlyingType>;	\
 		} while (false)
 		{
 			SECTION("general");
@@ -637,6 +640,7 @@ namespace PeepoDrumKit
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewLayout, "game_preview_layout");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
+			X(General.GamePreviewBarLineMode, "game_preview_bar_line_mode");
 			X(General.GamePreviewBarLinesBehindNotes, "game_preview_bar_lines_behind_notes");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
 			X(General.GamePreviewUseBackgroundMovie, "game_preview_use_background_movie");
@@ -682,6 +686,25 @@ namespace PeepoDrumKit
 			X(General.TransformScale_KeepTimePosition, "transform_scale_keep_time_position");
 			X(General.TransformScale_KeepItemDuration, "transform_scale_keep_item_duration");
 			X(General.TransformScale_KeepEventValue, "transform_scale_keep_event_value");
+
+			SECTION("developer");
+			X(Developer.SENoteOffsetX[0], "senote_offset_x_do");
+			X(Developer.SENoteOffsetX[1], "senote_offset_x_ko");
+			X(Developer.SENoteOffsetX[2], "senote_offset_x_don");
+			X(Developer.SENoteOffsetX[3], "senote_offset_x_don_big");
+			X(Developer.SENoteOffsetX[4], "senote_offset_x_don_hand");
+			X(Developer.SENoteOffsetX[5], "senote_offset_x_ka");
+			X(Developer.SENoteOffsetX[6], "senote_offset_x_katsu");
+			X(Developer.SENoteOffsetX[7], "senote_offset_x_katsu_big");
+			X(Developer.SENoteOffsetX[8], "senote_offset_x_katsu_hand");
+			X(Developer.SENoteOffsetX[9], "senote_offset_x_kadon");
+			X(Developer.SENoteOffsetX[10], "senote_offset_x_drumroll");
+			X(Developer.SENoteOffsetX[11], "senote_offset_x_drumroll_big");
+			X(Developer.SENoteOffsetX[12], "senote_offset_x_balloon");
+			X(Developer.SENoteOffsetX[13], "senote_offset_x_balloon_special");
+			X(Developer.SENoteOffsetX[14], "senote_offset_x_bomb");
+			X(Developer.SENoteOffsetX[15], "senote_offset_x_adlib");
+			X(Developer.SENoteOffsetX[16], "senote_offset_x_fuse");
 
 			SECTION("audio");
 			X(Audio.OpenDeviceOnStartup, "open_device_on_startup");

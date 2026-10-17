@@ -363,6 +363,11 @@ namespace PeepoDrumKit
 		default: return;
 		}
 
+		static_assert(std::extent_v<decltype(UserSettingsData::DeveloperData::SENoteOffsetX)> == EnumCount<NoteSEType>);
+		const f32 horizontalOffset = *Settings.Developer.SENoteOffsetX[EnumToIndex(seType)];
+		centerHead.x += horizontalOffset;
+		centerTail.x += horizontalOffset;
+
 		if (seType == NoteSEType::Drumroll || seType == NoteSEType::DrumrollBig || seType == NoteSEType::Fuse)
 		{
 			const SprInfo sprInfo = gfx.GetInfo(spr);
@@ -452,6 +457,8 @@ namespace PeepoDrumKit
 	}
 
 	using ForEachBarLaneData = ChartGamePreview::BarLaneData;
+	static constexpr size_t JiroBarLineLimit = 8;
+	static constexpr Time JiroBarLineLifetime = Time::FromSec(1.0);
 
 	template <typename Func>
 	static void ForEachBarOnNoteLane(ChartContext& context, const ChartCourse& course, BranchType branch, Beat maxBeatDuration, std::function<Complex(Complex)> scrollTypeToView, Func perBarFunc)
@@ -486,12 +493,20 @@ namespace PeepoDrumKit
 		const i32 scrollView = *Settings.General.ScrollSpeedViewType;
 		if (cache.Key == key && cache.ScrollView == scrollView && cache.EndBeat == endBeat) return cache;
 		cache.Bars.clear(); cache.TimeBars.clear(); cache.HBBars.clear(); cache.UnboundedBars.clear();
+		cache.JiroExpirationIndex.clear();
 		cache.MinimumTimeSpeed = cache.MinimumHBSpeed = F64Max;
 		const auto& timing = course.GetPlaybackTiming(branch);
 		ForEachBarOnNoteLane(context, course, branch, endBeat, GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(scrollView)),
 			[&](const ForEachBarLaneData& bar)
 			{
 				const size_t index = cache.Bars.size(); cache.Bars.push_back(bar);
+				if (bar.IsVisible && std::isfinite(bar.Time.Seconds))
+				{
+					const Time expiration = bar.Time + JiroBarLineLifetime;
+					// Prefix maxima allow binary search even when negative DELAY reverses arrival times.
+					cache.JiroExpirationIndex.push_back({ cache.JiroExpirationIndex.empty() ? expiration
+						: std::max(cache.JiroExpirationIndex.back().first, expiration), index });
+				}
 				const b8 usesHB = bar.ScrollType == ScrollMethod::HBSCROLL || bar.ScrollType == ScrollMethod::BMSCROLL;
 				const f64 speed = usesHB
 					? abs(bar.ScrollType == ScrollMethod::BMSCROLL ? 1.0 : bar.ScrollSpeed.GetRealPart()) / Beat::TicksPerBeat
@@ -528,6 +543,17 @@ namespace PeepoDrumKit
 		append(cache.TimeBars, cursorTime.Seconds, cache.MinimumTimeSpeed);
 		append(cache.HBBars, cursorHB, cache.MinimumHBSpeed);
 		std::sort(visible.begin(), visible.end());
+		return visible;
+	}
+
+	static const std::vector<size_t>& FindJiroPreviewBars(ChartGamePreview::BarLaneCache& cache, Time cursorTime)
+	{
+		auto& visible = cache.VisibleBars; visible.clear();
+		const auto first = std::upper_bound(cache.JiroExpirationIndex.begin(), cache.JiroExpirationIndex.end(), cursorTime,
+			[](Time time, const auto& entry) { return time < entry.first; });
+		for (auto it = first; it != cache.JiroExpirationIndex.end() && visible.size() < JiroBarLineLimit; ++it)
+			if (cursorTime < cache.Bars[it->second].Time + JiroBarLineLifetime)
+				visible.push_back(it->second);
 		return visible;
 	}
 
@@ -781,6 +807,53 @@ namespace PeepoDrumKit
 			if (FindVisiblePreviewBars(bars, camera, Time::Zero(), 0.0, 0.0f, 800.0, false).size() >= bars.Bars.size() / 4)
 			{ error = "Indexed bar culling did not narrow a long chart"; return false; }
 		}
+		ChartContext jiroContext;
+		const auto jiroParsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Jiro bar lines\nBPM:120\nCOURSE:Oni\n#START\n#MEASURE 1/16\n"
+			"#SCROLL 100\n0,\n#SCROLL 0\n0,\n#SCROLL -4\n0,\n#BARLINEOFF\n0,\n"
+			"#BARLINEON\n#SCROLL 1\n0,\n0,\n0,\n0,\n0,\n0,\n0,\n0,\n0,\n0,\n#END\n")), errors);
+		if (!errors.Errors.empty() || !CreateChartProjectFromTJA(jiroParsed, jiroContext.Chart))
+		{ error = "Cannot import Jiro bar line fixture"; return false; }
+		auto& jiroCourse = *jiroContext.Chart.Courses[0];
+		jiroContext.SetSelectedChart(&jiroCourse, BranchType::Normal);
+		const auto checkJiroBars = [&](ChartGamePreview::BarLaneCache& bars, Time cursor, std::initializer_list<size_t> expected)
+		{
+			const auto& actual = FindJiroPreviewBars(bars, cursor);
+			if (actual == std::vector<size_t>(expected)) return true;
+			error = "Jiro bar line selection differs at " + std::to_string(cursor.Seconds) + " seconds";
+			for (size_t index : actual) error += " " + std::to_string(index);
+			return false;
+		};
+		for (ScrollMethod method : { ScrollMethod::NMSCROLL, ScrollMethod::HBSCROLL, ScrollMethod::BMSCROLL })
+		{
+			ScrollType change {}; change.BeatTime = Beat::Zero(); change.Method = method;
+			jiroCourse.ScrollTypes.InsertOrUpdate(change);
+			auto& bars = preview.GetCachedBarLaneData(jiroContext, jiroCourse, BranchType::Normal, Beat::FromBars(1));
+			if (!checkJiroBars(bars, Time::FromSec(0.999), { 0, 1, 2, 4, 5, 6, 7, 8 })
+				|| !checkJiroBars(bars, Time::FromSec(1.0), { 1, 2, 4, 5, 6, 7, 8, 9 })
+				|| !checkJiroBars(bars, Time::FromSec(1.125), { 2, 4, 5, 6, 7, 8, 9, 10 })
+				|| !checkJiroBars(bars, Time::FromSec(1.25), { 4, 5, 6, 7, 8, 9, 10, 11 })
+				|| !checkJiroBars(bars, Time::FromSec(100.0), {})
+				|| !checkJiroBars(bars, Time::FromSec(-1.0), { 0, 1, 2, 4, 5, 6, 7, 8 })) return false;
+			const Time cursor = Time::FromSec(0.999);
+			const auto& timing = jiroCourse.GetPlaybackTiming();
+			const f64 cursorHB = camera.GetCursorHBScrollBeatTick(timing.ConvertTimeToBeatWithHint(cursor, Beat::Zero(), true), cursor, timing);
+			const auto& firstBar = bars.Bars[0];
+			const vec2 position = camera.GetNoteCoordinatesLane(vec2(0.0f), cursor, cursorHB, firstBar.Time, firstBar.Beat,
+				firstBar.Tempo, firstBar.ScrollSpeed, firstBar.ScrollType, 1424.0, timing, jiroCourse.JPOSScrollChanges);
+			if (camera.IsPointVisibleOnLane(position.x) || !checkJiroBars(bars, cursor, { 0, 1, 2, 4, 5, 6, 7, 8 }))
+			{ error = "An offscreen Jiro bar line released its slot before expiration"; return false; }
+		}
+		// Reversed arrival times must preserve measure priority and invalidate the cached expiration index.
+		for (i32 barIndex : { 2, 3 })
+		{
+			DelayChange delay {}; delay.BeatTime = Beat::FromBars(1) * barIndex / 16; delay.Duration = Time::FromSec(-0.25);
+			jiroCourse.DelayChanges_Normal.InsertOrUpdate(delay);
+		}
+		auto& reversedBars = preview.GetCachedBarLaneData(jiroContext, jiroCourse, BranchType::Normal, Beat::FromBars(1));
+		if (!checkJiroBars(reversedBars, Time::FromSec(1.0), { 1, 5, 6, 7, 8, 9, 10, 11 })
+			|| !checkJiroBars(reversedBars, Time::FromSec(1.125), { 6, 7, 8, 9, 10, 11, 12, 13 })) return false;
+
 		for (const Note& note : course.Notes_Normal)
 		{
 			if (!IsLongNote(note.Type)) continue;
@@ -2314,6 +2387,7 @@ namespace PeepoDrumKit
 			};
 			const b8 barLinesBehindNotes = *Settings.General.GamePreviewBarLinesBehindNotes;
 			const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
+			const b8 jiroBarLines = *Settings.General.GamePreviewBarLineMode == 1;
 			std::vector<DeferredBarLineDrawData> reverseBarLineDrawBuffer;
 			auto drawBarLine = [&](const DeferredBarLineDrawData& bar)
 			{
@@ -2355,7 +2429,9 @@ namespace PeepoDrumKit
 				}
 			};
 			auto& barCache = GetCachedBarLaneData(context, *course, branch, chartBeatDuration);
-			for (size_t index : FindVisiblePreviewBars(barCache, Camera, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, hitCirclePosLane.x, pxWorldPer4Beats, playbackScrolls != nullptr))
+			const auto& visibleBars = jiroBarLines ? FindJiroPreviewBars(barCache, cursorTimeOrAnimated)
+				: FindVisiblePreviewBars(barCache, Camera, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, hitCirclePosLane.x, pxWorldPer4Beats, playbackScrolls != nullptr);
+			for (size_t index : visibleBars)
 				drawPreviewBar(barCache.Bars[index]);
 
 #if 0 // DEBUG: ...

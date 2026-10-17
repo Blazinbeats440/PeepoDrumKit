@@ -532,6 +532,7 @@ namespace PeepoDrumKit
 			Beat EndBeat = Beat::Zero();
 			std::vector<BarLaneData> Bars;
 			std::vector<std::pair<f64, size_t>> TimeBars, HBBars;
+			std::vector<std::pair<Time, size_t>> JiroExpirationIndex;
 			std::vector<size_t> UnboundedBars, VisibleBars;
 			f64 MinimumTimeSpeed = F64Max, MinimumHBSpeed = F64Max;
 		};

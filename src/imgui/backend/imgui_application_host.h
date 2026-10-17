@@ -122,4 +122,5 @@ namespace ApplicationHost
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks);
 	b8 RunD3D11DeviceRecoverySelfTest(b8 (*afterRecoveryTest)() = nullptr);
+	b8 RunWindowLifecycleSelfTest(std::string& error);
 }

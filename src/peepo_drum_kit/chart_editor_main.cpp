@@ -276,6 +276,7 @@ namespace PeepoDrumKit
 		ChartContext context;
 		UserSettingsData preferences;
 		ChartSettingsWindow settings;
+		if (settings.showDeveloperSettings) return fail("Developer settings are visible before the activation shortcut");
 		ImGuiWindow* sidebar = nullptr;
 		ImGuiWindow* content = nullptr;
 		f32 categoryStep = 0.0f, sectionStep = 0.0f;
@@ -339,19 +340,49 @@ namespace PeepoDrumKit
 		settings.SelectSection(expected.front());
 		for (i32 frame = 0; frame < 3; ++frame) drawFrame();
 		if (content->Scroll.y > 150.0f) return fail("Jumping back to the first settings section did not scroll upward");
-		for (i32 category = 0; category < static_cast<i32>(ChartSettingsCategory::Count); ++category)
+		for (i32 category = 0; category < static_cast<i32>(ChartSettingsCategory::Developer); ++category)
 		{
 			settings.SelectCategory(static_cast<ChartSettingsCategory>(category));
 			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
 			if (settings.sectionNavigation.Sections.empty()) return fail("A settings category has no section navigation");
 			if (!error.empty()) return false;
 		}
-		settings.SelectSection("Timeline");
+		settings.SelectSection(UI_Str("SETTINGS_CATEGORY_TIMELINE"));
 		for (i32 frame = 0; frame < 3; ++frame) drawFrame();
 		ImGuiWindow* bindings = nullptr;
 		for (ImGuiWindow* window : Gui::GetCurrentContext()->Windows)
 			if (window->ParentWindow == content && std::string_view(window->Name).find("BindingsTable") != std::string_view::npos) bindings = window;
 		if (!bindings || bindings->Scroll.y <= 0.0f) return fail("Shortcut section navigation did not scroll its inner table");
+		if (!saveView()) return fail("Cannot capture the translated key bindings");
+		const auto toggleDeveloper = [&]
+		{
+			Gui::SetWindowFocus("Settings navigation self-test");
+			io.AddKeyEvent(ImGuiMod_Ctrl, true); io.AddKeyEvent(ImGuiMod_Shift, true); io.AddKeyEvent(ImGuiMod_Alt, true);
+			io.AddKeyEvent(ImGuiKey_D, true);
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+			io.AddKeyEvent(ImGuiKey_D, false);
+			io.AddKeyEvent(ImGuiMod_Ctrl, false); io.AddKeyEvent(ImGuiMod_Shift, false); io.AddKeyEvent(ImGuiMod_Alt, false);
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+		};
+		toggleDeveloper();
+		if (!settings.showDeveloperSettings || settings.selectedCategory != ChartSettingsCategory::Developer ||
+			settings.sectionNavigation.Sections != std::vector<std::string> { UI_Str("SETTINGS_SECTION_SENOTES") })
+			return fail("The developer shortcut did not reveal and open the SENOTES settings");
+		if (!saveView()) return fail("Cannot capture the developer SENOTES settings");
+		preferences.Developer.SENoteOffsetX[2].Value = -1.25f;
+		preferences.Developer.SENoteOffsetX[2].SetHasValueIfNotDefault();
+		toggleDeveloper();
+		if (settings.showDeveloperSettings || settings.selectedCategory != ChartSettingsCategory::General ||
+			*preferences.Developer.SENoteOffsetX[2] != -1.25f)
+			return fail("Hiding developer settings reset a correction or left the hidden category selected");
+		toggleDeveloper();
+		if (!settings.showDeveloperSettings || *preferences.Developer.SENoteOffsetX[2] != -1.25f || preferencesChanged)
+			return fail("Showing developer settings changed preference values");
+		ChartSettingsWindow freshSettings;
+		if (freshSettings.showDeveloperSettings) return fail("A new settings window did not hide developer settings");
+		settings.SelectCategory(ChartSettingsCategory::About);
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+		if (preferencesChanged || !saveView()) return fail("The About page changed preferences or could not be captured");
 		return error.empty();
 	}
 
@@ -420,6 +451,16 @@ namespace PeepoDrumKit
 			}
 			if (argv[i] == "--test-d3d11-recovery")
 				return ApplicationHost::RunD3D11DeviceRecoverySelfTest() ? 0 : 1;
+			if (argv[i] == "--test-window-lifecycle")
+			{
+				static std::string error;
+				if (!ApplicationHost::RunD3D11DeviceRecoverySelfTest([] { return ApplicationHost::RunWindowLifecycleSelfTest(error); }))
+				{
+					std::fprintf(stderr, "Window lifecycle self-test failed: %s\n", error.c_str()); return 1;
+				}
+				std::puts("Minimized, restored, and closing window lifecycle self-test passed");
+				return 0;
+			}
 			if (argv[i] == "--test-settings-navigation")
 			{
 				i18n::InitBuiltinLocale();

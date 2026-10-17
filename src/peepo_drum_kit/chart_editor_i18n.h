@@ -91,6 +91,140 @@ X("TAB_TEXT_EDITOR",							"Text Editor") \
 X("TEXT_EDITOR_WRITE",							"Write") \
 X("TAB_UTILITIES", "Utilities") \
 X("SHORTCUT_OPEN_UTILITIES", "Editor: Open Utilities") \
+X("SETTINGS_KEY_EDITOR_TOGGLE_FULLSCREEN", "Editor: Toggle Fullscreen") \
+X("SETTINGS_KEY_EDITOR_TOGGLE_V_SYNC", "Editor: Toggle VSync") \
+X("SETTINGS_KEY_EDITOR_INCREASE_GUI_SCALE", "Editor: Zoom In") \
+X("SETTINGS_KEY_EDITOR_DECREASE_GUI_SCALE", "Editor: Zoom Out") \
+X("SETTINGS_KEY_EDITOR_RESET_GUI_SCALE", "Editor: Reset Zoom") \
+X("SETTINGS_KEY_EDITOR_UNDO", "Editor: Undo") \
+X("SETTINGS_KEY_EDITOR_REDO", "Editor: Redo") \
+X("SETTINGS_KEY_EDITOR_OPEN_HELP", "Editor: Open Help") \
+X("SETTINGS_KEY_EDITOR_OPEN_UPDATE_NOTES", "Editor: Open Update Notes") \
+X("SETTINGS_KEY_EDITOR_OPEN_CHART_STATS", "Editor: Open Chart Stats") \
+X("SETTINGS_KEY_EDITOR_OPEN_LYRICS", "Editor: Open Chart Lyrics") \
+X("SETTINGS_KEY_EDITOR_OPEN_TEXT_EDITOR", "Editor: Open Text Editor") \
+X("SETTINGS_KEY_EDITOR_OPEN_SETTINGS", "Editor: Open Settings") \
+X("SETTINGS_KEY_EDITOR_OPEN_TEMPLATE", "Editor: Open Templates") \
+X("SETTINGS_KEY_EDITOR_OPEN_CHART_BRANCHES", "Editor: Open Chart Branches") \
+X("SETTINGS_KEY_EDITOR_INCREASE_MASTER_VOLUME10", "Editor: Increase Master Volume 10%") \
+X("SETTINGS_KEY_EDITOR_DECREASE_MASTER_VOLUME10", "Editor: Decrease Master Volume 10%") \
+X("SETTINGS_KEY_EDITOR_CHART_NEW", "Editor: Chart New") \
+X("SETTINGS_KEY_EDITOR_CHART_OPEN", "Editor: Chart Open") \
+X("SETTINGS_KEY_EDITOR_CHART_OPEN_DIRECTORY", "Editor: Chart Open Directory") \
+X("SETTINGS_KEY_EDITOR_CHART_SAVE", "Editor: Chart Save") \
+X("SETTINGS_KEY_EDITOR_CHART_SAVE_AS", "Editor: Chart Save As") \
+X("SETTINGS_KEY_TIMELINE_PLACE_NOTE_DON", "Timeline: Place Note Don") \
+X("SETTINGS_KEY_TIMELINE_PLACE_NOTE_KA", "Timeline: Place Note Ka") \
+X("SETTINGS_KEY_TIMELINE_PLACE_NOTE_BALLOON", "Timeline: Place Note Balloon") \
+X("SETTINGS_KEY_TIMELINE_PLACE_NOTE_DRUMROLL", "Timeline: Place Note Drumroll") \
+X("SETTINGS_KEY_TIMELINE_PLACE_REST_AND_STEP_CURSOR", "Timeline: Place Rest / Step Cursor") \
+X("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_NORMAL", "Timeline: Select Normal Branch") \
+X("SETTINGS_KEY_EDITOR_TOGGLE_PREVIEW_COMMENTS", "Editor: Toggle Preview Comments") \
+X("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_EXPERT", "Timeline: Select Expert Branch") \
+X("SETTINGS_KEY_TIMELINE_SELECT_BRANCH_MASTER", "Timeline: Select Master Branch") \
+X("SETTINGS_KEY_TIMELINE_CUT", "Timeline: Cut") \
+X("SETTINGS_KEY_TIMELINE_COPY", "Timeline: Copy") \
+X("SETTINGS_KEY_TIMELINE_PASTE", "Timeline: Paste") \
+X("SETTINGS_KEY_TIMELINE_DELETE_SELECTION", "Timeline: Delete Selection") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_MARKER_AT_CURSOR", "Timeline: Place/Remove Marker") \
+X("SETTINGS_KEY_TIMELINE_JUMP_TO_MARKER", "Timeline: Jump to Marker") \
+X("SETTINGS_KEY_TIMELINE_SELECT_RANGE_TO_MARKER", "Timeline: Select Range to Marker") \
+X("SETTINGS_KEY_TIMELINE_START_END_RANGE_SELECTION", "Timeline: Start/End Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ALL", "Timeline: Select All") \
+X("SETTINGS_KEY_TIMELINE_CLEAR_SELECTION", "Timeline: Clear Selection") \
+X("SETTINGS_KEY_TIMELINE_INVERT_SELECTION", "Timeline: Invert Selection") \
+X("SETTINGS_KEY_TIMELINE_SELECT_TO_CHART_END", "Timeline: Select to End of Chart") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ALL_WITHIN_RANGE_SELECTION", "Timeline: Select All within Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SHIFT_SELECTION_LEFT", "Timeline: Shift selection Left") \
+X("SETTINGS_KEY_TIMELINE_SHIFT_SELECTION_RIGHT", "Timeline: Shift selection Right") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XO", "Timeline: Select Item Pattern xo") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XOO", "Timeline: Select Item Pattern xoo") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XOOO", "Timeline: Select Item Pattern xooo") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_XXOO", "Timeline: Select Item Pattern xxoo") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_A", "Timeline: Select Item Pattern Custom A") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_B", "Timeline: Select Item Pattern Custom B") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_C", "Timeline: Select Item Pattern Custom C") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_D", "Timeline: Select Item Pattern Custom D") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_E", "Timeline: Select Item Pattern Custom E") \
+X("SETTINGS_KEY_TIMELINE_SELECT_ITEM_PATTERN_CUSTOM_F", "Timeline: Select Item Pattern Custom F") \
+X("SETTINGS_KEY_TIMELINE_INSERT_TEMPO_CHANGE_AT_SELECTED_ITEMS", "Timeline: Insert Tempo Change at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_TIME_SIGNATURE_CHANGE_AT_SELECTED_ITEMS", "Timeline: Insert Time Signature Change at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_SCROLL_CHANGE_AT_SELECTED_ITEMS", "Timeline: Insert Scroll Change at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_BAR_LINE_CHANGE_AT_SELECTED_ITEMS", "Timeline: Insert Bar Line Change at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_SCROLL_TYPE_AT_SELECTED_ITEMS", "Timeline: Insert Scroll Type at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_JPOS_SCROLL_AT_SELECTED_ITEMS", "Timeline: Insert JPOS Scroll at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_SUDDEN_AT_SELECTED_ITEMS", "Timeline: Insert Sudden at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_GO_GO_RANGE_AT_SELECTED_ITEMS", "Timeline: Insert Go-Go Range at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_INSERT_LYRIC_AT_SELECTED_ITEMS", "Timeline: Insert Lyric at Selected Items") \
+X("SETTINGS_KEY_TIMELINE_SET_TIME_SIGNATURE_FROM_RANGE_SELECTION", "Timeline: Set Time Signature from Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SET_JPOS_SCROLL_DURATION_FROM_RANGE_SELECTION", "Timeline: Set JPOS Scroll Duration from Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SET_SUDDEN_APPEARANCE_OFFSET_FROM_RANGE_SELECTION", "Timeline: Set Sudden Appearance Offset from Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SET_SUDDEN_MOVEMENT_OFFSET_FROM_RANGE_SELECTION", "Timeline: Set Sudden Movement Offset from Range Selection") \
+X("SETTINGS_KEY_TIMELINE_SET_GO_GO_RANGE_FROM_RANGE_SELECTION", "Timeline: Set Go-Go Range from Range Selection") \
+X("SETTINGS_KEY_TIMELINE_CONVERT_SELECTION_TO_SCROLL_CHANGES", "Timeline: Convert Selection to Scroll Changes") \
+X("SETTINGS_KEY_TIMELINE_FLIP_NOTE_TYPE", "Timeline: Flip Note Type") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_NOTE_SIZE", "Timeline: Toggle Note Size") \
+X("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_2_TO1", "Timeline: Expand Item/Range Time 2:1") \
+X("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_3_TO2", "Timeline: Expand Item/Range Time 3:2") \
+X("SETTINGS_KEY_TIMELINE_EXPAND_ITEM_TIME_4_TO3", "Timeline: Expand Item/Range Time 4:3") \
+X("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_1_TO2", "Timeline: Compress Item/Range Time 1:2") \
+X("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_2_TO3", "Timeline: Compress Item/Range Time 2:3") \
+X("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_3_TO4", "Timeline: Compress Item/Range Time 3:4") \
+X("SETTINGS_KEY_TIMELINE_COMPRESS_ITEM_TIME_0_TO1", "Timeline: Compress Item/Range Time 0:1") \
+X("SETTINGS_KEY_TIMELINE_QUANTIZE_ITEM_TIME_1_TO1", "Timeline: Quantize Selected Items") \
+X("SETTINGS_KEY_TIMELINE_REVERSE_ITEM_TIME_N1_TO1", "Timeline: Reverse Item/Range Time -1:1") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_A", "Timeline: Scale Item/Range Time Custom A") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_B", "Timeline: Scale Item/Range Time Custom B") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_C", "Timeline: Scale Item/Range Time Custom C") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_D", "Timeline: Scale Item/Range Time Custom D") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_E", "Timeline: Scale Item/Range Time Custom E") \
+X("SETTINGS_KEY_TIMELINE_SCALE_ITEM_TIME_CUSTOM_F", "Timeline: Scale Item/Range Time Custom F") \
+X("SETTINGS_KEY_TIMELINE_STEP_CURSOR_LEFT", "Timeline: Step Cursor Left") \
+X("SETTINGS_KEY_TIMELINE_STEP_CURSOR_RIGHT", "Timeline: Step Cursor Right") \
+X("SETTINGS_KEY_TIMELINE_JUMP_TO_TIMELINE_START", "Timeline: Jump to Timeline Start") \
+X("SETTINGS_KEY_TIMELINE_JUMP_TO_TIMELINE_END", "Timeline: Jump to Timeline End") \
+X("SETTINGS_KEY_TIMELINE_INCREASE_GRID_DIVISION", "Timeline: Increase Grid Division") \
+X("SETTINGS_KEY_TIMELINE_DECREASE_GRID_DIVISION", "Timeline: Decrease Grid Division") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_4", "Timeline: Set Grid Division 1 / 4") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_5", "Timeline: Set Grid Division 1 / 5 (Quintuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_6", "Timeline: Set Grid Division 1 / 6") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_7", "Timeline: Set Grid Division 1 / 7 (Septuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_8", "Timeline: Set Grid Division 1 / 8") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_9", "Timeline: Set Grid Division 1 / 9 (Nonuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_10", "Timeline: Set Grid Division 1 / 10 (Quintuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_12", "Timeline: Set Grid Division 1 / 12") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_14", "Timeline: Set Grid Division 1 / 14 (Septuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_16", "Timeline: Set Grid Division 1 / 16") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_18", "Timeline: Set Grid Division 1 / 18 (Nonuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_20", "Timeline: Set Grid Division 1 / 20 (Quintuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_24", "Timeline: Set Grid Division 1 / 24") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_28", "Timeline: Set Grid Division 1 / 28 (Septuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_32", "Timeline: Set Grid Division 1 / 32") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_36", "Timeline: Set Grid Division 1 / 36 (Nonuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_40", "Timeline: Set Grid Division 1 / 40 (Quintuplets)") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_48", "Timeline: Set Grid Division 1 / 48") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_64", "Timeline: Set Grid Division 1 / 64") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_96", "Timeline: Set Grid Division 1 / 96") \
+X("SETTINGS_KEY_TIMELINE_SET_GRID_DIVISION_1_192", "Timeline: Set Grid Division 1 / 192") \
+X("SETTINGS_KEY_TIMELINE_INCREASE_PLAYBACK_SPEED", "Timeline: Increase Playback Speed") \
+X("SETTINGS_KEY_TIMELINE_DECREASE_PLAYBACK_SPEED", "Timeline: Decrease Playback Speed") \
+X("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_100", "Timeline: Set Playback Speed 100%") \
+X("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_75", "Timeline: Set Playback Speed 75%") \
+X("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_50", "Timeline: Set Playback Speed 50%") \
+X("SETTINGS_KEY_TIMELINE_SET_PLAYBACK_SPEED_25", "Timeline: Set Playback Speed 25%") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_PLAYBACK", "Timeline: Toggle Playback") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_PLAYBACK_CURSOR_FOLLOW", "Timeline: Toggle Playback Cursor Follow") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_AUTO_STEP_AFTER_NOTE_INPUT", "Timeline: Toggle Auto-Step After Note Input") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_GRID_STARTS_AT_BAR", "Timeline: Toggle Grid Origin Between Bar and Song Start") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_LOOP_PLAYBACK", "Timeline: Toggle Loop Playback") \
+X("SETTINGS_KEY_TIMELINE_TOGGLE_METRONOME", "Timeline: Toggle Metronome") \
+X("SETTINGS_KEY_TEMPO_CALCULATOR_TAP", "Tempo Calculator: Tap") \
+X("SETTINGS_KEY_TEMPO_CALCULATOR_RESET", "Tempo Calculator: Reset") \
+X("SETTINGS_KEY_DIALOG_YES_OR_OK", "Dialog: Yes/Ok") \
+X("SETTINGS_KEY_DIALOG_NO", "Dialog: No") \
+X("SETTINGS_KEY_DIALOG_CANCEL", "Dialog: Cancel") \
+X("SETTINGS_KEY_DIALOG_SELECT_NEXT_TAB", "Dialog: Select Next Tab") \
+X("SETTINGS_KEY_DIALOG_SELECT_PREVIOUS_TAB", "Dialog: Select Previous Tab") \
 X("UTILITY_FUNCTION", "Function") \
 X("UTILITY_JPOS_MOVE_X", "X movement") \
 X("UTILITY_JPOS_MOVE_Y", "Y movement") \
@@ -339,6 +473,33 @@ X("SETTINGS_CATEGORY_TIMELINE", "Timeline") \
 X("SETTINGS_CATEGORY_EDITOR", "Editor & Preview") \
 X("SETTINGS_CATEGORY_APPEARANCE", "Appearance & Behavior") \
 X("SETTINGS_CATEGORY_KEYS", "Key Bindings") \
+X("SETTINGS_CATEGORY_DEVELOPER", "Developer Settings") \
+X("SETTINGS_CATEGORY_ABOUT", "About This App") \
+X("SETTINGS_VALUE_DEFAULT", "(Default)") \
+X("SETTINGS_VALUE_USER", "(User)") \
+X("SETTINGS_BINDING_NONE", "(None)") \
+X("SETTINGS_BINDING_PRESS_KEY", "[Press any Key]") \
+X("SETTINGS_BINDING_UNNAMED", "Unnamed") \
+X("SETTINGS_SECTION_SENOTES", "SENOTES Position") \
+X("SETTINGS_DEVELOPER_HINT", "Ctrl+Shift+Alt+D toggles this category. It is hidden when the app starts.") \
+X("SETTINGS_SENOTES_OFFSET_DESC", "Horizontal correction in source-image pixels: positive moves right, negative moves left, and zero disables correction. Values apply to preview and video export.") \
+X("SETTINGS_SENOTES_DO", "Do") \
+X("SETTINGS_SENOTES_KO", "Ko") \
+X("SETTINGS_SENOTES_DON", "Don") \
+X("SETTINGS_SENOTES_DON_BIG", "Don (big)") \
+X("SETTINGS_SENOTES_DON_HAND", "Don (hand)") \
+X("SETTINGS_SENOTES_KA", "Ka") \
+X("SETTINGS_SENOTES_KATSU", "Katsu") \
+X("SETTINGS_SENOTES_KATSU_BIG", "Katsu (big)") \
+X("SETTINGS_SENOTES_KATSU_HAND", "Katsu (hand)") \
+X("SETTINGS_SENOTES_KADON", "KaDon") \
+X("SETTINGS_SENOTES_DRUMROLL", "Drumroll") \
+X("SETTINGS_SENOTES_DRUMROLL_BIG", "Drumroll (big)") \
+X("SETTINGS_SENOTES_BALLOON", "Balloon") \
+X("SETTINGS_SENOTES_BALLOON_SPECIAL", "Special balloon") \
+X("SETTINGS_SENOTES_BOMB", "Bomb") \
+X("SETTINGS_SENOTES_ADLIB", "Adlib") \
+X("SETTINGS_SENOTES_FUSE", "Fuse") \
 X("SETTINGS_SECTION_DEFAULTS", "Defaults") \
 X("SETTINGS_SECTION_SAVE", "Saving") \
 X("SETTINGS_SECTION_OPEN", "Opening & Recent Files") \
@@ -532,6 +693,8 @@ X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are 
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
+X("SETTINGS_PREVIEW_BAR_LINE_MODE", "Game Preview: Bar Line Mode") \
+X("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC", "Normal keeps the existing behavior. Jiro selects up to eight bar lines per lane in measure order and removes each one second after its scheduled arrival, regardless of scroll speed or position. Lines outside the screen keep their slots until then; #BARLINEOFF lines do not count. Measure numbers follow the same limit. Also applies to test play and exported video.") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES", "Game Preview: Always Draw Bar Lines Behind Notes") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC", "Keep bar lines behind all notes regardless of timing. Disable to draw bar lines and notes in TJA placement order, with earlier chart elements in front. Also applies to exported video.") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
