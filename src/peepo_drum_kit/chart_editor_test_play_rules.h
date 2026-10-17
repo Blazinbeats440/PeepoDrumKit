@@ -5,6 +5,21 @@
 
 namespace PeepoDrumKit
 {
+	// Return the first hit at/after time, or strictly after it when afterEqual is set.
+	template <typename T, typename GetHitTime>
+	int FindRollHitIndex(int hitCount, T time, GetHitTime getHitTime, bool afterEqual = false)
+	{
+		int first = 0, last = std::max(hitCount, 0);
+		while (first < last)
+		{
+			const int middle = first + (last - first) / 2;
+			const T hitTime = getHitTime(middle);
+			if (hitTime < time || (afterEqual && hitTime == time)) first = middle + 1;
+			else last = middle;
+		}
+		return first;
+	}
+
 	template <typename T>
 	struct TestPlayInterval
 	{

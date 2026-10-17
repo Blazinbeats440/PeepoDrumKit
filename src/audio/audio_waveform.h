@@ -1,6 +1,7 @@
 #pragma once
 #include "core_types.h"
 #include "audio_common.h"
+#include <atomic>
 
 // TODO: Texture cache (create interface for uploading texture pixels to have a clean separation from the actual rendering?)
 
@@ -68,6 +69,8 @@ namespace Audio
 
 	struct WaveformMipChain
 	{
+		inline static std::atomic<u64> NextRevision { 0 };
+		u64 Revision = ++NextRevision;
 		static constexpr size_t MaxMipLevels = 24;
 		static constexpr size_t MinMipSampleCount = 256;
 
@@ -109,6 +112,7 @@ namespace Audio
 
 		inline void GenerateEntireMipChainFromSampleBuffer(const PCMSampleBuffer& inSampleBuffer, u32 channelIndex, b8 includeFullSizeMip = false)
 		{
+			Revision = ++NextRevision;
 			assert(inSampleBuffer.InterleavedSamples != nullptr && channelIndex < inSampleBuffer.ChannelCount);
 
 			Duration = FramesToTime(inSampleBuffer.FrameCount, inSampleBuffer.SampleRate);
@@ -178,6 +182,32 @@ namespace Audio
 					parentSamples += 2;
 				}
 			}
+		}
+	};
+
+	struct WaveformPixelCache
+	{
+		u64 WaveformRevision = 0, TimingRevision = 0;
+		u32 Variant = 0;
+		Time Start = {}, Step = {}, Offset = {};
+		std::vector<f32> Amplitudes;
+		template <typename SampleTimeFunc>
+		const std::vector<f32>& Update(const WaveformMipChain& waveform, Time start, Time step, Time offset,
+			u64 timingRevision, size_t count, SampleTimeFunc sampleTime, u32 variant = 0)
+		{
+			if (WaveformRevision == waveform.Revision && TimingRevision == timingRevision && Variant == variant && Start == start && Step == step && Offset == offset && Amplitudes.size() == count)
+				return Amplitudes;
+			const auto& mip = waveform.FindClosestMip(step);
+			Amplitudes.resize(count);
+			for (size_t pixel = 0; pixel < count; ++pixel)
+			{
+				const Time time = sampleTime(pixel);
+				Amplitudes[pixel] = time < Time::Zero() || time > waveform.Duration ? -1.0f : waveform.GetAmplitudeAt(mip, time, step);
+			}
+			WaveformRevision = waveform.Revision; TimingRevision = timingRevision;
+			Variant = variant;
+			Start = start; Step = step; Offset = offset;
+			return Amplitudes;
 		}
 	};
 }

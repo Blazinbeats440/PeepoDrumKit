@@ -42,6 +42,7 @@ namespace Undo
 
 		HasPendingChanges = true;
 		NumberOfChangesMade++;
+		Revision++;
 
 		if (!RedoStack.empty())
 			RedoStack.clear();
@@ -88,6 +89,7 @@ namespace Undo
 				break;
 
 			HasPendingChanges = true;
+			Revision++;
 			RedoStack.emplace_back(VectorPop(UndoStack))->Undo();
 		}
 	}
@@ -100,12 +102,14 @@ namespace Undo
 				break;
 
 			HasPendingChanges = true;
+			Revision++;
 			UndoStack.emplace_back(VectorPop(RedoStack))->Redo();
 		}
 	}
 
 	void UndoHistory::ClearAll()
 	{
+		Revision++;
 		ClearChangesWereMade();
 		if (!CommandsToExecutedAtEndOfFrame.empty()) CommandsToExecutedAtEndOfFrame.clear();
 		if (!UndoStack.empty()) UndoStack.clear();

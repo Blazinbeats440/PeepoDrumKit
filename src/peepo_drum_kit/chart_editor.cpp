@@ -125,6 +125,8 @@ namespace PeepoDrumKit
 
 	ChartEditor::~ChartEditor()
 	{
+		StopVideoExport();
+		if (videoExport.RenderDrawList) IM_DELETE(videoExport.RenderDrawList);
 		if (assetSave.Progress) assetSave.Progress->Cancel = true;
 		if (assetSave.PrepareFuture.valid()) assetSave.PrepareFuture.wait();
 		if (assetSave.SaveFuture.valid()) assetSave.SaveFuture.wait();
@@ -364,6 +366,12 @@ namespace PeepoDrumKit
 	{
 		if (Gui::BeginMenuBar())
 		{
+			if (GetIsVideoExportActive())
+			{
+				Gui::TextUnformatted(UI_Str("VIDEO_EXPORT_EDITOR_LOCKED"));
+				Gui::EndMenuBar();
+				return;
+			}
 			if (assetSave.Active)
 			{
 				Gui::TextUnformatted(UI_Str("ASSET_SAVE_TITLE"));
@@ -441,6 +449,9 @@ namespace PeepoDrumKit
 					reopenDroppedFolderRequested = true;
 
 				if (Gui::MenuItem(UI_Str("ACT_FILE_OPEN_CHART_DIRECTORY"), ToShortcutString(*Settings.Input.Editor_ChartOpenDirectory).Data, nullptr, CanOpenChartDirectoryInFileExplorer(context))) { OpenChartDirectoryInFileExplorer(context); }
+				if (Gui::MenuItem(UI_Str("ACT_FILE_OPEN_IN_TAIKOJIRO"), nullptr, false, !importChartFuture.valid() && !videoExport.Exporting && !videoExport.Preparing))
+					OpenCurrentChartInTaikojiro();
+				if (Gui::IsItemHovered()) Gui::SetTooltip("%s", UI_Str("OPEN_IN_TAIKOJIRO_SAVE_HINT"));
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("ACT_EDIT_SAVE"), ToShortcutString(*Settings.Input.Editor_ChartSave).Data)) { TrySaveChartOrOpenSaveAsDialog(context); }
 				if (Gui::MenuItem(UI_Str("ACT_FILE_SAVE_AS"), ToShortcutString(*Settings.Input.Editor_ChartSaveAs).Data)) { OpenChartSaveAsDialog(context); }
@@ -469,8 +480,8 @@ namespace PeepoDrumKit
 				Gui::EndMenu();
 			}
 
-			size_t selectedItemCount = 0, selectedNoteCount = 0;
-			ForEachSelectedChartItem(*context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachChartItemData& it) { selectedItemCount++; selectedNoteCount += IsNotesList(it.List); });
+			const auto& selection = context.GetSelection(*context.ChartSelectedCourse, context.ChartSelectedBranch);
+			const size_t selectedItemCount = selection.Items.size(), selectedNoteCount = selection.NoteCount;
 			const b8 isAnyItemSelected = (selectedItemCount > 0);
 			const b8 isAnyNoteSelected = (selectedNoteCount > 0);
 
@@ -1322,6 +1333,17 @@ namespace PeepoDrumKit
 
 	void ChartEditor::DrawGui()
 	{
+		ApplicationHost::GlobalState.AllowIdleThrottling = false;
+		ApplicationHost::GlobalState.UnthrottledRendering = false;
+		ApplicationHost::GlobalState.ThrottleWindowPresentation = false;
+		if (GetIsVideoExportActive())
+		{
+			context.Gfx.UpdateAsyncLoading();
+			DrawVideoExportWindow();
+			ApplicationHost::GlobalState.UnthrottledRendering = true;
+			ApplicationHost::GlobalState.ThrottleWindowPresentation = true;
+			return;
+		}
 		InternalUpdateAsyncLoading();
 		if (assetSave.Active)
 		{
@@ -1993,6 +2015,7 @@ namespace PeepoDrumKit
 		}
 
 		DrawVideoExportWindow();
+		ApplicationHost::GlobalState.UnthrottledRendering = videoExport.Preparing || videoExport.Exporting || videoExport.Finalizing;
 		if (!context.StatusMessage.empty() && Gui::GetTime() < context.StatusMessageUntil)
 		{
 			Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
@@ -2008,6 +2031,11 @@ namespace PeepoDrumKit
 			if (recording.Course && (recording.Changes != context.Undo.NumberOfChangesMade
 				|| std::none_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& course) { return course.get() == recording.Course; })))
 				recording = {};
+		ApplicationHost::GlobalState.AllowIdleThrottling = !context.GetIsPlayback() && !context.TestPlayActive
+			&& !videoExport.Preparing && !videoExport.Exporting && !videoExport.Finalizing
+			&& !screenshotWindowRequested && !screenshotPreviewRequested && !screenshotMovieWaiting
+			&& !importChartFuture.valid() && !loadSongFuture.valid() && !loadJacketFuture.valid()
+			&& !tempoCalculatorWindow.TempoAnalysisRunning;
 	}
 
 	void ChartEditor::RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID)
@@ -2057,6 +2085,13 @@ namespace PeepoDrumKit
 
 	ApplicationHost::CloseResponse ChartEditor::OnWindowCloseRequest()
 	{
+		if (GetIsVideoExportActive())
+		{
+			videoExport.CancelRequested = true;
+			videoExport.Writer.Cancel();
+			tryToCloseApplicationOnNextFrame = true;
+			return ApplicationHost::CloseResponse::SupressExit;
+		}
 		if (assetSave.Active) return ApplicationHost::CloseResponse::SupressExit;
 		if (context.Undo.HasPendingChanges)
 		{
@@ -2329,6 +2364,40 @@ namespace PeepoDrumKit
 		if (context.ChartFilePath.empty())
 			return OpenChartSaveAsDialog(context);
 		return SaveChart(context);
+	}
+
+	void ChartEditor::OpenCurrentChartInTaikojiro()
+	{
+		if (assetSave.Active || importChartFuture.valid() || videoExport.Exporting || videoExport.Preparing) return;
+		const std::string executablePath = GetTaikojiroExecutablePath(*Settings.General.TaikojiroExecutablePath);
+		if (!Path::HasExtension(executablePath, ".exe") || !File::Exists(executablePath))
+		{
+			std::string message = UI_Str("OPEN_IN_TAIKOJIRO_CONFIGURE");
+			if (!executablePath.empty()) message.append("\n\n").append(executablePath);
+			Shell::ShowMessageBox(message, UI_Str("ACT_FILE_OPEN_IN_TAIKOJIRO"), Shell::MessageBoxButtons::OK,
+				Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
+			settingsWindow.SelectCategory(ChartSettingsCategory::File);
+			PersistentApp.LastSession.ShowWindow_Settings = focusSettingsWindowNextFrame = true;
+			return;
+		}
+
+		auto launch = [this, executablePath]
+		{
+			context.SetIsPlayback(false);
+			if (!Shell::OpenFileWithExecutable(executablePath, context.ChartFilePath))
+			{
+				const std::string message = std::string(UI_Str("OPEN_IN_TAIKOJIRO_FAILED")) + "\n\n" + executablePath + "\n" + context.ChartFilePath;
+				Shell::ShowMessageBox(message, UI_Str("ACT_FILE_OPEN_IN_TAIKOJIRO"), Shell::MessageBoxButtons::OK,
+					Shell::MessageBoxIcon::Warning, ApplicationHost::GlobalState.NativeWindowHandle);
+			}
+		};
+		context.Undo.FlushAndExecuteEndOfFrameCommands();
+		if (context.ChartFilePath.empty() || context.Undo.HasPendingChanges || !File::Exists(context.ChartFilePath))
+		{
+			if (TrySaveChartOrOpenSaveAsDialog(context)) launch();
+			else if (assetSave.Active) assetSave.OnSuccess = std::move(launch);
+		}
+		else launch();
 	}
 
 	void ChartEditor::StartAsyncImportingChartFile(std::string_view absoluteChartFilePath)

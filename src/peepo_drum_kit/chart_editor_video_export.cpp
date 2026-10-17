@@ -3,6 +3,7 @@
 #include "chart_editor_widgets.h"
 #include "chart_editor_i18n.h"
 #include <cmath>
+#include <cstdio>
 
 namespace PeepoDrumKit
 {
@@ -860,30 +861,176 @@ namespace PeepoDrumKit
 		return static_cast<f32>(source->InterleavedSamples[frame * source->ChannelCount + sourceChannel]);
 	}
 
+	b8 RunVideoAudioSelfTest(std::string& error)
+	{
+		const auto fail = [&](cstr message) { error = message; return false; };
+		Audio::PCMSampleBuffer song, don, ka, balloon;
+		const auto initialize = [](Audio::PCMSampleBuffer& buffer, i64 frames, u32 channels)
+		{
+			buffer.SampleRate = Audio::Engine.OutputSampleRate;
+			buffer.ChannelCount = channels;
+			buffer.FrameCount = frames;
+			buffer.InterleavedSamples = std::make_unique<i16[]>(static_cast<size_t>(frames) * channels);
+			for (i64 index = 0; index < frames * channels; ++index)
+				buffer.InterleavedSamples[index] = static_cast<i16>((index * 97) % 16001 - 8000);
+		};
+		initialize(song, 6000, 2); initialize(don, 93, 1); initialize(ka, 151, 2); initialize(balloon, 1001, 1);
+		VideoExportAudioSources sources;
+		sources.Song = &song;
+		sources.SoundEffects[EnumToIndex(SoundEffectType::TaikoDon)] = &don;
+		sources.SoundEffects[EnumToIndex(SoundEffectType::TaikoKa)] = &ka;
+		sources.SoundEffects[EnumToIndex(SoundEffectType::Balloon)] = &balloon;
+		sources.SongVolume = 0.7f; sources.DrumVolume = 1.7f; sources.BalloonVolume = 0.9f;
+		const Time chartStart = Time::FromSec(0.017);
+		sources.SongOffset = chartStart - Time::FromSec(0.01);
+		sources.ContentStart = chartStart + Time::FromSec(0.02);
+		sources.ContentEnd = chartStart + Time::FromSec(0.08);
+		sources.FadeInSeconds = 0.02f; sources.FadeOutSeconds = 0.03f;
+		VideoExportSoundTimeline timeline;
+		for (i32 index = 0; index < 200; ++index)
+			timeline.Events.push_back({ chartStart + Time::FromSec((index * 37 - 200 + (index % 2 ? 0.49 : 0.51)) / Audio::Engine.OutputSampleRate),
+				static_cast<SoundEffectType>(index % 3), static_cast<f32>(index % 3 - 1) });
+		// Include simultaneous hits and retain a deliberately non-chronological mixing order.
+		timeline.Events.push_back(timeline.Events[7]);
+		std::rotate(timeline.Events.begin(), timeline.Events.begin() + 70, timeline.Events.end());
+		VideoExportAudioRenderState state;
+		std::vector<i16> reference, actual;
+		const auto compare = [&](i64 first, u32 count)
+		{
+			RenderVideoExportAudio(sources, timeline, chartStart, first, count, reference);
+			RenderVideoExportAudio(sources, timeline, chartStart, first, count, actual, &state);
+			return reference == actual;
+		};
+		i64 first = 0;
+		for (u32 block = 0; block < 100; ++block)
+		{
+			const u32 count = 37 + block % 53;
+			if (!compare(first, count)) return fail("Sequential audio blocks differ from the original mixer");
+			first += count;
+		}
+		for (i64 seek : { 0LL, 735LL, 4000LL, 2LL, 8000LL, 0LL })
+			if (!compare(seek, 735)) return fail("Audio tails or seeks differ from the original mixer");
+		ka.SampleRate = 48000;
+		if (!compare(200, 735)) return fail("Invalid sample rate changed the mixed audio");
+		ka.SampleRate = Audio::Engine.OutputSampleRate;
+		balloon.FrameCount = 17;
+		if (!compare(0, 735)) return fail("Changed sound duration did not rebuild the audio index");
+		timeline.Events[0].HitTime += Time::FromSec(4.0);
+		state.Reset();
+		if (!compare(0, 735)) return fail("A restarted export reused an old sound timeline");
+
+		timeline.Events.clear();
+		for (i32 index = 0; index < 100000; ++index)
+			timeline.Events.push_back({ Time::FromSec(index * 0.01), SoundEffectType::TaikoDon });
+		constexpr u32 blockCount = 120, blockFrames = 735;
+		std::vector<std::vector<i16>> expectedBlocks(blockCount);
+		auto stopwatch = CPUStopwatch::StartNew();
+		for (u32 block = 0; block < blockCount; ++block)
+			RenderVideoExportAudio(sources, timeline, Time::Zero(), block * blockFrames, blockFrames, expectedBlocks[block]);
+		const f64 referenceMilliseconds = stopwatch.Restart().ToMS();
+		state.Reset();
+		for (u32 block = 0; block < blockCount; ++block)
+		{
+			RenderVideoExportAudio(sources, timeline, Time::Zero(), block * blockFrames, blockFrames, actual, &state);
+			if (actual != expectedBlocks[block]) return fail("A long sound timeline changed the mixed audio");
+		}
+		const f64 indexedMilliseconds = stopwatch.GetElapsed().ToMS();
+		std::printf("Video audio benchmark (100000 events, 120 blocks): original %.3f ms, indexed %.3f ms\n", referenceMilliseconds, indexedMilliseconds);
+		error.clear();
+		return true;
+	}
+
+	void VideoExportAudioRenderState::Prepare(const VideoExportAudioSources& sources, const VideoExportSoundTimeline& sounds,
+		Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount)
+	{
+		std::array<i64, EnumCount<SoundEffectType>> sourceFrameCounts {};
+		for (size_t index = 0; index < sourceFrameCounts.size(); ++index)
+		{
+			const auto* source = sources.SoundEffects[index];
+			if (source && source->InterleavedSamples && source->SampleRate == Audio::Engine.OutputSampleRate)
+				sourceFrameCounts[index] = std::max<i64>(0, source->FrameCount);
+		}
+		if (TimelineEvents != sounds.Events.data() || EventCount != sounds.Events.size()
+			|| ChartStartTime != chartStartTime || SourceFrameCounts != sourceFrameCounts)
+		{
+			TimelineEvents = sounds.Events.data();
+			EventCount = sounds.Events.size();
+			ChartStartTime = chartStartTime;
+			SourceFrameCounts = sourceFrameCounts;
+			MaxSoundFrames = *std::max_element(SourceFrameCounts.begin(), SourceFrameCounts.end());
+			EventFrames.resize(EventCount);
+			OrderedEvents.resize(EventCount);
+			for (size_t index = 0; index < EventCount; ++index)
+			{
+				EventFrames[index] = static_cast<i64>(std::llround((sounds.Events[index].HitTime - chartStartTime).ToSec() * Audio::Engine.OutputSampleRate));
+				OrderedEvents[index] = index;
+			}
+			if (!std::is_sorted(EventFrames.begin(), EventFrames.end()))
+				std::sort(OrderedEvents.begin(), OrderedEvents.end(), [&](size_t left, size_t right)
+				{
+					return EventFrames[left] < EventFrames[right] || (EventFrames[left] == EventFrames[right] && left < right);
+				});
+			NextOutputFrame = -1;
+		}
+		if (firstOutputFrame != NextOutputFrame)
+		{
+			ActiveEvents.clear();
+			const i64 earliestFrame = firstOutputFrame - MaxSoundFrames;
+			NextEvent = static_cast<size_t>(std::lower_bound(OrderedEvents.begin(), OrderedEvents.end(), earliestFrame,
+				[&](size_t index, i64 frame) { return EventFrames[index] < frame; }) - OrderedEvents.begin());
+		}
+		erase_remove_if(ActiveEvents, [&](size_t index)
+		{
+			return firstOutputFrame - EventFrames[index] >= SourceFrameCounts[EnumToIndex(sounds.Events[index].Sound)];
+		});
+		const i64 lastOutputFrame = firstOutputFrame + outputFrameCount;
+		while (NextEvent < OrderedEvents.size() && EventFrames[OrderedEvents[NextEvent]] < lastOutputFrame)
+		{
+			const size_t index = OrderedEvents[NextEvent++];
+			const i64 soundFrames = SourceFrameCounts[EnumToIndex(sounds.Events[index].Sound)];
+			if (soundFrames > 0 && firstOutputFrame - EventFrames[index] < soundFrames)
+				ActiveEvents.push_back(index);
+		}
+		// Preserve the original floating-point mixing order even for unsorted input timelines.
+		if (!std::is_sorted(ActiveEvents.begin(), ActiveEvents.end()))
+			std::sort(ActiveEvents.begin(), ActiveEvents.end());
+		NextOutputFrame = lastOutputFrame;
+	}
+
 	void RenderVideoExportAudio(const VideoExportAudioSources& sources, const VideoExportSoundTimeline& sounds,
-		Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount, std::vector<i16>& outInterleavedStereo)
+		Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount, std::vector<i16>& outInterleavedStereo,
+		VideoExportAudioRenderState* renderState)
 	{
 		constexpr i64 sampleRate = Audio::Engine.OutputSampleRate;
-		std::vector<f32> mixed(static_cast<size_t>(outputFrameCount) * 2, 0.0f);
+		std::vector<f32> temporaryMixed;
+		auto& mixed = renderState ? renderState->MixedSamples : temporaryMixed;
+		mixed.assign(static_cast<size_t>(outputFrameCount) * 2, 0.0f);
 		const i64 firstSongFrame = static_cast<i64>(std::llround((chartStartTime - sources.SongOffset).ToSec() * sampleRate)) + firstOutputFrame;
 		for (u32 frame = 0; frame < outputFrameCount; ++frame)
 			for (u32 channel = 0; channel < 2; ++channel)
 				mixed[static_cast<size_t>(frame) * 2 + channel] = SampleChannel(sources.Song, firstSongFrame + frame, channel) * sources.SongVolume;
 
-		for (const VideoExportSoundEvent& event : sounds.Events)
+		const auto mixEvent = [&](const VideoExportSoundEvent& event)
 		{
 			const auto* source = sources.SoundEffects[EnumToIndex(event.Sound)];
-			if (!source || !source->InterleavedSamples || source->SampleRate != sampleRate) continue;
+			if (!source || !source->InterleavedSamples || source->SampleRate != sampleRate) return;
 			const i64 eventFrame = static_cast<i64>(std::llround((event.HitTime - chartStartTime).ToSec() * sampleRate));
 			const i64 firstOverlap = std::max(firstOutputFrame, eventFrame);
 			const i64 lastOverlap = std::min(firstOutputFrame + outputFrameCount, eventFrame + source->FrameCount);
-			if (firstOverlap >= lastOverlap) continue;
+			if (firstOverlap >= lastOverlap) return;
 			const f32 volume = event.Sound == SoundEffectType::Balloon ? sources.BalloonVolume : sources.DrumVolume;
 			const auto panGain = event.Pan == 0.0f ? std::array{ 1.0f, 1.0f } : Audio::GetPanGain(event.Pan, Audio::AudioEngine::PanLaw);
 			for (i64 frame = firstOverlap; frame < lastOverlap; ++frame)
 				for (u32 channel = 0; channel < 2; ++channel)
 					mixed[static_cast<size_t>(frame - firstOutputFrame) * 2 + channel] += SampleChannel(source, frame - eventFrame, channel) * volume * panGain[channel];
+		};
+		if (renderState)
+		{
+			renderState->Prepare(sources, sounds, chartStartTime, firstOutputFrame, outputFrameCount);
+			for (size_t index : renderState->ActiveEvents) mixEvent(sounds.Events[index]);
 		}
+		else
+			for (const auto& event : sounds.Events) mixEvent(event);
 
 		outInterleavedStereo.resize(mixed.size());
 		for (u32 frame = 0; frame < outputFrameCount; ++frame)

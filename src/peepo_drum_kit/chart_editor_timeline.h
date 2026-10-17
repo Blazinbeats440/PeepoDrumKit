@@ -359,7 +359,12 @@ namespace PeepoDrumKit
 		f32 GridSnapLineAnimationCurrent = 1.0f;
 		TimelineCamera PlaybackCamera;
 		PlaybackTimelineData PlaybackData;
+		mutable Audio::WaveformPixelCache ContentWaveformPixels[2], ScrollbarWaveformPixels[2], PlaybackWaveformPixels;
+		ChartContext::CourseCacheKey PlaybackDataKey = {};
+		Beat PlaybackDataEndBeat = {};
 		PlaybackTimelineLayout PlaybackLayout;
+		std::set<Beat> PlaybackLayoutHiddenSections;
+		b8 PlaybackLayoutDirty = true;
 		std::set<Beat> PlaybackHiddenSections;
 		const ChartCourse* PlaybackVisibilityCourse = nullptr;
 		BranchType PlaybackVisibilityBranch = BranchType::Count;
@@ -372,12 +377,32 @@ namespace PeepoDrumKit
 		b8 IsPlaybackTimelinePanning = false;
 
 		b8 PlaybackSoundsEnabled = true;
+		struct NoteTimeCache
+		{
+			ChartContext::CourseCacheKey Key = {};
+			TimedNoteIndex Index;
+			std::vector<const TimedNoteIndex::Entry*> VisibleNotes;
+		};
+		NoteTimeCache EditingNoteTimes[3];
+		std::map<std::pair<const ChartCourse*, BranchType>, NoteTimeCache> PlaybackSoundNotes;
+		template <typename T> struct ActiveAnimationCache
+		{
+			u64 ListRevision = 0, UndoRevision = 0;
+			const T* Data = nullptr;
+			size_t Count = 0;
+			std::vector<T*> Active;
+		};
+		std::map<std::pair<const ChartCourse*, BranchType>, ActiveAnimationCache<Note>> NoteAnimations;
+		std::map<const ChartCourse*, ActiveAnimationCache<GoGoRange>> GoGoAnimations;
+		void StartNoteHitAnimation(ChartContext& context, Note& note, f32 duration);
+		u64 PlaybackSoundRevision = 0;
 		struct MetronomeData
 		{
 			b8 IsEnabled = false;
 			b8 HasOnPlaybackStartTimeBeenPlayed = false;
 			Time LastProvidedNonSmoothCursorTime = {};
 			Time LastPlayedBeatTime = {};
+			std::vector<const TimedBeatIndex::Entry*> Candidates;
 		} Metronome = {};
 
 		// TODO: Implement properly and make it so the draw order stays correct by binary searching through sorted list (?)
@@ -527,6 +552,7 @@ namespace PeepoDrumKit
 
 		if (!eventsThatAlreadyExist.empty() || !eventsToAdd.empty())
 		{
+			++course.SelectionRevision;
 			if (*Settings.General.ConvertSelectionToScrollChanges_UnselectOld)
 				ForEachSelectedChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it) { SetIsSelected(false, it, course); });
 

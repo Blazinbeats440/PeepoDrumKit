@@ -479,6 +479,167 @@ int main()
 	editedSource.Undo.Undo();
 	check(editedSourceCourse.SourceTempoChangeCount == 2 && !editedSourceCourse.CanUseSourceTiming(), "Undo restores the original invalid source timing state");
 	check(Settings.Input.Timeline_ConvertRangeToDelay->Count == 0, "DELAY conversion shortcut is initially unassigned");
+
+	ChartContext cachedContext;
+	parse("1000,\n#DELAY 0.5\n1000,\n#DELAY -0.25\n1000,", cachedContext.Chart);
+	cachedContext.SetSelectedChart(cachedContext.Chart.Courses[0].get(), BranchType::Normal);
+	auto& cachedCourse = *cachedContext.ChartSelectedCourse;
+	cachedContext.RangeSelection = { Beat::Zero(), Beat::FromBars(3), true, true };
+	const auto originalBounds = cachedContext.GetPlaybackTimeBounds(Time::Zero());
+	const auto originalRange = cachedContext.GetRangePlaybackTimes();
+	const auto originalKey = cachedContext.GetCourseCacheKey(cachedCourse, BranchType::Normal);
+	cachedContext.Undo.Execute<Commands::UpdateDelay>(&cachedCourse, &cachedCourse.DelayChanges_Normal, DelayChange { Beat::FromBars(1), Time::FromSec(1.5) });
+	check(close(cachedContext.GetRangePlaybackTimes().second.ToSec(), originalRange.second.ToSec() + 1.0), "Editing DELAY refreshes cached range times");
+	check(close(cachedContext.GetPlaybackTimeBounds(Time::Zero()).second.ToSec(), originalBounds.second.ToSec() + 1.0), "Editing DELAY refreshes cached playback bounds");
+	cachedContext.Undo.Undo();
+	check(close(cachedContext.GetRangePlaybackTimes().second.ToSec(), originalRange.second.ToSec())
+		&& close(cachedContext.GetPlaybackTimeBounds(Time::Zero()).second.ToSec(), originalBounds.second.ToSec()), "Undo refreshes both cached time ranges");
+	check(cachedContext.GetCourseCacheKey(cachedCourse, BranchType::Normal) != originalKey, "Undo cannot reuse the previous editing cache key");
+	cachedContext.Undo.Redo();
+	check(close(cachedContext.GetRangePlaybackTimes().second.ToSec(), originalRange.second.ToSec() + 1.0), "Redo refreshes cached range times");
+	cachedContext.RangeSelection.End = Beat::FromBars(1);
+	check(close(cachedContext.GetRangePlaybackTimes().second.ToSec(), 3.5), "Changing the selected range refreshes cached times");
+	TrySet<GenericMember::Time_Offset>(cachedCourse, GenericList::DelayChanges_Normal, 0, Time::FromSec(0.25));
+	check(close(cachedCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.25), "Generic DELAY edits invalidate accumulated timing");
+	cachedCourse.DelayChanges_Normal.InsertOrUpdate({ Beat::Zero(), Time::FromSec(0.125) });
+	check(close(cachedCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.375), "Inserting DELAY invalidates accumulated timing");
+	cachedCourse.DelayChanges_Normal.RemoveAtBeat(Beat::Zero());
+	check(close(cachedCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.25), "Removing DELAY invalidates accumulated timing");
+	ChartCourse copiedTimingCourse = cachedCourse;
+	check(close(copiedTimingCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.25), "Copied timing binds to its own base tempo map");
+	copiedTimingCourse.TempoMap.Tempo.TryFindExactAtBeat(Beat::Zero())->Tempo = Tempo(240.0f);
+	copiedTimingCourse.TempoMap.RebuildAccelerationStructure();
+	check(close(copiedTimingCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 1.25)
+		&& close(cachedCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.25), "A BPM edit refreshes only the copied course timing");
+
+	ChartCourse indexedCourse;
+	Note crossingRoll {}; crossingRoll.Type = NoteType::Drumroll; crossingRoll.BeatDuration = Beat::FromBeats(8);
+	Note shiftedNote {}; shiftedNote.Type = NoteType::Don; shiftedNote.BeatTime = Beat::FromBeats(2); shiftedNote.TimeOffset = Time::FromSec(2.0);
+	Note earlierNote {}; earlierNote.Type = NoteType::Ka; earlierNote.BeatTime = Beat::FromBeats(4); earlierNote.TimeOffset = Time::FromSec(-1.0);
+	indexedCourse.Notes_Normal.Sorted = { crossingRoll, shiftedNote, earlierNote };
+	TimedNoteIndex noteIndex;
+	noteIndex.Build(indexedCourse, BranchType::Normal, false);
+	check(noteIndex.Notes[1].OriginalNote == &indexedCourse.Notes_Normal[2], "The time index respects note offsets instead of beat order");
+	const auto [visibleFirst, visibleLast] = noteIndex.FindRange(Time::FromSec(2.5), Time::FromSec(3.5));
+	check(std::any_of(visibleFirst, visibleLast, [&](const auto& entry) { return entry.OriginalNote == &indexedCourse.Notes_Normal[0]; }), "A long note crossing the entire visible range is retained");
+	check(std::any_of(visibleFirst, visibleLast, [&](const auto& entry) { return entry.OriginalNote == &indexedCourse.Notes_Normal[1]; }), "An offset note in the visible range is retained");
+	const auto [pastFirst, pastLast] = noteIndex.FindRange(Time::FromSec(5.0), Time::FromSec(6.0));
+	check(pastFirst == pastLast, "The index skips notes whose tails have passed");
+	indexedCourse.DelayChanges_Normal.InsertOrUpdate({ Beat::FromBeats(4), Time::FromSec(-3.0) });
+	noteIndex.Build(indexedCourse, BranchType::Normal, true);
+	check(noteIndex.Notes.front().OriginalNote == &indexedCourse.Notes_Normal[2], "The playback index handles negative DELAY reordering");
+
+	Audio::PCMSampleBuffer cacheSamples {};
+	cacheSamples.ChannelCount = 1; cacheSamples.SampleRate = 8; cacheSamples.FrameCount = 8;
+	cacheSamples.InterleavedSamples = std::make_unique<i16[]>(8);
+	for (size_t sample = 0; sample < 8; ++sample) cacheSamples.InterleavedSamples[sample] = static_cast<i16>(1000 * (sample + 1));
+	Audio::WaveformMipChain cachedWaveform;
+	cachedWaveform.GenerateEntireMipChainFromSampleBuffer(cacheSamples, 0);
+	Audio::WaveformPixelCache pixelCache;
+	i32 sampledPixels = 0;
+	const auto sampleTime = [&](size_t pixel) { ++sampledPixels; return Time::FromSec(pixel * 0.25); };
+	pixelCache.Update(cachedWaveform, Time::Zero(), Time::FromSec(0.25), Time::Zero(), 0, 4, sampleTime);
+	const f32 originalAmplitude = pixelCache.Amplitudes[0];
+	pixelCache.Update(cachedWaveform, Time::Zero(), Time::FromSec(0.25), Time::Zero(), 0, 4, sampleTime);
+	check(sampledPixels == 4 && pixelCache.Amplitudes[0] == originalAmplitude, "An unchanged waveform view reuses its sampled pixels");
+	pixelCache.Update(cachedWaveform, Time::FromSec(0.25), Time::FromSec(0.25), Time::Zero(), 0, 4, sampleTime);
+	check(sampledPixels == 8, "Moving the waveform view resamples its pixels");
+	for (size_t sample = 0; sample < 8; ++sample) cacheSamples.InterleavedSamples[sample] = 0;
+	cachedWaveform.GenerateEntireMipChainFromSampleBuffer(cacheSamples, 0);
+	pixelCache.Update(cachedWaveform, Time::FromSec(0.25), Time::FromSec(0.25), Time::Zero(), 0, 4, sampleTime);
+	check(sampledPixels == 12 && pixelCache.Amplitudes[0] == 0.0f, "Replacing audio of equal duration invalidates waveform pixels");
+	pixelCache.Update(cachedWaveform, Time::FromSec(0.25), Time::FromSec(0.25), Time::Zero(), 0, 4,
+		[&](size_t pixel) { ++sampledPixels; return Time::FromSec(2.0 + pixel * 0.25); }, static_cast<u32>(BranchType::Expert));
+	check(sampledPixels == 16 && pixelCache.Amplitudes[0] < 0.0f, "Switching branches refreshes waveform time mapping even when their tempo revision is shared");
+	pixelCache.Update(cachedWaveform, Time::FromSec(0.25), Time::FromSec(0.25), Time::Zero(), 0, 4, sampleTime);
+	check(sampledPixels == 20 && pixelCache.Amplitudes[0] == 0.0f, "Switching back to the original branch refreshes waveform time mapping");
+	ChartContext selectionContext;
+	parse("1000,\n2000,", selectionContext.Chart);
+	selectionContext.SetSelectedChart(selectionContext.Chart.Courses[0].get(), BranchType::Normal);
+	auto& selectionCourse = *selectionContext.ChartSelectedCourse;
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).Items.empty(), "Empty selection is cached");
+	const auto beforeSelectionKey = selectionContext.GetCourseCacheKey(selectionCourse, BranchType::Normal);
+	TrySet<GenericMember::B8_IsSelected>(selectionCourse, GenericList::Notes_Normal, 0, true);
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).NoteCount == 1, "Selection changes refresh the shared summary");
+	check(selectionContext.GetCourseCacheKey(selectionCourse, BranchType::Normal) == beforeSelectionKey, "Selection alone does not invalidate timing and note positions");
+	TrySet(selectionCourse, GenericList::Notes_Normal, 0, GenericMember::B8_IsSelected, false);
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).Items.empty(), "Runtime selection setters refresh the summary");
+	Note selectedNote = selectionCourse.Notes_Normal[0]; selectedNote.IsSelected = true;
+	selectionContext.Undo.Execute<Commands::UpdateSingleChartEvent<Note>>(&selectionCourse, &selectionCourse.Notes_Normal, selectedNote);
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).NoteCount == 1, "Commands refresh selection summaries");
+	selectionContext.Undo.Undo();
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).Items.empty(), "Undo refreshes selection summaries");
+	selectionContext.Undo.Redo();
+	check(selectionContext.GetSelection(selectionCourse, BranchType::Normal).NoteCount == 1, "Redo refreshes selection summaries");
+	selectionContext.Undo.Execute<Commands::ChangeMultipleNoteTypes>(&selectionCourse, &selectionCourse.Notes_Normal,
+		std::vector<Commands::ChangeMultipleNoteTypes::Data> { { 0, NoteType::Ka, NoteType::Don } });
+	check(selectionCourse.Notes_Normal[0].Type == NoteType::Ka, "Note attribute commands refresh lists without an explicit map");
+	selectionContext.Undo.Undo();
+	check(selectionCourse.Notes_Normal[0].Type == NoteType::Don, "Undo restores note attributes without an explicit map");
+	selectionContext.GetPlaybackBeatIndex(selectionCourse, BranchType::Normal, Beat::FromBars(4));
+	const ChartCourse* oldSelectionCourse = &selectionCourse;
+	auto replacementSelectionCourse = std::make_unique<ChartCourse>(selectionCourse);
+	selectionContext.Chart.Courses.clear();
+	selectionContext.Chart.Courses.push_back(std::move(replacementSelectionCourse));
+	Audio::TestVoicePlaying = false;
+	selectionContext.SetSelectedChart(selectionContext.Chart.Courses[0].get(), BranchType::Normal);
+	check(selectionContext.SelectionSummaries.count({ oldSelectionCourse, BranchType::Normal }) == 0
+		&& selectionContext.BeatBarIndices.count(oldSelectionCourse) == 0
+		&& selectionContext.PlaybackBeatIndices.count({ oldSelectionCourse, BranchType::Normal }) == 0, "Changing projects releases caches for deleted courses");
+	ChartProject indexedBeats;
+	parse("1000,\n#MEASURE 3/4\n#DELAY -1.5\n1000,\n#BPMCHANGE 180\n#DELAY 0.75\n1000,", indexedBeats);
+	auto& indexedBeatCourse = *indexedBeats.Courses[0];
+	BeatBarIndex beatBars; beatBars.Update(indexedBeatCourse, Beat::FromBars(4));
+	std::vector<SortedTempoMap::ForEachBeatBarData> referenceBeats;
+	indexedBeatCourse.TempoMap.ForEachBeatBar([&](const auto& beat)
+	{
+		referenceBeats.push_back(beat);
+		return beat.Beat == beatBars.EndBeat ? ControlFlow::Break : ControlFlow::Fallthrough;
+	});
+	check(referenceBeats.size() == beatBars.Beats.size(), "Beat index preserves measure boundaries and beat count");
+	for (size_t index = 0; index < referenceBeats.size(); ++index)
+		check(referenceBeats[index].Beat == beatBars.Beats[index].Beat && referenceBeats[index].BarIndex == beatBars.Beats[index].BarIndex
+			&& referenceBeats[index].IsBar == beatBars.Beats[index].IsBar, "Beat index matches original enumeration");
+	TimedBeatIndex timedBeats; timedBeats.Build(indexedBeatCourse, BranchType::Normal, beatBars);
+	for (f64 seconds : { -1.0, 0.0, 0.5, 1.5, 2.0, 3.0, 5.0 })
+	{
+		const Time minimum = Time::FromSec(seconds), maximum = minimum + Time::FromSec(0.5);
+		std::vector<i32> expected, actual;
+		for (const auto& beat : referenceBeats)
+		{
+			const Time time = indexedBeatCourse.BeatToPlaybackTime(beat.Beat);
+			if (time >= minimum && time <= maximum) expected.push_back(beat.Beat.Ticks);
+		}
+		const auto [first, last] = timedBeats.FindRange(minimum, maximum);
+		for (auto beat = first; beat != last; ++beat) actual.push_back(beat->Bar.Beat.Ticks);
+		std::sort(actual.begin(), actual.end());
+		check(actual == expected, "Timed beat searches include overlapping negative-delay intervals");
+	}
+	for (i32 hitCount : { 0, 1, 17, 4097 })
+	for (f64 interval : { 0.0, 1.0 / 7.0, 1.0 / 30.0 })
+	for (f64 cursor : { -0.1, 0.0, std::nextafter(1.0, 0.0), 1.0, std::nextafter(1.0, 2.0), 30.0 })
+	{
+		const auto hitTime = [&](i32 index) { return Time::FromSec(0.25) + Time::FromSec(interval) * index; };
+		i32 expectedBefore = 0, expectedThrough = 0;
+		for (i32 index = 0; index < hitCount; ++index)
+		{
+			expectedBefore += hitTime(index).Seconds < cursor;
+			expectedThrough += hitTime(index).Seconds <= cursor;
+		}
+		check(FindRollHitIndex(hitCount, Time::FromSec(cursor), hitTime) == expectedBefore
+			&& FindRollHitIndex(hitCount, Time::FromSec(cursor), hitTime, true) == expectedThrough, "Roll searches preserve exact hit boundaries");
+		const Time current = Time::FromSec(cursor), duration = Time::FromSec(0.5);
+		std::vector<i32> expectedFlying, actualFlying;
+		for (i32 index = hitCount - 1; index >= 0; --index)
+			if (current - hitTime(index) > Time::Zero() && current - hitTime(index) <= duration) expectedFlying.push_back(index);
+		const auto relative = [&](i32 index) { return hitTime(index) - current; };
+		const i32 first = FindRollHitIndex(hitCount, -duration, relative), last = FindRollHitIndex(hitCount, Time::Zero(), relative);
+		for (i32 index = last - 1; index >= first; --index) actualFlying.push_back(index);
+		check(actualFlying == expectedFlying, "Flying roll searches preserve animation boundaries and draw order");
+	}
+	i32 hitLookups = 0;
+	FindRollHitIndex(1000000, 12345.0, [&](i32 index) { ++hitLookups; return index / 30.0; }, true);
+	check(hitLookups <= 21, "Long roll counting uses logarithmic work");
 	std::cout << (failures ? "DELAY tests failed" : "DELAY tests passed") << '\n';
 	return failures ? 1 : 0;
 }

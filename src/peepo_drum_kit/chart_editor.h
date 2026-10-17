@@ -66,6 +66,9 @@ namespace PeepoDrumKit
 		void SavePendingScreenshots();
 		void OnAfterRender();
 		void RestoreDefaultDockSpaceLayout(ImGuiID dockSpaceID);
+		b8 GetIsTestPlayActive() const { return context.TestPlayActive; }
+		b8 GetIsVideoExportActive() const { return videoExport.Preparing || videoExport.Exporting || videoExport.Finalizing; }
+		static b8 RunVideoExportSelfTest(std::string& error);
 		ApplicationHost::CloseResponse OnWindowCloseRequest();
 
 	public:
@@ -96,7 +99,10 @@ namespace PeepoDrumKit
 		void DrawTextEditorWindow();
 
 	private:
+		void DrawVideoExportProgress();
+		void StopVideoExport();
 		void StartAsyncReadingDroppedPath(std::string_view path, b8 isDirectory);
+		void OpenCurrentChartInTaikojiro();
 		void StartAssetSave(std::string_view chartPath);
 		void PrepareAssetSave();
 		void DrawAssetSavePopup();
@@ -183,9 +189,15 @@ namespace PeepoDrumKit
 			i32 ChartChanges = 0;
 			ChartGamePreview Preview = {};
 			VideoExportSoundTimeline Sounds = {};
-			VideoExportWriter Writer = {};
-			std::vector<u8> Pixels;
-			std::vector<i16> AudioSamples;
+			VideoExportAudioRenderState AudioRenderState = {};
+			VideoExportAsyncWriter Writer = {};
+			VideoExportFrame PendingFrame;
+			VideoExportWorkerProgress WorkerProgress;
+			VideoExportAudioSources AudioSources;
+			ImDrawList* RenderDrawList = nullptr;
+			i64 ReadbackFrames = 0;
+			i64 LastWrittenFrames = 0;
+			b8 PendingFrameReady = false, CancelRequested = false, FinishRequested = false, FailureReported = false;
 			std::string Status;
 			std::string ErrorDetails, OutputBasePath, OutputPath, TemporaryPath;
 		} videoExport = {};

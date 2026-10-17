@@ -389,25 +389,28 @@ namespace PeepoDrumKit
 
 		const auto minMaxVisibleTime = timeline.GetMinMaxVisibleTime(visibleTimeOverdraw);
 		const i32 gridLineModToSkip = (1 << gridLineSubDivisions);
-		i32 gridLineIndex = 0;
 
 		const Time chartDuration = context.GetUsedDurationFast();
 		const Beat chartBeatDuration = context.GetUsedBeatDurationFast();
-		context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
+		const auto& beatIndex = context.GetBeatBarIndex(*context.ChartSelectedCourse, chartBeatDuration);
+		const auto firstPastChart = std::upper_bound(beatIndex.Bars.begin(), beatIndex.Bars.end(), chartBeatDuration,
+			[](Beat beat, const auto& bar) { return beat < bar.Beat; });
+		const Time gridTimeEnd = firstPastChart == beatIndex.Bars.end() ? minMaxVisibleTime.Max : Min(minMaxVisibleTime.Max, firstPastChart->BaseTime);
+		const auto [firstBeat, lastBeat] = beatIndex.FindTimeRange(minMaxVisibleTime.Min, gridTimeEnd);
+		for (auto beat = firstBeat; beat != lastBeat; ++beat)
 		{
-			const Time timeIt = context.ChartSelectedCourse->TempoMap.BeatToTime(it.Beat);
+			const auto& it = *beat;
+			const Time timeIt = it.BaseTime;
+			const size_t gridLineIndex = beat - beatIndex.Beats.begin();
 
-			if ((gridLineIndex++ % gridLineModToSkip) == 0)
+			if ((gridLineIndex % gridLineModToSkip) == 0)
 			{
 				if (timeIt >= minMaxVisibleTime.Min && timeIt <= minMaxVisibleTime.Max)
 					perGridFunc(ForEachGridLineData { timeIt, it.BarIndex, it.IsBar, it.Beat, it.Beat > chartBeatDuration });
 			}
 
-			if (timeIt >= minMaxVisibleTime.Max || (it.IsBar && it.Beat > chartBeatDuration))
-				return ControlFlow::Break;
-			else
-				return ControlFlow::Fallthrough;
-		});
+			if (timeIt >= minMaxVisibleTime.Max || (it.IsBar && it.Beat > chartBeatDuration)) break;
+		}
 	}
 
 	// NOTE: Drawing the waveform on top was originally intended to ensure it is always visible, though it can admittedly looks a bit weird at times...
@@ -722,7 +725,6 @@ namespace PeepoDrumKit
 		const u32 waveformColor = Gui::ColorU32WithAlpha(TimelineWaveformBaseColor, waveformAnimationAlpha * 0.215f * (waveformR.IsEmpty() ? 2.0f : 1.0f));
 
 		const Time waveformTimePerPixel = timeline.Camera.LocalSpaceXToTime(1.0f) - timeline.Camera.LocalSpaceXToTime(0.0f);
-		const Time waveformDuration = waveformL.Duration;
 		const auto& playbackTiming = course.GetPlaybackTiming(branch);
 
 		// parallax effect
@@ -742,7 +744,13 @@ namespace PeepoDrumKit
 			if (waveform.IsEmpty())
 				continue;
 
-			const auto& waveformMip = waveform.FindClosestMip(waveformTimePerPixel);
+			const size_t sampleCount = ((static_cast<size_t>(std::ceil(Max(contentRect.GetWidth(), 0.0f))) + CustomDraw::WaveformPixelsPerChunk - 1) / CustomDraw::WaveformPixelsPerChunk) * CustomDraw::WaveformPixelsPerChunk;
+			const auto& amplitudes = timeline.ContentWaveformPixels[waveformIndex].Update(waveform, timeline.Camera.LocalSpaceXToTime(0.0f), waveformTimePerPixel,
+				chartSongOffset, Max(course.TempoMap.Revision, course.GetDelayChanges(branch).Revision), sampleCount, [&](size_t pixel)
+				{
+					const Time editTime = timeline.Camera.LocalSpaceXToTime(static_cast<f32>(pixel));
+					return editTime + playbackTiming.GetDelayOffset(course.TempoMap.TimeToBeat(editTime, true)) - chartSongOffset;
+				}, static_cast<u32>(branch));
 			for (i32 visiblePixel = 0; visiblePixel < contentRect.GetWidth(); /*visiblePixel++*/)
 			{
 				CustomDraw::WaveformChunk chunk;
@@ -750,11 +758,8 @@ namespace PeepoDrumKit
 
 				for (i32 chunkPixel = 0; chunkPixel < CustomDraw::WaveformPixelsPerChunk; chunkPixel++)
 				{
-					const Time editTime = timeline.Camera.LocalSpaceXToTime(static_cast<f32>(visiblePixel));
-					const Time timeAtPixel = editTime + playbackTiming.GetDelayOffset(course.TempoMap.TimeToBeat(editTime, true)) - chartSongOffset;
-					const b8 outOfBounds = (timeAtPixel < Time::Zero() || (timeAtPixel > waveformDuration));
-
-					chunk.PerPixelAmplitude[chunkPixel] = outOfBounds ? 0.0f : (waveformAnimationScale * ClampBot(waveform.GetAmplitudeAt(waveformMip, timeAtPixel, waveformTimePerPixel), minAmplitude));
+					const f32 amplitude = amplitudes[visiblePixel];
+					chunk.PerPixelAmplitude[chunkPixel] = amplitude < 0.0f ? 0.0f : (waveformAnimationScale * ClampBot(amplitude, minAmplitude));
 					visiblePixel++;
 				}
 
@@ -900,10 +905,19 @@ namespace PeepoDrumKit
 			//		 which means the scroll speed change line should probably extend all to the way down to its corresponding note lane (?)
 
 			std::vector<Rect> testPlayLabelBounds;
-			for (const Note& it : list)
+			constexpr BranchType rowBranch = isUnbranchedNotesRow ? BranchType::Normal : TimelineRowToBranchType(RowType);
+			auto& cache = timeline.EditingNoteTimes[EnumToIndex(rowBranch)];
+			const auto key = context.GetCourseCacheKey(course, rowBranch);
+			if (cache.Key != key) { cache.Index.Build(course, rowBranch, false); cache.Key = key; }
+			const auto [firstNote, lastNote] = cache.Index.FindRange(visibleTime.Min, visibleTime.Max);
+			cache.VisibleNotes.clear();
+			for (auto note = firstNote; note != lastNote; ++note) cache.VisibleNotes.push_back(&*note);
+			std::sort(cache.VisibleNotes.begin(), cache.VisibleNotes.end(), [](const auto* first, const auto* second) { return first->OriginalNote < second->OriginalNote; });
+			for (const auto* noteIt : cache.VisibleNotes)
 			{
-				const Time startTime = context.BeatToTime(it.GetStart()) + it.TimeOffset;
-				const Time endTime = (it.BeatDuration > Beat::Zero()) ? context.BeatToTime(it.GetEnd()) + it.TimeOffset : startTime;
+				const Note& it = *noteIt->OriginalNote;
+				const Time startTime = noteIt->HeadTime;
+				const Time endTime = noteIt->TailTime;
 				if (endTime < visibleTime.Min || startTime > visibleTime.Max)
 					continue;
 				if (IsBeatInsideBranchRange(course, it.BeatTime) == isUnbranchedNotesRow)
@@ -1191,7 +1205,6 @@ namespace PeepoDrumKit
 		const u32 waveformColor = Gui::ColorU32WithAlpha(TimelineWaveformBaseColor, waveformAnimationAlpha * 0.5f * (waveformR.IsEmpty() ? 2.0f : 1.0f));
 
 		const Time waveformTimePerPixel = Time::FromSec(chartDuration.ToSec() / ClampBot(timeline.Regions.ContentScrollbarX.GetWidth(), 1.0f));
-		const Time waveformDuration = waveformL.Duration;
 
 		const Rect scrollbarRect = timeline.Regions.ContentScrollbarX;
 		const f32 scrollbarHeight = scrollbarRect.GetHeight();
@@ -1203,7 +1216,9 @@ namespace PeepoDrumKit
 			if (waveform.IsEmpty())
 				continue;
 
-			const auto& waveformMip = waveform.FindClosestMip(waveformTimePerPixel);
+			const size_t sampleCount = ((static_cast<size_t>(std::ceil(Max(scrollbarRect.GetWidth(), 0.0f))) + CustomDraw::WaveformPixelsPerChunk - 1) / CustomDraw::WaveformPixelsPerChunk) * CustomDraw::WaveformPixelsPerChunk;
+			const auto& amplitudes = timeline.ScrollbarWaveformPixels[waveformIndex].Update(waveform, Time::Zero(), waveformTimePerPixel, chartSongOffset, 0,
+				sampleCount, [&](size_t pixel) { return waveformTimePerPixel * static_cast<f64>(pixel) - chartSongOffset; });
 			for (i32 visiblePixel = 0; visiblePixel < scrollbarRect.GetWidth(); /*visiblePixel++*/)
 			{
 				CustomDraw::WaveformChunk chunk;
@@ -1211,10 +1226,8 @@ namespace PeepoDrumKit
 
 				for (i32 chunkPixel = 0; chunkPixel < CustomDraw::WaveformPixelsPerChunk; chunkPixel++)
 				{
-					const Time timeAtPixel = (waveformTimePerPixel * static_cast<f64>(visiblePixel)) - chartSongOffset;
-					const b8 outOfBounds = (timeAtPixel < Time::Zero() || (timeAtPixel > waveformDuration));
-
-					chunk.PerPixelAmplitude[chunkPixel] = outOfBounds ? 0.0f : (waveformAnimationScale * ClampBot(waveform.GetAmplitudeAt(waveformMip, timeAtPixel, waveformTimePerPixel), minAmplitude));
+					const f32 amplitude = amplitudes[visiblePixel];
+					chunk.PerPixelAmplitude[chunkPixel] = amplitude < 0.0f ? 0.0f : (waveformAnimationScale * ClampBot(amplitude, minAmplitude));
 					visiblePixel++;
 				}
 
@@ -1245,7 +1258,7 @@ namespace PeepoDrumKit
 		}
 	}
 
-	static void UpdateTimelinePlaybackAndMetronomneSounds(ChartContext& context, b8 playbackSoundsEnabled, ChartTimeline::MetronomeData& metronome)
+	static void UpdateTimelinePlaybackAndMetronomneSounds(ChartTimeline& timeline, ChartContext& context, b8 playbackSoundsEnabled, ChartTimeline::MetronomeData& metronome)
 	{
 		static constexpr Time frameTimeThresholdAtWhichPlayingSoundsMakesNoSense = Time::FromMS(250.0);
 		static constexpr Time playbackSoundFutureOffset = Time::FromSec(1.0 / 25.0);
@@ -1264,6 +1277,11 @@ namespace PeepoDrumKit
 
 		if (playbackSoundsEnabled)
 		{
+			if (timeline.PlaybackSoundRevision != context.Undo.Revision)
+			{
+				timeline.PlaybackSoundNotes.clear();
+				timeline.PlaybackSoundRevision = context.Undo.Revision;
+			}
 			auto checkNoteSound = [&](Time noteTime)
 			{
 				const Time offsetNoteTime = noteTime - futureOffset;
@@ -1352,8 +1370,17 @@ namespace PeepoDrumKit
 				for (BranchType branch : compared->second)
 				{
 					++iLane;
-					for (const Note& note : course->GetNotes(branch))
-						handleNotePlayback(course, branch, note, nLanes, iLane);
+					auto& cache = timeline.PlaybackSoundNotes[{ course, branch }];
+					const auto key = context.GetCourseCacheKey(*course, branch);
+					if (cache.Key != key) { cache.Index.Build(*course, branch, true); cache.Key = key; }
+					const f32 rollsPerSecond = *Settings.General.DrumrollPreviewRollsPerSecond;
+					const Time rollPadding = rollsPerSecond > 0.0f ? Time::FromSec(1.0 / rollsPerSecond) : Time::Zero();
+					const auto [first, last] = cache.Index.FindRange(nonSmoothCursorLastFrame + futureOffset - rollPadding, nonSmoothCursorThisFrame + futureOffset);
+					cache.VisibleNotes.clear();
+					for (auto note = first; note != last; ++note) cache.VisibleNotes.push_back(&*note);
+					std::sort(cache.VisibleNotes.begin(), cache.VisibleNotes.end(), [](const auto* first, const auto* second) { return first->OriginalNote < second->OriginalNote; });
+					for (const auto* note : cache.VisibleNotes)
+						handleNotePlayback(course, branch, *note->OriginalNote, nLanes, iLane);
 				}
 			}
 		}
@@ -1375,12 +1402,24 @@ namespace PeepoDrumKit
 					cursorBeatEnd = Max(cursorBeatEnd, candidate + Beat::FromBars(1));
 			const Time cursorTimeOnPlaybackStart = context.CursorTimeOnPlaybackStart;
 
-			context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
+			const auto& beatIndex = context.GetPlaybackBeatIndex(*context.ChartSelectedCourse, context.ChartSelectedBranch,
+				Max(cursorBeatEnd, context.GetUsedBeatDurationFast()));
+			auto& candidates = metronome.Candidates;
+			candidates.clear();
+			const auto appendCandidates = [&](Time minimum, Time maximum)
 			{
-				if (it.Beat >= cursorBeatEnd)
-					return ControlFlow::Break;
-
-				const Time beatTime = context.BeatToPlaybackTime(it.Beat);
+				const auto [first, last] = beatIndex.FindRange(minimum, maximum);
+				for (auto beat = first; beat != last; ++beat) if (beat->Bar.Beat < cursorBeatEnd) candidates.push_back(&*beat);
+			};
+			appendCandidates(nonSmoothCursorLastFrame + futureOffset, nonSmoothCursorThisFrame + futureOffset);
+			if (!metronome.HasOnPlaybackStartTimeBeenPlayed)
+				appendCandidates(cursorTimeOnPlaybackStart - Time::FromSec(0.01), cursorTimeOnPlaybackStart + Time::FromSec(0.01));
+			std::sort(candidates.begin(), candidates.end(), [](const auto* first, const auto* second) { return first->Bar.Beat < second->Bar.Beat; });
+			candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+			auto playBeat = [&](const TimedBeatIndex::Entry& entry)
+			{
+				const auto& it = entry.Bar;
+				const Time beatTime = entry.Time;
 				const Time offsetBeatTime = (beatTime - futureOffset);
 
 				// BUG: This is definitely too lenient and easily falsely triggers 1/16th after a bar start
@@ -1405,7 +1444,8 @@ namespace PeepoDrumKit
 				}
 
 				return ControlFlow::Fallthrough;
-			});
+			};
+			for (const auto* beat : candidates) if (playBeat(*beat) == ControlFlow::Break) break;
 		}
 	}
 
@@ -1528,7 +1568,12 @@ namespace PeepoDrumKit
 			Gui::EndChild();
 			Gui::EndPopup();
 		}
-		BuildPlaybackTimelineLayout(PlaybackData, PlaybackHiddenSections, PlaybackLayout);
+		if (PlaybackLayoutDirty || PlaybackLayoutHiddenSections != PlaybackHiddenSections)
+		{
+			BuildPlaybackTimelineLayout(PlaybackData, PlaybackHiddenSections, PlaybackLayout);
+			PlaybackLayoutHiddenSections = PlaybackHiddenSections;
+			PlaybackLayoutDirty = false;
+		}
 
 		for (const auto& stop : PlaybackData.Stops)
 		{
@@ -1637,16 +1682,16 @@ namespace PeepoDrumKit
 		if (!waveform.IsEmpty())
 		{
 			const Time timePerPixel = PlaybackCamera.TimePerScreenPixel();
-			const auto& mip = waveform.FindClosestMip(timePerPixel);
+			const size_t sampleCount = ((static_cast<size_t>(std::ceil(width)) + CustomDraw::WaveformPixelsPerChunk - 1) / CustomDraw::WaveformPixelsPerChunk) * CustomDraw::WaveformPixelsPerChunk;
+			const auto& amplitudes = PlaybackWaveformPixels.Update(waveform, PlaybackCamera.LocalSpaceXToTime(0.0f), timePerPixel, context.Chart.SongOffset, 0,
+				sampleCount, [&](size_t pixel) { return PlaybackCamera.LocalSpaceXToTime(static_cast<f32>(pixel)) - context.Chart.SongOffset; });
 			for (i32 pixel = 0; pixel < width;)
 			{
 				const i32 firstPixel = pixel;
 				CustomDraw::WaveformChunk chunk;
 				for (i32 part = 0; part < CustomDraw::WaveformPixelsPerChunk; ++part, ++pixel)
 				{
-					const Time sample = PlaybackCamera.LocalSpaceXToTime(static_cast<f32>(pixel)) - context.Chart.SongOffset;
-					chunk.PerPixelAmplitude[part] = sample < Time::Zero() || sample > waveform.Duration ? 0.0f
-						: context.SongWaveformFadeAnimationCurrent * waveform.GetAmplitudeAt(mip, sample, timePerPixel);
+					chunk.PerPixelAmplitude[part] = amplitudes[pixel] < 0.0f ? 0.0f : context.SongWaveformFadeAnimationCurrent * amplitudes[pixel];
 				}
 				CustomDraw::DrawWaveformChunk(drawList, Rect::FromTLSize(viewport.TL + vec2(static_cast<f32>(firstPixel), 0.0f), vec2(static_cast<f32>(CustomDraw::WaveformPixelsPerChunk), viewport.GetHeight())), Gui::ColorU32WithAlpha(TimelineWaveformBaseColor, 0.35f), chunk);
 			}
@@ -1776,6 +1821,7 @@ namespace PeepoDrumKit
 				{
 					if (!Gui::GetIO().KeyShift) ExecuteSelectionAction(context, SelectionAction::UnselectAll, {});
 					hoveredNote->OriginalNote->IsSelected = Gui::GetIO().KeyShift ? !hoveredNote->OriginalNote->IsSelected : true;
+					++context.ChartSelectedCourse->SelectionRevision;
 					context.SetCursorTimeAtBeat(hoveredNote->HeadTime, hoveredNote->OriginalNote->BeatTime);
 					ScrollToTimelinePosition(Camera, Regions, context, context.BeatToTime(hoveredNote->OriginalNote->BeatTime));
 				}
@@ -1846,6 +1892,39 @@ namespace PeepoDrumKit
 		unsigned char* pixels;
 		i32 atlasWidth, atlasHeight;
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &atlasWidth, &atlasHeight);
+		{
+			ChartContext animationContext;
+			TJA::ErrorList errors;
+			const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines("TITLE:Animation test\nBPM:120\nCOURSE:Oni\n#START\n1111,\n#END\n")), errors);
+			if (!CreateChartProjectFromTJA(parsed, animationContext.Chart)) { outError = "Cannot import animation fixture"; return false; }
+			auto& course = *animationContext.Chart.Courses[0];
+			animationContext.SetSelectedChart(&course, BranchType::Normal);
+			auto& hiddenCourse = *animationContext.Chart.Courses.emplace_back(std::make_unique<ChartCourse>(course));
+			hiddenCourse.Notes_Normal[0].ClickAnimationTimeRemaining = hiddenCourse.Notes_Normal[0].ClickAnimationTimeDuration = 0.2f;
+			ChartTimeline timeline;
+			const auto step = [&]()
+			{
+				Gui::NewFrame(); Gui::Begin("Animation cache test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+				timeline.UpdateAllAnimationsAfterUserInput(animationContext);
+				Gui::End(); Gui::Render();
+			};
+			timeline.StartNoteHitAnimation(animationContext, course.Notes_Normal[0], 0.1f);
+			step();
+			if (course.Notes_Normal[0].ClickAnimationTimeRemaining <= 0.0f || course.Notes_Normal[0].ClickAnimationTimeRemaining >= 0.1f
+				|| timeline.NoteAnimations[{ &course, BranchType::Normal }].Active.size() != 1
+				|| hiddenCourse.Notes_Normal[0].ClickAnimationTimeRemaining >= 0.2f)
+			{ outError = "Active animations did not advance across courses"; return false; }
+			for (i32 frame = 0; frame < 20; ++frame) step();
+			if (!timeline.NoteAnimations[{ &course, BranchType::Normal }].Active.empty() || course.Notes_Normal[0].ClickAnimationTimeRemaining != 0.0f)
+			{ outError = "Completed animations stayed active"; return false; }
+			timeline.StartNoteHitAnimation(animationContext, course.Notes_Normal[0], 0.1f); step();
+			if (course.Notes_Normal[0].ClickAnimationTimeRemaining <= 0.0f) { outError = "Completed note animation did not restart"; return false; }
+			Note added = course.Notes_Normal[0]; added.BeatTime = Beat::FromBars(4);
+			animationContext.Undo.Execute<Commands::AddSingleNote>(&course, &course.Notes_Normal, added); step();
+			if (timeline.NoteAnimations[{ &course, BranchType::Normal }].Count != 5) { outError = "Adding notes retained stale animation pointers"; return false; }
+			animationContext.Undo.Undo(); step();
+			if (timeline.NoteAnimations[{ &course, BranchType::Normal }].Count != 4) { outError = "Undo retained stale animation pointers"; return false; }
+		}
 		const b8 expandedSetting = *Settings.General.TimelinePlaybackTimeExpanded;
 		defer { Settings_Mutable.General.TimelinePlaybackTimeExpanded.Value = expandedSetting; };
 		const b8 settingsWereDirty = Settings.IsDirty;
@@ -2052,6 +2131,30 @@ namespace PeepoDrumKit
 		if (Absolute(drawResizeFrame() - (Gui::GetFrameHeight() + GuiScale(8.0f))) > 1.0f || resizeTimeline.Regions.PlaybackSplitter.GetHeight() != 0.0f)
 			{ outError = "Collapsing the playback view left an active divider"; return false; }
 		if (drawResizeFrame(false) != 0.0f) { outError = "Hidden playback view still occupies space"; return false; }
+		{
+			ChartContext branchContext;
+			branchContext.Chart.Courses.emplace_back(std::make_unique<ChartCourse>());
+			branchContext.SetSelectedChart(branchContext.Chart.Courses[0].get(), BranchType::Normal);
+			auto& branchCourse = *branchContext.ChartSelectedCourse;
+			branchCourse.BranchSections = { Beat::Zero() };
+			ChartTimeline branchTimeline;
+			branchTimeline.BranchDragOriginalCourse = branchCourse;
+			branchTimeline.BranchDrag.Kind = BranchDragKind::Section;
+			branchTimeline.BranchDrag.Index = 0;
+			branchTimeline.BranchDrag.OriginalBeat = branchTimeline.BranchDrag.CurrentBeat = branchTimeline.BranchDrag.MouseBeatOnDown = Beat::Zero();
+			branchTimeline.Camera.ZoomCurrent = branchTimeline.Camera.ZoomTarget = vec2(1.0f);
+			branchTimeline.Regions.Content.Rect() = Rect::FromTLSize(vec2(0.0f), io.DisplaySize);
+			const auto beforeDrag = branchContext.GetCourseCacheKey(branchCourse, BranchType::Normal);
+			io.AddMousePosEvent(branchTimeline.Camera.TimeToLocalSpaceX(branchContext.BeatToTime(Beat::FromBars(1))), 100.0f);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+			Gui::NewFrame();
+			Gui::Begin("Branch cache self-test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+			branchTimeline.UpdateInputAtStartOfFrame(branchContext);
+			Gui::End(); Gui::Render();
+			if (branchCourse.BranchSections[0] != Beat::FromBars(1) || branchContext.GetCourseCacheKey(branchCourse, BranchType::Normal) == beforeDrag || !branchContext.Undo.UndoStack.empty())
+				{ outError = "A live branch drag did not invalidate caches before its undo command was committed"; return false; }
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+		}
 		const auto conversionBinding = Settings.Input.Timeline_ConvertRangeToDelay;
 		defer { Settings_Mutable.Input.Timeline_ConvertRangeToDelay = conversionBinding; };
 		Settings_Mutable.Input.Timeline_ConvertRangeToDelay.Value = KeyBinding(ImGuiKey_F24);
@@ -2131,7 +2234,17 @@ namespace PeepoDrumKit
 		const auto& course = *context.ChartSelectedCourse;
 		const b8 hasDelay = !course.DelayChanges_Normal.empty() || !course.DelayChanges_Expert.empty() || !course.DelayChanges_Master.empty();
 		if (hasDelay)
-			BuildPlaybackTimelineData(*context.ChartSelectedCourse, context.ChartSelectedBranch, course.TempoMap.TimeToBeat(context.GetUsedDurationFast()), PlaybackData);
+		{
+			const auto key = context.GetCourseCacheKey(course, context.ChartSelectedBranch);
+			const Beat endBeat = course.TempoMap.TimeToBeat(context.GetUsedDurationFast());
+			if (PlaybackDataKey != key || PlaybackDataEndBeat != endBeat)
+			{
+				BuildPlaybackTimelineData(*context.ChartSelectedCourse, context.ChartSelectedBranch, endBeat, PlaybackData);
+				PlaybackDataKey = key;
+				PlaybackDataEndBeat = endBeat;
+				PlaybackLayoutDirty = true;
+			}
+		}
 		const f32 playbackHeaderHeight = Gui::GetFrameHeight() + GuiScale(8.0f);
 		const f32 upperMinimumHeight = sidebarHeight + scrollbarXHeight + GuiScale(80.0f);
 		const b8 showPlaybackTimeline = hasDelay && Regions.Window.GetHeight() > upperMinimumHeight + playbackHeaderHeight + GuiScale(6.0f);
@@ -2349,7 +2462,7 @@ namespace PeepoDrumKit
 		{
 			if (note.BeatTime == cursorBeat)
 			{
-				note.ClickAnimationTimeRemaining = note.ClickAnimationTimeDuration = NoteHitAnimationDuration;
+				StartNoteHitAnimation(context, note, NoteHitAnimationDuration);
 				if (!soundHasBeenPlayed) { PlaySoundEffectTypeForNoteType(context, note.Type); soundHasBeenPlayed = true; }
 			}
 		}
@@ -2748,6 +2861,7 @@ namespace PeepoDrumKit
 	void ChartTimeline::ExecuteSelectionAction(ChartContext& context, SelectionAction action, const SelectionActionParam& param)
 	{
 		ChartCourse& course = *context.ChartSelectedCourse;
+		++course.SelectionRevision;
 		const auto isWithinRangeSelection = [&](Beat itemStart, Beat itemDuration)
 		{
 			if (!context.RangeSelection.IsActiveAndHasEnd())
@@ -3790,6 +3904,8 @@ namespace PeepoDrumKit
 							else if (BranchDrag.Kind == BranchDragKind::LevelHold) branchCourse.BranchLevelHolds[BranchDrag.Index].BeatTime = target;
 							else { BranchRange& range = branchCourse.Branches[BranchDrag.Index]; range.BeatTime = start; range.BeatDuration = openStartDrag ? Beat::Zero() : end - start; }
 							BranchDrag.CurrentBeat = target;
+							// Refresh derived views before the drag is committed to the undo history.
+							context.Undo.Revision++;
 						}
 					}
 				}
@@ -3847,13 +3963,10 @@ namespace PeepoDrumKit
 			{
 				ChartCourse& selectedCourse = *context.ChartSelectedCourse;
 
-				size_t selectedItemCount = 0; b8 allSelectedItemsAreNotes = true; b8 atLeastOneSelectedItemIsTempoChange = false;
-				ForEachSelectedChartItem(selectedCourse, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
-				{
-					selectedItemCount++;
-					allSelectedItemsAreNotes &= IsNotesList(it.List);
-					atLeastOneSelectedItemIsTempoChange |= (it.List == GenericList::TempoChanges);
-				});
+				const auto& selection = context.GetSelection(selectedCourse, context.ChartSelectedBranch);
+				const size_t selectedItemCount = selection.Items.size();
+				const b8 allSelectedItemsAreNotes = selection.NoteCount == selectedItemCount;
+				const b8 atLeastOneSelectedItemIsTempoChange = selection.PerListCounts[EnumToIndex(GenericList::TempoChanges)] > 0;
 
 				if (SelectedItemDrag.ActiveTarget != EDragTarget::None && !Gui::IsMouseDown(ImGuiMouseButton_Left))
 					SelectedItemDrag = {};
@@ -4599,7 +4712,7 @@ namespace PeepoDrumKit
 						{
 							if (existingNoteAtCursor->BeatTime == cursorBeat)
 							{
-								existingNoteAtCursor->ClickAnimationTimeRemaining = existingNoteAtCursor->ClickAnimationTimeDuration = NoteHitAnimationDuration;
+								StartNoteHitAnimation(context, *existingNoteAtCursor, NoteHitAnimationDuration);
 								if (!isPlayback)
 								{
 									if (ToSmallNote(existingNoteAtCursor->Type) == ToSmallNote(noteTypeToInsert) || (existingNoteAtCursor->BeatDuration > Beat::Zero()))
@@ -4780,7 +4893,7 @@ namespace PeepoDrumKit
 
 		// NOTE: Playback preview sounds / metronome
 		if (context.GetIsPlayback() && (PlaybackSoundsEnabled || Metronome.IsEnabled))
-			UpdateTimelinePlaybackAndMetronomneSounds(context, PlaybackSoundsEnabled && !context.TestPlayActive, Metronome);
+			UpdateTimelinePlaybackAndMetronomneSounds(*this, context, PlaybackSoundsEnabled && !context.TestPlayActive, Metronome);
 
 		// NOTE: Mouse selection box
 		{
@@ -4915,8 +5028,35 @@ namespace PeepoDrumKit
 		Camera.PositionTarget.y = std::max(0.0f, std::min(Camera.PositionTarget.y, GetTotalTimelineRowsHeight(*this, *context.ChartSelectedCourse) - Regions.Content.GetHeight()));
 	}
 
+	void ChartTimeline::StartNoteHitAnimation(ChartContext& context, Note& note, f32 duration)
+	{
+		note.ClickAnimationTimeRemaining = note.ClickAnimationTimeDuration = duration;
+		auto& cache = NoteAnimations[{ context.ChartSelectedCourse, context.ChartSelectedBranch }];
+		if (std::find(cache.Active.begin(), cache.Active.end(), &note) == cache.Active.end()) cache.Active.push_back(&note);
+	}
+
+	template <typename T, typename List, typename IsActive, typename Update>
+	static void UpdateActiveChartAnimations(ChartTimeline::ActiveAnimationCache<T>& cache, List& list, u64 undoRevision, IsActive isActive, Update update)
+	{
+		if (cache.ListRevision != list.Revision || cache.UndoRevision != undoRevision || cache.Data != list.data() || cache.Count != list.size())
+		{
+			cache.Active.clear();
+			for (auto& item : list) if (isActive(item)) cache.Active.push_back(&item);
+			cache.ListRevision = list.Revision; cache.UndoRevision = undoRevision; cache.Data = list.data(); cache.Count = list.size();
+		}
+		for (auto* item : cache.Active) update(*item);
+		erase_remove_if(cache.Active, [&](const T* item) { return !isActive(*item); });
+	}
+
 	void ChartTimeline::UpdateAllAnimationsAfterUserInput(ChartContext& context)
 	{
+		if (NoteAnimations.size() > context.Chart.Courses.size() * EnumCount<BranchType> || GoGoAnimations.size() > context.Chart.Courses.size())
+		{
+			const auto alive = [&](const ChartCourse* course)
+			{ return std::any_of(context.Chart.Courses.begin(), context.Chart.Courses.end(), [&](const auto& item) { return item.get() == course; }); };
+			for (auto it = NoteAnimations.begin(); it != NoteAnimations.end();) { if (!alive(it->first.first)) it = NoteAnimations.erase(it); else ++it; }
+			for (auto it = GoGoAnimations.begin(); it != GoGoAnimations.end();) { if (!alive(it->first)) it = GoGoAnimations.erase(it); else ++it; }
+		}
 		// BUG: Freaks out when zoomed in too far / the timeline is too long (16min song for example) float precision issue (?)
 		Camera.UpdateAnimations();
 		Gui::AnimateExponential(&context.SongWaveformFadeAnimationCurrent, context.SongWaveformFadeAnimationTarget, *Settings.Animation.TimelineWaveformFadeSpeed);
@@ -4934,12 +5074,14 @@ namespace PeepoDrumKit
 			const f32 elapsedAnimationTimeSec = Gui::DeltaTime();
 			for (BranchType branch = {}; branch < BranchType::Count; IncrementEnum(branch))
 			{
-				for (Note& note : course->GetNotes(branch))
-					note.ClickAnimationTimeRemaining = ClampBot(note.ClickAnimationTimeRemaining - elapsedAnimationTimeSec, 0.0f);
+				UpdateActiveChartAnimations(NoteAnimations[{ course.get(), branch }], course->GetNotes(branch), context.Undo.Revision,
+					[](const Note& note) { return note.ClickAnimationTimeRemaining > 0.0f; },
+					[&](Note& note) { note.ClickAnimationTimeRemaining = ClampBot(note.ClickAnimationTimeRemaining - elapsedAnimationTimeSec, 0.0f); });
 			}
 
-			for (auto& gogo : course->GoGoRanges)
-				Gui::AnimateExponential(&gogo.ExpansionAnimationCurrent, gogo.ExpansionAnimationTarget, *Settings.Animation.TimelineGoGoRangeExpansionSpeed);
+			UpdateActiveChartAnimations(GoGoAnimations[course.get()], course->GoGoRanges, context.Undo.Revision,
+				[](const GoGoRange& gogo) { return gogo.ExpansionAnimationCurrent != gogo.ExpansionAnimationTarget; },
+				[](GoGoRange& gogo) { Gui::AnimateExponential(&gogo.ExpansionAnimationCurrent, gogo.ExpansionAnimationTarget, *Settings.Animation.TimelineGoGoRangeExpansionSpeed); });
 		}
 
 		if (!TempDeletedNoteAnimationsBuffer.empty())
@@ -4997,7 +5139,7 @@ namespace PeepoDrumKit
 				{
 					Time cursorTimeOffset = (*Settings.General.DisplayTimeInSongSpace) ? -context.Chart.SongOffset : Time::Zero();
 					Time displayTime = context.GetCursorTime() + cursorTimeOffset;
-					const auto [firstPlaybackTime, lastPlaybackTime] = context.ChartSelectedCourse->GetPlaybackTimeBounds(context.GetUsedDurationFast());
+					const auto [firstPlaybackTime, lastPlaybackTime] = context.GetPlaybackTimeBounds(context.GetUsedDurationFast());
 					Time displayTimeMin = Min(firstPlaybackTime + cursorTimeOffset, Time::Zero());
 					Time displayTimeMax = lastPlaybackTime + cursorTimeOffset;
 					std::string strDisplayTime = displayTime.ToString();
@@ -5496,12 +5638,11 @@ namespace PeepoDrumKit
 					GridSnapLineAnimationCurrent);
 				if (*Settings.General.TimelineGridStartsAtBar)
 				{
-					context.ChartSelectedCourse->TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+					const auto& beatIndex = context.GetBeatBarIndex(*context.ChartSelectedCourse, maxVisibleBeat);
+					const auto [firstBar, lastBar] = beatIndex.FindBarRange(minVisibleBeat, maxVisibleBeat);
+					for (auto barIt = firstBar; barIt != lastBar; ++barIt)
 					{
-						if (!bar.IsBar)
-							return ControlFlow::Continue;
-						if (bar.Beat > maxVisibleBeat)
-							return ControlFlow::Break;
+						const auto& bar = *barIt;
 						const Beat barEnd = bar.Beat + std::max(abs(bar.Signature.GetDurationPerBar()), Beat::FromTicks(1));
 						const Beat firstOffset = CeilBeatToGrid(std::max(minVisibleBeat - bar.Beat, Beat::Zero()), gridBeatSnap);
 						for (Beat beatIt = bar.Beat + firstOffset; beatIt < barEnd && beatIt <= maxVisibleBeat; beatIt += gridBeatSnap)
@@ -5509,8 +5650,7 @@ namespace PeepoDrumKit
 							const vec2 screenSpaceTL = LocalToScreenSpace(vec2(Camera.TimeToLocalSpaceX(context.BeatToTime(beatIt)), 0.0f));
 							DrawListContent->AddLine(screenSpaceTL, screenSpaceTL + vec2(0.0f, Regions.Content.GetHeight()), gridSnapLineColor);
 						}
-						return ControlFlow::Continue;
-					});
+					}
 				}
 				else
 				{

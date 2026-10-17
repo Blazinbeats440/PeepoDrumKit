@@ -1523,43 +1523,48 @@ namespace PeepoDrumKit
 					return !hasRangeSelection || (note.GetStart() <= rangeSelectionMax && note.GetEnd() >= rangeSelectionMin);
 				};
 
-				int _donSmallCount = 0, _donBigCount = 0;
-				int _kaSmallCount = 0, _kaBigCount = 0;
-				int _kaDonCount = 0, _adLibCount = 0, _bombCount = 0;
-				f64 _rollDuration = 0.0;
-				f64 _balloonDuration = 0.0;
-				int _balloonPopCount = 0;
-				for (const Note& note : notes)
+				auto& [_donSmallCount, _donBigCount, _kaSmallCount, _kaBigCount, _kaDonCount,
+					_adLibCount, _bombCount, _rollDuration, _balloonDuration, _balloonPopCount] = CachedStats;
+				const auto key = context.GetCourseCacheKey(course, context.ChartSelectedBranch);
+				if (StatsKey != key || StatsHasRange != hasRangeSelection || StatsRangeMin != rangeSelectionMin || StatsRangeMax != rangeSelectionMax)
 				{
-					if (!isInStatsRange(note)) continue;
-					if (IsDonNote(note.Type))
+					CachedStats = {};
+					StatsKey = key;
+					StatsHasRange = hasRangeSelection;
+					StatsRangeMin = rangeSelectionMin;
+					StatsRangeMax = rangeSelectionMax;
+					for (const Note& note : notes)
 					{
-						if (IsBigNote(note.Type)) _donBigCount++;
-						else _donSmallCount++;
-					}
-					if (IsKaNote(note.Type))
-					{
-						if (IsBigNote(note.Type)) _kaBigCount++;
-						else _kaSmallCount++;
-					}
-					if (IsKaDonNote(note.Type)) _kaDonCount++;
-					if (IsAdlibNote(note.Type)) _adLibCount++;
-					if (IsBombNote(note.Type)) _bombCount++;
-					Beat noteStart = note.GetStart();
-					Beat noteEnd = note.GetEnd();
-					if (hasRangeSelection)
-					{
-						noteStart = Max(noteStart, rangeSelectionMin);
-						noteEnd = Min(noteEnd, rangeSelectionMax);
-					}
-					const f64 noteDuration = (noteEnd > noteStart)
-						? (context.BeatToTime(noteEnd) - context.BeatToTime(noteStart)).Seconds
-						: 0.0;
-					if (IsDrumrollNote(note.Type)) _rollDuration += noteDuration;
-					if (IsBalloonNote(note.Type))
-					{
-						_balloonDuration += noteDuration;
-						_balloonPopCount += note.BalloonPopCount;
+						if (!isInStatsRange(note)) continue;
+						if (IsDonNote(note.Type))
+						{
+							if (IsBigNote(note.Type)) _donBigCount++;
+							else _donSmallCount++;
+						}
+						if (IsKaNote(note.Type))
+						{
+							if (IsBigNote(note.Type)) _kaBigCount++;
+							else _kaSmallCount++;
+						}
+						if (IsKaDonNote(note.Type)) _kaDonCount++;
+						if (IsAdlibNote(note.Type)) _adLibCount++;
+						if (IsBombNote(note.Type)) _bombCount++;
+						Beat noteStart = note.GetStart();
+						Beat noteEnd = note.GetEnd();
+						if (hasRangeSelection)
+						{
+							noteStart = Max(noteStart, rangeSelectionMin);
+							noteEnd = Min(noteEnd, rangeSelectionMax);
+						}
+						const f64 noteDuration = (noteEnd > noteStart)
+							? (context.BeatToTime(noteEnd) - context.BeatToTime(noteStart)).Seconds
+							: 0.0;
+						if (IsDrumrollNote(note.Type)) _rollDuration += noteDuration;
+						if (IsBalloonNote(note.Type))
+						{
+							_balloonDuration += noteDuration;
+							_balloonPopCount += note.BalloonPopCount;
+						}
 					}
 				}
 				int _donCount = _donSmallCount + _donBigCount;
@@ -1632,6 +1637,59 @@ namespace PeepoDrumKit
 
 		}
 		Gui::PopFont();
+	}
+
+	b8 RunEditorCacheSelfTest(std::string& error)
+	{
+		error.clear();
+		ImGuiContext* previous = Gui::GetCurrentContext();
+		ImGuiContext* testContext = Gui::CreateContext();
+		Gui::SetCurrentContext(testContext);
+		defer { Gui::DestroyContext(testContext); Gui::SetCurrentContext(previous); };
+		auto& io = Gui::GetIO();
+		io.IniFilename = nullptr; io.LogFilename = nullptr;
+		io.DisplaySize = vec2(900.0f, 600.0f); io.DeltaTime = 1.0f / 60.0f;
+		unsigned char* pixels; i32 width, height;
+		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+		ChartContext context;
+		TJA::ErrorList errors;
+		const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines("TITLE:Cache test\nBPM:120\nCOURSE:Oni\n#START\n#SUDDEN 2 1\n1000,\n2000,\n1000,\n#END\n")), errors);
+		if (!errors.Errors.empty() || !CreateChartProjectFromTJA(parsed, context.Chart)) { error = "Cannot import editor cache fixture"; return false; }
+		context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
+		auto& course = *context.ChartSelectedCourse;
+		ChartChartStatsWindow stats;
+		ChartGamePreview preview;
+		const auto verify = [&](i32 dons, i32 kas, size_t notes, f64 headTime)
+		{
+			Gui::NewFrame();
+			Gui::Begin("Editor cache self-test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+			stats.DrawGui(context);
+			Gui::End(); Gui::Render();
+			const auto& lane = preview.GetCachedNoteLaneData(context, course, BranchType::Normal);
+			return stats.CachedStats.DonSmall == dons && stats.CachedStats.KaSmall == kas && lane.size() == notes
+				&& !lane.empty() && Absolute(lane[0].Time.ToSec() - headTime) < 0.00001
+				&& Absolute(lane[0].HeadPosition.SuddenMoveTime.ToSec() - (headTime - 1.0)) < 0.00001
+				&& Absolute(lane[0].HeadPosition.SuddenShowTime.ToSec() - (headTime - 2.0)) < 0.00001;
+		};
+		if (!verify(2, 1, 3, 0.0) || !verify(2, 1, 3, 0.0)) { error = "Initial editor caches are incorrect"; return false; }
+		Note edited = course.Notes_Normal[0]; edited.Type = NoteType::Ka; edited.TimeOffset = Time::FromSec(0.5);
+		context.Undo.Execute<Commands::UpdateSingleChartEvent<Note>>(&course, &course.Notes_Normal, edited);
+		if (!verify(1, 2, 3, 0.5)) { error = "Editing a note did not refresh stats and preview caches"; return false; }
+		context.Undo.Undo();
+		if (!verify(2, 1, 3, 0.0)) { error = "Undo did not refresh stats and preview caches"; return false; }
+		context.Undo.Redo();
+		if (!verify(1, 2, 3, 0.5)) { error = "Redo did not refresh stats and preview caches"; return false; }
+		context.RangeSelection = { Beat::FromBars(2), Beat::FromBars(3), true, true };
+		if (!verify(1, 0, 3, 0.5)) { error = "Changing the selected range did not refresh stats"; return false; }
+		context.RangeSelection = {};
+		ChartCourse replacement = course;
+		replacement.Notes_Normal.Sorted.clear(); edited.TimeOffset = Time::FromSec(0.75);
+		replacement.Notes_Normal.InsertOrUpdate(edited);
+		context.Undo.Execute<Commands::ReplaceChartCourse>(&course, std::move(replacement));
+		if (!verify(0, 1, 1, 0.75)) { error = "Replacing a course retained stale editor caches"; return false; }
+		context.Undo.Undo();
+		if (!verify(1, 2, 3, 0.5)) { error = "Undoing a course replacement retained stale editor caches"; return false; }
+		return RunGamePreviewNoteSelfTest(error);
 	}
 
 	void ChartHelpWindow::DrawGui(ChartContext& context)
@@ -2479,7 +2537,7 @@ namespace PeepoDrumKit
 
 			// fetch values from events
 			BeatSortedForwardIterator<TempoChange> scrollTempoChangeIt {};
-			ForEachSelectedChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
+			for (const auto& it : context.GetSelection(course, context.ChartSelectedBranch).Items)
 			{
 				TempChartItem& out = SelectedItems.emplace_back();
 				out.List = it.List;
@@ -2497,7 +2555,7 @@ namespace PeepoDrumKit
 
 				if (IsScrollChangesList(it.List))
 					out.BaseScrollTempo = TempoOrDefault(scrollTempoChangeIt.Next(course.TempoMap.Tempo.Sorted, out.MemberValues.BeatStart()));
-			});
+			}
 
 			// get event count
 			GenericMemberFlags commonAvailableMemberFlags = SelectedItems.empty() ? GenericMemberFlags_None : GenericMemberFlags_All;
@@ -3433,7 +3491,14 @@ namespace PeepoDrumKit
 				Gui::Property::PropertyTextValueFunc(UI_Str("CHART_PROP_SUBTITLE"), [&]
 				{
 					Gui::SetNextItemWidth(-1.0f);
-					if (Gui::InputTextWithHint("##ChartSubtitle", "n/a", &chart.ChartSubtitle))
+					b8 subtitleChanged = Gui::InputTextWithHint("##ChartSubtitle", "n/a", &chart.ChartSubtitle);
+					if (*Settings.General.AutoPrefixChartSubtitle && !Gui::IsItemActive()
+						&& !chart.ChartSubtitle.empty() && chart.ChartSubtitle.compare(0, 2, "--") != 0)
+					{
+						chart.ChartSubtitle.insert(0, "--");
+						subtitleChanged = true;
+					}
+					if (subtitleChanged)
 						context.Undo.NotifyChangesWereMade();
 				});
 				static std::string newSubtitleLocale = "";
@@ -3954,13 +4019,13 @@ namespace PeepoDrumKit
 		{
 			b8 isAnyItemOtherThanNotesSelected = false;
 			b8 isAnyItemNotInListSelected[EnumCount<GenericList>] = {}; // all false
-			ForEachSelectedChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
+			for (const auto& it : context.GetSelection(course, context.ChartSelectedBranch).Items)
 			{
 				if (!IsNotesList(it.List)) isAnyItemOtherThanNotesSelected = true;
 				for (GenericList list = {}; list != GenericList::Count; IncrementEnum(list)) {
 					if (it.List != list) isAnyItemNotInListSelected[EnumToIndex(list)] = true;
 				}
-			});
+			}
 
 			if (Gui::Property::BeginTable(ImGuiTableFlags_BordersInner))
 			{
@@ -4583,10 +4648,10 @@ namespace PeepoDrumKit
 		if (Gui::CollapsingHeader(UI_Str("DETAILS_LYRICS_EDIT_LINE"), ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			b8 isAnyItemOtherThanLyricsSelected = false;
-			ForEachSelectedChartItem(course, context.ChartSelectedBranch, [&](const ForEachChartItemData& it)
+			for (const auto& it : context.GetSelection(course, context.ChartSelectedBranch).Items)
 			{
 				if (it.List != GenericList::Lyrics) isAnyItemOtherThanLyricsSelected = true;
-			});
+			}
 
 			const Beat cursorBeat = timeline.FloorBeatToCurrentGrid(context, context.GetCursorBeat());
 			const LyricChange* lyricChangeAtCursor = context.ChartSelectedCourse->Lyrics.TryFindLastAtBeat(cursorBeat);

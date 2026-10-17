@@ -15,6 +15,7 @@
 #include <dxgi1_5.h>
 #include <chrono>
 #include <thread>
+#include <array>
 
 #define HAS_EMBEDDED_ICONS 1
 #define REGENERATE_EMBEDDED_ICONS_SOURCE_CODE 0
@@ -85,6 +86,41 @@ namespace ApplicationHost
 	static IDXGISwapChain*          GlobalSwapChain = nullptr;
 	static DXGI_SWAP_CHAIN_DESC		GlobalSwapChainCreationDesc = {};
 	static ID3D11RenderTargetView*  GlobalMainRenderTargetView = nullptr;
+	struct DrawListCaptureResources
+	{
+		ID3D11Texture2D* RenderTexture = nullptr;
+		ID3D11RenderTargetView* RenderTarget = nullptr;
+		ID3D11Texture2D* StagingTexture = nullptr;
+		ID3D11ShaderResourceView* ShaderResource = nullptr;
+		ID3D11Query* CompletionQuery = nullptr;
+		i64 FrameIndex = 0;
+		u32 Width = 0, Height = 0;
+		void Reset()
+		{
+			if (CompletionQuery) CompletionQuery->Release();
+			if (ShaderResource) ShaderResource->Release();
+			if (StagingTexture) StagingTexture->Release();
+			if (RenderTarget) RenderTarget->Release();
+			if (RenderTexture) RenderTexture->Release();
+			StagingTexture = RenderTexture = nullptr;
+			RenderTarget = nullptr;
+			ShaderResource = nullptr; CompletionQuery = nullptr;
+			Width = Height = 0;
+		}
+	};
+	static DrawListCaptureResources GlobalDrawListCapture;
+	struct AsyncDrawListCaptureResources
+	{
+		std::array<DrawListCaptureResources, 3> Slots;
+		size_t ReadIndex = 0, WriteIndex = 0, PendingCount = 0, PreviewIndex = SIZE_MAX;
+		b8 Active = false, Invalidated = false;
+		void ResetResources()
+		{
+			for (auto& slot : Slots) slot.Reset();
+			ReadIndex = WriteIndex = PendingCount = 0; PreviewIndex = SIZE_MAX;
+		}
+	};
+	static AsyncDrawListCaptureResources GlobalAsyncDrawListCapture;
 	static UpdateFunc				GlobalOnUserUpdate = nullptr;
 	static AfterRenderFunc			GlobalOnUserAfterRender = nullptr;
 	static WindowCloseRequestFunc	GlobalOnUserWindowCloseRequest = nullptr;
@@ -512,12 +548,22 @@ namespace ApplicationHost
 		GlobalFrameInProgress = true;
 		defer { GlobalFrameInProgress = false; };
 		static std::chrono::steady_clock::time_point nextFrameTime = {};
-		if (GlobalState.SwapInterval == 0 && GlobalState.VSyncOffFPSLimit > 0)
+		static i32 idleFPSLimit = 0;
+		b8 wokeForInput = false;
+		i32 fpsLimit = GlobalState.SwapInterval == 0 ? GlobalState.VSyncOffFPSLimit : 0;
+		if (idleFPSLimit > 0) fpsLimit = fpsLimit > 0 ? Min(fpsLimit, idleFPSLimit) : idleFPSLimit;
+		if (GlobalState.UnthrottledRendering) fpsLimit = 0;
+		if (fpsLimit > 0)
 		{
 			const auto now = std::chrono::steady_clock::now();
 			if (nextFrameTime > now)
-				std::this_thread::sleep_until(nextFrameTime);
-			nextFrameTime = std::chrono::steady_clock::now() + std::chrono::nanoseconds(1000000000LL / GlobalState.VSyncOffFPSLimit);
+			{
+				if (idleFPSLimit > 0)
+					wokeForInput = ::MsgWaitForMultipleObjectsEx(0, nullptr, static_cast<DWORD>(std::chrono::duration_cast<std::chrono::milliseconds>(nextFrameTime - now).count()), QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_OBJECT_0;
+				else
+					std::this_thread::sleep_until(nextFrameTime);
+			}
+			nextFrameTime = std::chrono::steady_clock::now() + std::chrono::nanoseconds(1000000000LL / fpsLimit);
 		}
 		else
 			nextFrameTime = {};
@@ -527,7 +573,7 @@ namespace ApplicationHost
 		if ((frameCounter % 120) == 0)
 			Log::Write("Frame %llu", static_cast<unsigned long long>(frameCounter));
 		// update font and size
-		if (!GlobalIsWindowMinimized && GlobalState.SwapInterval != 0 && GlobalSwapChainWaitableObject != NULL)
+		if (!GlobalState.UnthrottledRendering && !GlobalIsWindowMinimized && GlobalState.SwapInterval != 0 && GlobalSwapChainWaitableObject != NULL)
 			::WaitForSingleObjectEx(GlobalSwapChainWaitableObject, 1000, true);
 		
 		if (FontMainFileNameCurrent != FontMainFileNameTarget) {
@@ -581,30 +627,53 @@ namespace ApplicationHost
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
+		static ImVec2 lastDisplaySize = ImVec2(640.0f, 360.0f);
+		if (!GlobalIsWindowMinimized && ImGui::GetIO().DisplaySize.x > 0.0f && ImGui::GetIO().DisplaySize.y > 0.0f)
+			lastDisplaySize = ImGui::GetIO().DisplaySize;
+		else if (GlobalState.UnthrottledRendering)
+			ImGui::GetIO().DisplaySize = lastDisplaySize;
 		ImGui::NewFrame();
 		ImGui_UpdateInternalInputExtraDataAtStartOfFrame();
 
 		assert(GlobalOnUserUpdate != nullptr);
 		GlobalOnUserUpdate();
+		static f64 lastActivityTime = 0.0;
+		const auto& io = ImGui::GetIO();
+		const b8 hasInput = io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f || io.MouseWheel != 0.0f || io.MouseWheelH != 0.0f || ImGui::IsAnyMouseDown()
+			|| std::any_of(std::begin(io.KeysData), std::end(io.KeysData), [](const ImGuiKeyData& key) { return key.Down; });
+		if (wokeForInput || hasInput || ImGui::GetActiveID() != 0 || IsGuiScaleCurrentlyAnimating || !GlobalState.AllowIdleThrottling)
+			lastActivityTime = ImGui::GetTime();
+		idleFPSLimit = GlobalState.AllowIdleThrottling && ImGui::GetTime() - lastActivityTime > 2.0
+			? (GlobalIsWindowMinimized ? 10 : GlobalState.IsAnyWindowFocusedThisFrame ? 30 : 15) : 0;
 
 		ImGui::Render();
 		ImGui_UpdateInternalInputExtraDataAtEndOfFrame();
+		if (GlobalIsWindowMinimized && GlobalState.AllowIdleThrottling && ImGui::GetPlatformIO().Viewports.Size <= 1)
+			return;
 
-		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
-		GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
-		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+		static auto lastPresentation = std::chrono::steady_clock::time_point {};
+		const auto presentationTime = std::chrono::steady_clock::now();
+		const b8 presentWindow = !GlobalState.ThrottleWindowPresentation || hasInput ||
+			presentationTime - lastPresentation >= std::chrono::milliseconds(100);
+		if (presentWindow)
+		{
+			GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
+			GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
+			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+			lastPresentation = presentationTime;
+		}
 		if (GlobalOnUserAfterRender) GlobalOnUserAfterRender();
 
 		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 		{
 			ImGui::UpdatePlatformWindows();
-			ImGui::RenderPlatformWindowsDefault();
+			if (presentWindow) ImGui::RenderPlatformWindowsDefault();
 		}
 
 		// TODO: Maybe handle this better somehow, not sure...
-		if (!GlobalIsWindowMinimized)
+		if (!GlobalIsWindowMinimized && presentWindow)
 		{
-			const UINT syncInterval = Clamp(GlobalState.SwapInterval, 0, 4);
+			const UINT syncInterval = GlobalState.UnthrottledRendering ? 0 : Clamp(GlobalState.SwapInterval, 0, 4);
 			const UINT presentFlags = (syncInterval == 0 && (GlobalSwapChainCreationDesc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING)) ? DXGI_PRESENT_ALLOW_TEARING : 0;
 			const HRESULT presentResult = GlobalSwapChain->Present(syncInterval, presentFlags);
 			if (presentResult == DXGI_ERROR_DEVICE_REMOVED || presentResult == DXGI_ERROR_DEVICE_RESET)
@@ -617,7 +686,7 @@ namespace ApplicationHost
 			else if (FAILED(presentResult))
 				Log::WriteHRESULT("IDXGISwapChain::Present", presentResult);
 		}
-		else
+		else if (GlobalIsWindowMinimized && !GlobalState.UnthrottledRendering)
 			::Sleep(33);
 	}
 
@@ -656,59 +725,138 @@ namespace ApplicationHost
 		return true;
 	}
 
-	b8 CaptureDrawListToBGRA(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, std::vector<u8>& outPixels)
+	static b8 EnsureDrawListCaptureResources(DrawListCaptureResources& capture, u32 width, u32 height)
 	{
-		if (!drawList || !GlobalD3D11Device || !GlobalD3D11DeviceContext ||
-			sourceRect.GetWidth() <= 0.0f || sourceRect.GetHeight() <= 0.0f || width == 0 || height == 0)
-			return false;
+		if (capture.Width != width || capture.Height != height)
+		{
+			capture.Reset();
+			D3D11_TEXTURE2D_DESC textureDesc = {};
+			textureDesc.Width = width;
+			textureDesc.Height = height;
+			textureDesc.MipLevels = 1;
+			textureDesc.ArraySize = 1;
+			textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			textureDesc.SampleDesc.Count = 1;
+			textureDesc.Usage = D3D11_USAGE_DEFAULT;
+			textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &capture.RenderTexture)) ||
+				FAILED(GlobalD3D11Device->CreateRenderTargetView(capture.RenderTexture, nullptr, &capture.RenderTarget)) ||
+				FAILED(GlobalD3D11Device->CreateShaderResourceView(capture.RenderTexture, nullptr, &capture.ShaderResource)))
+			{
+				capture.Reset();
+				return false;
+			}
+			textureDesc.Usage = D3D11_USAGE_STAGING;
+			textureDesc.BindFlags = 0;
+			textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &capture.StagingTexture)))
+			{
+				capture.Reset();
+				return false;
+			}
+			capture.Width = width;
+			capture.Height = height;
+		}
+		return true;
+	}
 
-		D3D11_TEXTURE2D_DESC textureDesc = {};
-		textureDesc.Width = width;
-		textureDesc.Height = height;
-		textureDesc.MipLevels = 1;
-		textureDesc.ArraySize = 1;
-		textureDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		textureDesc.SampleDesc.Count = 1;
-		textureDesc.Usage = D3D11_USAGE_DEFAULT;
-		textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
-		ID3D11Texture2D* renderTexture = nullptr;
-		ID3D11RenderTargetView* renderTarget = nullptr;
-		ID3D11Texture2D* stagingTexture = nullptr;
-		defer {
-			if (stagingTexture) stagingTexture->Release();
-			if (renderTarget) renderTarget->Release();
-			if (renderTexture) renderTexture->Release();
-		};
-		if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &renderTexture)) ||
-			FAILED(GlobalD3D11Device->CreateRenderTargetView(renderTexture, nullptr, &renderTarget))) return false;
-
-		textureDesc.Usage = D3D11_USAGE_STAGING;
-		textureDesc.BindFlags = 0;
-		textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		if (FAILED(GlobalD3D11Device->CreateTexture2D(&textureDesc, nullptr, &stagingTexture))) return false;
-
+	static void RenderDrawListCapture(ImDrawList* drawList, Rect sourceRect, DrawListCaptureResources& capture)
+	{
 		ImDrawData captureData;
 		captureData.Valid = true;
 		captureData.DisplayPos = sourceRect.TL;
 		captureData.DisplaySize = vec2(sourceRect.GetWidth(), sourceRect.GetHeight());
-		captureData.FramebufferScale = vec2(static_cast<f32>(width) / sourceRect.GetWidth(), static_cast<f32>(height) / sourceRect.GetHeight());
+		captureData.FramebufferScale = vec2(static_cast<f32>(capture.Width) / sourceRect.GetWidth(), static_cast<f32>(capture.Height) / sourceRect.GetHeight());
 		captureData.Textures = ImGui::GetDrawData()->Textures;
 		captureData.AddDrawList(drawList);
-		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &renderTarget, nullptr);
+		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &capture.RenderTarget, nullptr);
 		const f32 clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		GlobalD3D11DeviceContext->ClearRenderTargetView(renderTarget, clearColor);
+		GlobalD3D11DeviceContext->ClearRenderTargetView(capture.RenderTarget, clearColor);
 		ImGui_ImplDX11_RenderDrawData(&captureData);
-		GlobalD3D11DeviceContext->CopyResource(stagingTexture, renderTexture);
+		GlobalD3D11DeviceContext->CopyResource(capture.StagingTexture, capture.RenderTexture);
 		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
+	}
 
+	b8 CaptureDrawListToBGRA(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, std::vector<u8>& outPixels)
+	{
+		if (!drawList || !GlobalD3D11Device || !GlobalD3D11DeviceContext ||
+			sourceRect.GetWidth() <= 0.0f || sourceRect.GetHeight() <= 0.0f || width == 0 || height == 0) return false;
+		auto& capture = GlobalDrawListCapture;
+		if (!EnsureDrawListCaptureResources(capture, width, height)) return false;
+		RenderDrawListCapture(drawList, sourceRect, capture);
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(GlobalD3D11DeviceContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+		if (FAILED(GlobalD3D11DeviceContext->Map(capture.StagingTexture, 0, D3D11_MAP_READ, 0, &mapped))) return false;
 		outPixels.resize(static_cast<size_t>(width) * height * 4);
 		for (u32 row = 0; row < height; ++row)
 			memcpy(outPixels.data() + static_cast<size_t>(row) * width * 4,
 				static_cast<const u8*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch, static_cast<size_t>(width) * 4);
-		GlobalD3D11DeviceContext->Unmap(stagingTexture, 0);
+		GlobalD3D11DeviceContext->Unmap(capture.StagingTexture, 0);
 		return true;
+	}
+
+	void ReleaseDrawListCaptureResources()
+	{
+		GlobalDrawListCapture.Reset();
+		GlobalAsyncDrawListCapture.ResetResources();
+		GlobalAsyncDrawListCapture.Active = GlobalAsyncDrawListCapture.Invalidated = false;
+	}
+	void BeginAsyncDrawListCapture()
+	{
+		ReleaseDrawListCaptureResources();
+		GlobalAsyncDrawListCapture.Active = true;
+	}
+	DrawListCaptureStatus GetAsyncDrawListCaptureStatus()
+	{
+		const auto& ring = GlobalAsyncDrawListCapture;
+		if (!ring.Active || ring.Invalidated || !GlobalD3D11Device || !GlobalD3D11DeviceContext) return DrawListCaptureStatus::Failed;
+		return ring.PendingCount < ring.Slots.size() ? DrawListCaptureStatus::Ready : DrawListCaptureStatus::Pending;
+	}
+	DrawListCaptureStatus QueueAsyncDrawListCapture(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, i64 frameIndex)
+	{
+		const auto status = GetAsyncDrawListCaptureStatus();
+		if (status != DrawListCaptureStatus::Ready) return status;
+		if (!drawList || width == 0 || height == 0 || sourceRect.GetWidth() <= 0.0f || sourceRect.GetHeight() <= 0.0f) return DrawListCaptureStatus::Failed;
+		auto& ring = GlobalAsyncDrawListCapture;
+		auto& capture = ring.Slots[ring.WriteIndex];
+		if (!EnsureDrawListCaptureResources(capture, width, height)) return DrawListCaptureStatus::Failed;
+		if (!capture.CompletionQuery)
+		{
+			D3D11_QUERY_DESC queryDesc { D3D11_QUERY_EVENT, 0 };
+			if (FAILED(GlobalD3D11Device->CreateQuery(&queryDesc, &capture.CompletionQuery))) return DrawListCaptureStatus::Failed;
+		}
+		RenderDrawListCapture(drawList, sourceRect, capture);
+		GlobalD3D11DeviceContext->End(capture.CompletionQuery);
+		capture.FrameIndex = frameIndex;
+		ring.PreviewIndex = ring.WriteIndex;
+		ring.WriteIndex = (ring.WriteIndex + 1) % ring.Slots.size(); ++ring.PendingCount;
+		return DrawListCaptureStatus::Ready;
+	}
+	DrawListCaptureStatus PollAsyncDrawListCapture(std::vector<u8>& pixels, i64& frameIndex)
+	{
+		auto& ring = GlobalAsyncDrawListCapture;
+		if (GetAsyncDrawListCaptureStatus() == DrawListCaptureStatus::Failed) return DrawListCaptureStatus::Failed;
+		if (ring.PendingCount == 0) return DrawListCaptureStatus::Pending;
+		auto& capture = ring.Slots[ring.ReadIndex];
+		const HRESULT completed = GlobalD3D11DeviceContext->GetData(capture.CompletionQuery, nullptr, 0, 0);
+		if (completed == S_FALSE) return DrawListCaptureStatus::Pending;
+		if (FAILED(completed)) return DrawListCaptureStatus::Failed;
+		D3D11_MAPPED_SUBRESOURCE mapped {};
+		const HRESULT result = GlobalD3D11DeviceContext->Map(capture.StagingTexture, 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+		if (result == DXGI_ERROR_WAS_STILL_DRAWING) return DrawListCaptureStatus::Pending;
+		if (FAILED(result)) return DrawListCaptureStatus::Failed;
+		pixels.resize(static_cast<size_t>(capture.Width) * capture.Height * 4);
+		for (u32 row = 0; row < capture.Height; ++row)
+			memcpy(pixels.data() + static_cast<size_t>(row) * capture.Width * 4,
+				static_cast<const u8*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch, static_cast<size_t>(capture.Width) * 4);
+		GlobalD3D11DeviceContext->Unmap(capture.StagingTexture, 0);
+		frameIndex = capture.FrameIndex;
+		ring.ReadIndex = (ring.ReadIndex + 1) % ring.Slots.size(); --ring.PendingCount;
+		return DrawListCaptureStatus::Ready;
+	}
+	u64 GetAsyncDrawListCapturePreviewTexture()
+	{
+		const auto& ring = GlobalAsyncDrawListCapture;
+		return ring.PreviewIndex < ring.Slots.size() ? reinterpret_cast<u64>(ring.Slots[ring.PreviewIndex].ShaderResource) : 0;
 	}
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks)
@@ -994,6 +1142,9 @@ namespace ApplicationHost
 
 	static void CleanupGlobalD3D11()
 	{
+		GlobalDrawListCapture.Reset();
+		GlobalAsyncDrawListCapture.ResetResources();
+		GlobalAsyncDrawListCapture.Invalidated = GlobalAsyncDrawListCapture.Active;
 		CleanupGlobalD3D11SwapchainRenderTarget();
 		if (GlobalSwapChainWaitableObject) { ::CloseHandle(GlobalSwapChainWaitableObject); GlobalSwapChainWaitableObject = NULL; }
 		if (GlobalSwapChain) { GlobalSwapChain->Release(); GlobalSwapChain = nullptr; }
@@ -1026,7 +1177,7 @@ namespace ApplicationHost
 		return true;
 	}
 
-	b8 RunD3D11DeviceRecoverySelfTest()
+	b8 RunD3D11DeviceRecoverySelfTest(b8 (*afterRecoveryTest)())
 	{
 		const HWND hwnd = ::CreateWindowExW(0, L"STATIC", L"D3D11 recovery test", WS_OVERLAPPEDWINDOW,
 			0, 0, 640, 360, nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
@@ -1056,6 +1207,7 @@ namespace ApplicationHost
 			if (recovering)
 			{
 				if (!RecoverGlobalD3D11(startupParam, hwnd) || previousTexture.IsValid()) return false;
+				if (GetAsyncDrawListCaptureStatus() != DrawListCaptureStatus::Failed) return false;
 			}
 			Log::Write("D3D11 recovery self-test frame %d begin", frame);
 			ImGui::PushFont(font, 16.0f);
@@ -1081,11 +1233,47 @@ namespace ApplicationHost
 			if (!CaptureWindowToBGRA(width, height, pixels) || width <= 30 || height <= 50) return false;
 			const size_t offset = (static_cast<size_t>(50) * width + 30) * 4;
 			if (pixels[offset] != 0 || pixels[offset + 1] != 0 || pixels[offset + 2] != 255) return false;
+			const u32 captureScale = frame % 3 == 0 ? 2 : 1;
+			const Rect captureRect { vec2(0.0f), vec2(160.0f, 100.0f) };
+			if (!CaptureDrawListToBGRA(drawList, captureRect, 160 * captureScale, 100 * captureScale, pixels)) return false;
+			ID3D11Texture2D* retainedRenderTexture = GlobalDrawListCapture.RenderTexture;
+			ID3D11Texture2D* retainedStagingTexture = GlobalDrawListCapture.StagingTexture;
+			retainedRenderTexture->AddRef(); retainedStagingTexture->AddRef();
+			defer { retainedRenderTexture->Release(); retainedStagingTexture->Release(); };
+			if (!CaptureDrawListToBGRA(drawList, captureRect, 160 * captureScale, 100 * captureScale, pixels) ||
+				GlobalDrawListCapture.RenderTexture != retainedRenderTexture || GlobalDrawListCapture.StagingTexture != retainedStagingTexture) return false;
+			const size_t capturedOffset = (static_cast<size_t>(50 * captureScale) * 160 * captureScale + 30 * captureScale) * 4;
+			if (pixels[capturedOffset] != 0 || pixels[capturedOffset + 1] != 0 || pixels[capturedOffset + 2] != 255) return false;
+			BeginAsyncDrawListCapture();
+			ImDrawList queuedDrawList(ImGui::GetDrawListSharedData());
+			for (i64 index = 0; index < 3; ++index)
+			{
+				queuedDrawList._ResetForNewFrame();
+				queuedDrawList.PushTexture(drawList->_CmdHeader.TexRef);
+				queuedDrawList.PushClipRect(ImVec2(0, 0), ImVec2(160, 100));
+				queuedDrawList.AddRectFilled(ImVec2(0, 0), ImVec2(160, 100), IM_COL32(50 + index * 60, 40, 20, 255));
+				queuedDrawList.PopClipRect(); queuedDrawList.PopTexture(); queuedDrawList._PopUnusedDrawCmd();
+				if (QueueAsyncDrawListCapture(&queuedDrawList, captureRect, 160 * captureScale, 100 * captureScale, frame * 3 + index) != DrawListCaptureStatus::Ready) return false;
+			}
+			if (GetAsyncDrawListCaptureStatus() != DrawListCaptureStatus::Pending ||
+				QueueAsyncDrawListCapture(&queuedDrawList, captureRect, 160, 100, 99) != DrawListCaptureStatus::Pending) return false;
+			for (i64 index = 0; index < 3; ++index)
+			{
+				i64 frameIndex = -1;
+				DrawListCaptureStatus status;
+				const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+				while ((status = PollAsyncDrawListCapture(pixels, frameIndex)) == DrawListCaptureStatus::Pending && std::chrono::steady_clock::now() < deadline) ::Sleep(1);
+				if (status != DrawListCaptureStatus::Ready || frameIndex != frame * 3 + index ||
+					pixels[capturedOffset] != 20 || pixels[capturedOffset + 1] != 40 || pixels[capturedOffset + 2] != 50 + index * 60) return false;
+			}
 			if (FAILED(GlobalSwapChain->Present(0, 0))) return false;
 			Log::Write("D3D11 recovery self-test frame %d complete", frame);
 		}
 		Log::Write("D3D11 recovery self-test passed");
-		return true;
+		if (!afterRecoveryTest) return true;
+		GlobalD3D11DeviceContext->OMSetRenderTargets(1, &GlobalMainRenderTargetView, nullptr);
+		GlobalD3D11DeviceContext->ClearRenderTargetView(GlobalMainRenderTargetView, D3D11SwapChainClearColor);
+		return afterRecoveryTest();
 	}
 
 	static b8 CreateGlobalD3D11SwapchainRenderTarget()

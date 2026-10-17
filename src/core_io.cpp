@@ -303,6 +303,31 @@ namespace Shell
 		::ShellExecuteW(NULL, L"open", path.c_str(), NULL, NULL, SW_SHOWDEFAULT);
 	}
 
+	b8 OpenFileWithExecutable(std::string_view executablePath, std::string_view filePath)
+	{
+		if (executablePath.empty() || filePath.empty()
+			|| executablePath.find_first_of(std::string_view("\"\0", 2)) != std::string_view::npos
+			|| filePath.find_first_of(std::string_view("\"\0", 2)) != std::string_view::npos)
+			return false;
+
+		std::error_code error;
+		const auto executable = std::filesystem::absolute(u8path(executablePath), error);
+		if (error || !std::filesystem::is_regular_file(executable, error) || error) return false;
+		const auto file = std::filesystem::absolute(u8path(filePath), error);
+		if (error || !std::filesystem::is_regular_file(file, error) || error) return false;
+
+		std::wstring commandLine = L"\"" + executable.native() + L"\" \"" + file.native() + L"\"";
+		STARTUPINFOW startupInfo {};
+		startupInfo.cb = sizeof(startupInfo);
+		PROCESS_INFORMATION processInfo {};
+		if (!::CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr,
+			executable.parent_path().c_str(), &startupInfo, &processInfo))
+			return false;
+		::CloseHandle(processInfo.hThread);
+		::CloseHandle(processInfo.hProcess);
+		return true;
+	}
+
 	MessageBoxResult ShowMessageBox(std::string_view message, std::string_view title, MessageBoxButtons buttons, MessageBoxIcon icon, void* parentWindowHandle)
 	{
 		UINT flags = 0;

@@ -76,6 +76,9 @@ namespace ApplicationHost
 		// --------------------------------
 		i32 SwapInterval = 1;
 		i32 VSyncOffFPSLimit = 0;
+		b8 AllowIdleThrottling = false;
+		b8 UnthrottledRendering = false;
+		b8 ThrottleWindowPresentation = false;
 		std::string SetWindowTitleNextFrame;
 		std::optional<ivec2> SetWindowPositionNextFrame;
 		std::optional<ivec2> SetWindowSizeNextFrame;
@@ -108,8 +111,15 @@ namespace ApplicationHost
 	};
 
 	b8 CaptureDrawListToBGRA(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, std::vector<u8>& outPixels);
+	void ReleaseDrawListCaptureResources();
+	enum class DrawListCaptureStatus { Ready, Pending, Failed };
+	void BeginAsyncDrawListCapture();
+	DrawListCaptureStatus GetAsyncDrawListCaptureStatus();
+	DrawListCaptureStatus QueueAsyncDrawListCapture(ImDrawList* drawList, Rect sourceRect, u32 width, u32 height, i64 frameIndex);
+	DrawListCaptureStatus PollAsyncDrawListCapture(std::vector<u8>& pixels, i64& frameIndex);
+	u64 GetAsyncDrawListCapturePreviewTexture();
 	b8 CaptureWindowToBGRA(u32& width, u32& height, std::vector<u8>& outPixels);
 
 	i32 EnterProgramLoop(const StartupParam& startupParam, UserCallbacks userCallbacks);
-	b8 RunD3D11DeviceRecoverySelfTest();
+	b8 RunD3D11DeviceRecoverySelfTest(b8 (*afterRecoveryTest)() = nullptr);
 }

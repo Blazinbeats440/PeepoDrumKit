@@ -4,6 +4,13 @@
 #include <algorithm>
 #include <functional>
 #include <numeric>
+#include <atomic>
+
+inline u64 NextBeatDataRevision()
+{
+	static std::atomic<u64> revision { 0 };
+	return ++revision;
+}
 
 struct Beat
 {
@@ -186,6 +193,9 @@ struct BeatSortedList
 	using value_type = T;
 
 	std::vector<T> Sorted;
+	u64 Revision = NextBeatDataRevision();
+	// Call after changing Sorted or its elements without using the list's mutation methods.
+	void NotifyChanged() { Revision = NextBeatDataRevision(); }
 
 public:
 	using HeadAtAfterType = std::tuple<typename std::vector<T>::const_iterator, typename std::vector<T>::const_iterator, typename std::vector<T>::const_iterator>;
@@ -272,12 +282,13 @@ struct SortedTempoMap
 	SortedTempoChangesList Tempo;
 	SortedSignatureChangesList Signature;
 	TempoMapAccelerationStructure AccelerationStructure;
+	u64 Revision = 0;
 
 public:
 	inline SortedTempoMap() { RebuildAccelerationStructure(); }
 
 	// NOTE: Must manually be called every time a TempoChange has been edited otherwise Beat <-> Time conversions will be incorrect
-	inline void RebuildAccelerationStructure() { AccelerationStructure.Rebuild(Tempo.data(), Tempo.size()); }
+	inline void RebuildAccelerationStructure() { AccelerationStructure.Rebuild(Tempo.data(), Tempo.size()); Revision = NextBeatDataRevision(); }
 	inline Time BeatToTime(Beat beat) const { return AccelerationStructure.ConvertBeatToTimeUsingLookupTableIndexing(beat); }
 	inline Beat TimeToBeat(Time time) const { return TimeToBeat(time, false); }
 	inline Beat TimeToBeat(Time time, bool truncTo0) const { return AccelerationStructure.ConvertTimeToBeatUsingLookupTableBinarySearch(time, truncTo0); }
@@ -452,6 +463,7 @@ inline b8 ValidateIsSortedByBeat(const BeatSortedList<T>& sortedList)
 template <typename T> template <typename Func>
 size_t BeatSortedList<T>::InsertOrFunc(const T& valueToInsert, Func funcExist)
 {
+	NotifyChanged();
 	const size_t insertionIndex = LinearlySearchForInsertionIndex(*this, GetBeat(valueToInsert));
 	if (InBounds(insertionIndex, Sorted))
 	{
@@ -497,5 +509,8 @@ template <typename T>
 void BeatSortedList<T>::RemoveAtIndex(size_t indexToRemove)
 {
 	if (InBounds(indexToRemove, Sorted))
+	{
 		Sorted.erase(Sorted.begin() + indexToRemove);
+		NotifyChanged();
+	}
 }

@@ -513,6 +513,7 @@ namespace PeepoDrumKit
 
 	struct ChartCourse
 	{
+		u64 SelectionRevision = 0;
 		DifficultyType Type = DifficultyType::Oni;
 		u8 LevelDecimalPlaces = 0;
 		f64 Level = 0;
@@ -528,6 +529,14 @@ namespace PeepoDrumKit
 		SortedDelayChangesList DelayChanges_Expert;
 		SortedDelayChangesList DelayChanges_Master;
 		mutable TempoMapAccelerationStructure PlaybackTiming[3];
+		struct PlaybackTimingCacheKey
+		{
+			u64 TempoRevision = 0, DelayRevision = 0;
+			const DelayChange* DelayData = nullptr;
+			size_t DelayCount = 0;
+			i32 SourceTempoCount = -1;
+		};
+		mutable PlaybackTimingCacheKey PlaybackTimingKeys[3];
 
 		SortedNotesList Notes_Normal;
 		SortedNotesList Notes_Expert;
@@ -562,7 +571,18 @@ namespace PeepoDrumKit
 		inline auto& GetNotes(BranchType branch) { assert(branch < BranchType::Count); return (&Notes_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetDelayChanges(BranchType branch) { assert(branch < BranchType::Count); return (&DelayChanges_Normal)[EnumToIndex(branch)]; }
 		inline auto& GetDelayChanges(BranchType branch) const { assert(branch < BranchType::Count); return (&DelayChanges_Normal)[EnumToIndex(branch)]; }
-		const TempoMapAccelerationStructure& GetPlaybackTiming(BranchType branch = BranchType::Normal) const;
+		const TempoMapAccelerationStructure& GetPlaybackTiming(BranchType branch = BranchType::Normal) const
+		{
+			const auto& delays = GetDelayChanges(branch);
+			if (delays.empty()) return TempoMap.AccelerationStructure;
+			const auto& timing = PlaybackTiming[EnumToIndex(branch)];
+			const auto& key = PlaybackTimingKeys[EnumToIndex(branch)];
+			if (timing.BaseTiming == &TempoMap.AccelerationStructure && key.TempoRevision == TempoMap.Revision
+				&& key.DelayRevision == delays.Revision && key.DelayData == delays.data() && key.DelayCount == delays.size()
+				&& key.SourceTempoCount == SourceTempoChangeCount) return timing;
+			return RebuildPlaybackTiming(branch);
+		}
+		const TempoMapAccelerationStructure& RebuildPlaybackTiming(BranchType branch) const;
 		b8 CanUseSourceTiming() const
 		{
 			if (static_cast<i32>(TempoMap.Tempo.size()) != SourceTempoChangeCount) return false;
@@ -600,13 +620,8 @@ namespace PeepoDrumKit
 		}
 		Time BeatToPlaybackTime(Beat beat, BranchType branch = BranchType::Normal) const
 		{
-			Time offset = {};
-			for (const DelayChange& delay : GetDelayChanges(branch))
-			{
-				if (delay.BeatTime > beat) break;
-				offset += delay.Duration;
-			}
-			return TempoMap.BeatToTime(beat) + offset;
+			if (GetDelayChanges(branch).empty()) return TempoMap.BeatToTime(beat);
+			return TempoMap.BeatToTime(beat) + GetPlaybackTiming(branch).GetDelayOffset(beat);
 		}
 		Beat PlaybackTimeToBeat(Time time, BranchType branch = BranchType::Normal, Beat hint = {}, bool truncTo0 = false) const
 		{
@@ -1508,7 +1523,13 @@ namespace PeepoDrumKit
 				if constexpr (IsMemberAvailable<decltype(typedList[index]), Member>) {
 					if (!(index < typedList.size()))
 						return false;
+					const b8 wasSelected = typedList[index].IsSelected;
 					action(get<Member>(std::forward<decltype(typedList)>(typedList)[index]), get_or_forward<Member>(std::forward<Args>(args))...);
+					if constexpr (std::is_same_v<std::decay_t<FAction>, std::decay_t<decltype(SetGeneric)>>)
+					{
+						if constexpr (Member == GenericMember::B8_IsSelected) { if (wasSelected != typedList[index].IsSelected) ++course.SelectionRevision; }
+						else typedList.NotifyChanged();
+					}
 					return true;
 				} else {
 					return false;
@@ -1528,7 +1549,13 @@ namespace PeepoDrumKit
 					{
 						if (!(index < typedList.size()))
 							return false;
+						const b8 wasSelected = typedList[index].IsSelected;
 						action(std::forward<decltype(typedMember)>(typedMember), std::forward<decltype(typedArgs)>(typedArgs)...);
+						if constexpr (std::is_same_v<std::decay_t<FAction>, std::decay_t<decltype(SetGeneric)>>)
+						{
+							if (member == GenericMember::B8_IsSelected) { if (wasSelected != typedList[index].IsSelected) ++course.SelectionRevision; }
+							else typedList.NotifyChanged();
+						}
 						return true;
 					}, false, false,
 					std::forward<decltype(typedList)>(typedList)[index], std::forward<Args>(args)...);
@@ -1546,7 +1573,7 @@ namespace PeepoDrumKit
 	constexpr b8 TrySetGenericStruct(ChartCourse& course, GenericList list, size_t index, const GenericListStruct& inValue)
 	{
 		return ApplySingleGenericList(list,
-			[&](auto&& typedList, auto&& typedInValue) { if (InBounds(index, typedList)) { typedList[index] = typedInValue; return true; } return false; }, false,
+			[&](auto&& typedList, auto&& typedInValue) { if (InBounds(index, typedList)) { typedList[index] = typedInValue; typedList.NotifyChanged(); return true; } return false; }, false,
 			course, inValue);
 	}
 

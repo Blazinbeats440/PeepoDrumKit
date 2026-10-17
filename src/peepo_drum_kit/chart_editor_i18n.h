@@ -473,6 +473,13 @@ X("SETTINGS_GENERAL_DEFAULT_CREATOR_DESC", "The name that is automatically fille
 X("SETTINGS_OPEN_FOLDER", "File: Initial Folder for Open") \
 X("SETTINGS_OPEN_FOLDER_DESC", "The initial folder shown by Open File. Leave empty to use the executable folder. Relative paths are resolved from that folder; unavailable folders fall back to it.") \
 X("SETTINGS_OPEN_FOLDER_BROWSE", "Browse...") \
+X("SETTINGS_TAIKOJIRO_EXECUTABLE", "File: Taikojiro Executable") \
+X("SETTINGS_TAIKOJIRO_EXECUTABLE_DESC", "Select the Taikojiro exe used to open the current TJA. Unsaved changes are saved first. Relative paths are resolved from the PeepoDrumKit executable folder.") \
+X("SETTINGS_EXECUTABLE_FILTER", "Executable Files") \
+X("ACT_FILE_OPEN_IN_TAIKOJIRO", "Open Current TJA in Taikojiro") \
+X("OPEN_IN_TAIKOJIRO_SAVE_HINT", "Save any unsaved changes, then open the current TJA in Taikojiro.") \
+X("OPEN_IN_TAIKOJIRO_CONFIGURE", "Select an existing Taikojiro exe in Settings > File > Taikojiro Executable.") \
+X("OPEN_IN_TAIKOJIRO_FAILED", "Could not start Taikojiro. Check the executable and TJA paths.") \
 X("SETTINGS_RECENT_DISPLAY", "File: Recent Files Display") \
 X("SETTINGS_RECENT_DISPLAY_DESC", "Show recent files by file name or full path. Up to 30 files are retained; entries after the first nine appear under Show More.") \
 X("SETTINGS_RECENT_FULL_PATH", "Full path") \
@@ -482,6 +489,10 @@ X("SETTINGS_VSYNC_OFF_FPS_LIMIT_DESC", "Limits rendering to this many frames per
 X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS", "General: Balloon Expected Hits per Second") \
 X("SETTINGS_GENERAL_BALLOON_EXPECTED_HITS_DESC", "The default expected number of balloon hits per second used by the Inspector.") \
 X("SETTINGS_TJA_SAVE_FORMAT", "TJA: File Save Format") \
+X("SETTINGS_VIDEO_HARDWARE_ENCODING", "Video Export: Use Hardware Encoding") \
+X("SETTINGS_VIDEO_HARDWARE_ENCODING_DESC", "Allow hardware video encoders when available. If initialization fails, retry with software encoding. Disabled by default.") \
+X("VIDEO_EXPORT_EDITOR_LOCKED", "Chart editing is locked while video export is running.") \
+X("VIDEO_EXPORT_CANCELING", "Canceling video export...") \
 X("SETTINGS_TJA_SAVE_FORMAT_DESC", "Select the encoding and line ending used when saving TJA files.") \
 X("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE", "TJA: Warn about Taikojiro-incompatible charts") \
 X("SETTINGS_TJA_WARN_TAIKOJIRO_INCOMPATIBLE_DESC", "Show a warning before saving charts that may not play in Taikojiro. The chart can still be saved.") \
@@ -501,6 +512,8 @@ X("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS", "Properties: Show Title Transla
 X("SETTINGS_PROPERTIES_SHOW_TITLE_TRANSLATIONS_DESC", "Show the localized title fields in Chart Properties.") \
 X("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS", "Properties: Show Subtitle Translations") \
 X("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC", "Show the localized subtitle fields in Chart Properties.") \
+X("SETTINGS_PROPERTIES_AUTO_PREFIX_SUBTITLE", "Properties: Automatically Prefix Subtitle with --") \
+X("SETTINGS_PROPERTIES_AUTO_PREFIX_SUBTITLE_DESC", "In Chart Properties, add -- to a non-empty subtitle unless it already starts with two ASCII hyphens. Applied after leaving the input field, including to existing subtitles.") \
 X("SETTINGS_PROPERTIES_SHOW_CHART_METADATA", "Properties: Show Other Song Headers") \
 X("SETTINGS_PROPERTIES_SHOW_CHART_METADATA_DESC", "Show additional song header fields in Chart Properties.") \
 X("SETTINGS_PROPERTIES_SHOW_COURSE_METADATA", "Properties: Show Other Course Headers") \

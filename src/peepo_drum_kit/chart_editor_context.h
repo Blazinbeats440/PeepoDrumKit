@@ -2,11 +2,13 @@
 #include "core_types.h"
 #include "core_undo.h"
 #include "chart.h"
+#include "chart_editor_playback_timeline.h"
 #include "chart_editor_sound.h"
 #include "chart_editor_graphics.h"
 #include "audio/audio_engine.h"
 #include "audio/audio_waveform.h"
 #include <set>
+#include <map>
 #include <unordered_map>
 
 namespace PeepoDrumKit
@@ -86,6 +88,60 @@ namespace PeepoDrumKit
 		f32 SongJacketFadeAnimationTarget = 0.0f;
 
 		Undo::UndoHistory Undo;
+		using CourseCacheKey = std::tuple<const ChartCourse*, BranchType, u64, u64>;
+		mutable CourseCacheKey RangePlaybackKey = {}, PlaybackBoundsKey = {};
+		mutable Beat RangePlaybackMin = {}, RangePlaybackMax = {};
+		mutable Time PlaybackBoundsMinimum = {};
+		mutable std::pair<Time, Time> CachedRangePlaybackTimes, CachedPlaybackBounds;
+		CourseCacheKey GetCourseCacheKey(const ChartCourse& course, BranchType branch) const
+		{
+			u64 revision = course.TempoMap.Revision;
+			ApplyForEachGenericList([&](GenericList, const auto& list) { revision = Max(revision, list.Revision); }, course);
+			return { &course, branch, Undo.Revision, revision };
+		}
+		struct SelectionSummary
+		{
+			CourseCacheKey Key = {};
+			u64 Revision = 0;
+			std::vector<ForEachChartItemData> Items;
+			std::array<size_t, EnumCount<GenericList>> PerListCounts = {};
+			size_t NoteCount = 0;
+		};
+		mutable std::map<std::pair<const ChartCourse*, BranchType>, SelectionSummary> SelectionSummaries;
+		const SelectionSummary& GetSelection(const ChartCourse& course, BranchType branch) const
+		{
+			auto& summary = SelectionSummaries[{ &course, branch }];
+			const auto key = GetCourseCacheKey(course, branch);
+			if (summary.Key != key || summary.Revision != course.SelectionRevision)
+			{
+				summary.Items.clear(); summary.PerListCounts.fill(0); summary.NoteCount = 0;
+				ForEachSelectedChartItem(course, branch, [&](const ForEachChartItemData& item)
+				{
+					summary.Items.push_back(item); ++summary.PerListCounts[EnumToIndex(item.List)];
+					summary.NoteCount += IsNotesList(item.List);
+				});
+				summary.Key = key; summary.Revision = course.SelectionRevision;
+			}
+			return summary;
+		}
+		mutable std::map<const ChartCourse*, BeatBarIndex> BeatBarIndices;
+		const BeatBarIndex& GetBeatBarIndex(const ChartCourse& course, Beat endBeat) const
+		{
+			auto& index = BeatBarIndices[&course]; index.Update(course, endBeat); return index;
+		}
+		struct PlaybackBeatCache { CourseCacheKey Key = {}; size_t BeatCount = 0; TimedBeatIndex Index; };
+		mutable std::map<std::pair<const ChartCourse*, BranchType>, PlaybackBeatCache> PlaybackBeatIndices;
+		const TimedBeatIndex& GetPlaybackBeatIndex(const ChartCourse& course, BranchType branch, Beat endBeat) const
+		{
+			const auto& source = GetBeatBarIndex(course, endBeat);
+			auto& cache = PlaybackBeatIndices[{ &course, branch }];
+			const auto key = GetCourseCacheKey(course, branch);
+			if (cache.Key != key || cache.BeatCount != source.Beats.size())
+			{
+				cache.Index.Build(course, branch, source); cache.Key = key; cache.BeatCount = source.Beats.size();
+			}
+			return cache.Index;
+		}
 		std::string StatusMessage;
 		f64 StatusMessageUntil = 0.0;
 
@@ -103,6 +159,8 @@ namespace PeepoDrumKit
 		inline BeatAndTime GetTimelineCursorBeatAndTime() const { const Beat beat = GetCursorBeat(); return { beat, BeatToTime(beat) }; }
 		std::pair<Time, Time> GetRangePlaybackTimes() const
 		{
+			const auto key = GetCourseCacheKey(*ChartSelectedCourse, ChartSelectedBranch);
+			if (RangePlaybackKey == key && RangePlaybackMin == RangeSelection.GetMin() && RangePlaybackMax == RangeSelection.GetMax()) return CachedRangePlaybackTimes;
 			Time first = BeatToPlaybackTime(RangeSelection.GetMin()), last = BeatToPlaybackTime(RangeSelection.GetMax());
 			if (last < first) std::swap(first, last);
 			for (const Note& note : ChartSelectedCourse->GetNotes(ChartSelectedBranch))
@@ -120,7 +178,19 @@ namespace PeepoDrumKit
 					first = Min(first, Min(after, after - delay.Duration));
 					last = Max(last, Max(after, after - delay.Duration));
 				}
-			return { first, last };
+			RangePlaybackKey = key;
+			RangePlaybackMin = RangeSelection.GetMin(); RangePlaybackMax = RangeSelection.GetMax();
+			return CachedRangePlaybackTimes = { first, last };
+		}
+		std::pair<Time, Time> GetPlaybackTimeBounds(Time minimumEnd) const
+		{
+			const auto key = GetCourseCacheKey(*ChartSelectedCourse, BranchType::Normal);
+			if (PlaybackBoundsKey != key || PlaybackBoundsMinimum != minimumEnd)
+			{
+				CachedPlaybackBounds = ChartSelectedCourse->GetPlaybackTimeBounds(minimumEnd);
+				PlaybackBoundsKey = key; PlaybackBoundsMinimum = minimumEnd;
+			}
+			return CachedPlaybackBounds;
 		}
 		inline Beat TimeToBeat(Time time) const { return ChartSelectedCourse->TempoMap.TimeToBeat(time); }
 		inline Beat TimeToBeat(Time time, bool truncTo0) const { return ChartSelectedCourse->TempoMap.TimeToBeat(time, truncTo0); }
@@ -145,6 +215,18 @@ namespace PeepoDrumKit
 
 		void SetSelectedChart(ChartCourse* course, BranchType branch)
 		{
+			const auto prune = [&](auto& cache, auto courseOf)
+			{
+				for (auto it = cache.begin(); it != cache.end();)
+				{
+					const auto* cachedCourse = courseOf(it->first);
+					if (std::none_of(Chart.Courses.begin(), Chart.Courses.end(), [&](const auto& existing) { return existing.get() == cachedCourse; })) it = cache.erase(it);
+					else ++it;
+				}
+			};
+			prune(SelectionSummaries, [](const auto& key) { return key.first; });
+			prune(BeatBarIndices, [](const ChartCourse* key) { return key; });
+			prune(PlaybackBeatIndices, [](const auto& key) { return key.first; });
 			const b8 previousCourseIsAlive = std::any_of(Chart.Courses.begin(), Chart.Courses.end(),
 				[&](const auto& existing) { return existing.get() == ChartSelectedCourse; });
 			const b8 selectionChanged = (course != ChartSelectedCourse || branch != ChartSelectedBranch || !previousCourseIsAlive);

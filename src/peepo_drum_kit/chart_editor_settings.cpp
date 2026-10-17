@@ -19,6 +19,15 @@ namespace PeepoDrumKit
 		return std::filesystem::is_directory(directory, error) && !error ? directory.lexically_normal().u8string() : executableDirectory;
 	}
 
+	std::string GetTaikojiroExecutablePath(std::string_view configuredPath)
+	{
+		if (configuredPath.empty()) return {};
+		auto executable = std::filesystem::u8path(configuredPath);
+		if (executable.is_relative())
+			executable = std::filesystem::u8path(Directory::GetExecutableDirectory()) / executable;
+		return executable.lexically_normal().u8string();
+	}
+
 	void RecentFilesList::Add(std::string newFilePath, b8 addToEnd)
 	{
 		Path::NormalizeInPlace(newFilePath);
@@ -609,8 +618,10 @@ namespace PeepoDrumKit
 			X(General.VSyncOffFPSLimit, "vsync_off_fps_limit");
 			X(General.DefaultCreatorName, "default_creator_name");
 			X(General.ChartOpenDirectory, "chart_open_directory");
+			X(General.TaikojiroExecutablePath, "taikojiro_executable_path");
 			X(General.RecentFilesShowFullPath, "recent_files_show_full_path");
 			X(General.TJAFileSaveFormat, "tja_file_save_format");
+			X(General.VideoExportHardwareEncoding, "video_export_hardware_encoding");
 			X(General.FolderDropSearchDepth, "folder_drop_search_depth");
 			X(General.WarnTaikojiroIncompatibleCharts, "warn_taikojiro_incompatible_charts");
 			X(General.IncludePeepoDrumKitComment, "include_peepo_drum_kit_comment");
@@ -620,6 +631,7 @@ namespace PeepoDrumKit
 			X(General.ShowForcedBranchButtons, "show_forced_branch_buttons");
 			X(General.ShowChartTitleLocalized, "show_chart_title_localized");
 			X(General.ShowChartSubtitleLocalized, "show_chart_subtitle_localized");
+			X(General.AutoPrefixChartSubtitle, "auto_prefix_chart_subtitle");
 			X(General.ShowChartOtherMetadata, "show_chart_other_metadata");
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");

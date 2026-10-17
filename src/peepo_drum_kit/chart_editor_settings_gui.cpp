@@ -4,6 +4,36 @@
 
 namespace PeepoDrumKit
 {
+	void ChartSettingsSectionNavigation::RegisterSection(std::string_view section)
+	{
+		if (!section.empty() && std::find(Sections.begin(), Sections.end(), section) == Sections.end())
+			Sections.emplace_back(section);
+	}
+
+	void ChartSettingsSectionNavigation::ScrollToSection(std::string_view section)
+	{
+		if (!section.empty() && RequestedSection == section)
+		{
+			Gui::SetScrollHereY(0.0f);
+			RequestedSection.clear();
+		}
+	}
+
+	void ChartSettingsSectionNavigation::DrawHeading(std::string_view section)
+	{
+		RegisterSection(section);
+		Gui::SeparatorText(section.data());
+		ScrollToSection(section);
+	}
+
+	void ChartSettingsWindow::SelectSection(std::string_view section)
+	{
+		sectionNavigation.RequestedSection = sectionNavigation.SelectedSection = section;
+		if (selectedCategory == ChartSettingsCategory::Keys) settingsFilterInput.Clear();
+		else settingsFilterMain.Clear();
+		lastActiveGroup = {};
+	}
+
 	struct CategoryTextPair { std::string_view Category, Text; };
 	static CategoryTextPair GuiSplitCategoryText(std::string_view textWithPrefix)
 	{
@@ -141,7 +171,7 @@ namespace PeepoDrumKit
 
 		enum class WidgetType : u32 {
 			Default,
-			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
+			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
 			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout,
 		};
@@ -489,6 +519,31 @@ namespace PeepoDrumKit
 							}
 						}
 					}
+					else if (in.Widget == WidgetType::StdString_TaikojiroExecutable)
+					{
+						const char* browseLabel = UI_Str("SETTINGS_OPEN_FOLDER_BROWSE");
+						const f32 browseWidth = Gui::CalcTextSize(browseLabel).x + style.FramePadding.x * 2.0f;
+						Gui::SetNextItemWidth(Max(1.0f, Gui::CalcItemWidth() - browseWidth - style.ItemInnerSpacing.x));
+						changesWereMade |= Gui::InputTextWithHint("##", "taikojiro.exe", &inOutStr->Value);
+						Gui::SameLine(0.0f, style.ItemInnerSpacing.x);
+						if (Gui::Button(browseLabel))
+						{
+							const std::string executablePath = GetTaikojiroExecutablePath(inOutStr->Value);
+							const std::string initialDirectory = GetChartOpenDirectory(Path::GetDirectoryName(executablePath));
+							Shell::FileDialog fileDialog {};
+							fileDialog.InTitle = UI_Str("SETTINGS_TAIKOJIRO_EXECUTABLE");
+							fileDialog.InInitialDirectory = initialDirectory;
+							fileDialog.InFileName = Path::GetFileName(executablePath);
+							fileDialog.InFilters = { { UI_Str("SETTINGS_EXECUTABLE_FILTER"), "*.exe" } };
+							fileDialog.InDefaultExtension = ".exe";
+							fileDialog.InParentWindowHandle = ApplicationHost::GlobalState.NativeWindowHandle;
+							if (fileDialog.OpenRead() == Shell::FileDialogResult::OK)
+							{
+								inOutStr->Value = Path::NormalizeInPlace(fileDialog.OutFilePath);
+								changesWereMade = true;
+							}
+						}
+					}
 					else
 						changesWereMade |= Gui::InputTextWithHint("##", "n/a", &inOutStr->Value);
 				}
@@ -506,7 +561,7 @@ namespace PeepoDrumKit
 			return changesWereMade;
 		}
 
-		static b8 DrawEntriesListTableGui(SettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempActiveWidgetGroup& lastActiveGroup, ChartSettingsCategory category = ChartSettingsCategory::Count)
+		static b8 DrawEntriesListTableGui(SettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempActiveWidgetGroup& lastActiveGroup, ChartSettingsSectionNavigation& navigation, ChartSettingsCategory category = ChartSettingsCategory::Count)
 		{
 			const auto& style = Gui::GetStyle();
 			b8 changesWereMade = false;
@@ -536,6 +591,7 @@ namespace PeepoDrumKit
 					SettingsEntry& entry = entries[entryIndex];
 					if (category != ChartSettingsCategory::Count && entry.Category != category)
 						continue;
+					navigation.RegisterSection(entry.Section);
 					if (filter != nullptr)
 					{
 						if (!filter->PassFilter(Gui::StringViewStart(entry.Header), Gui::StringViewEnd(entry.Header)) &&
@@ -547,7 +603,7 @@ namespace PeepoDrumKit
 					{
 						Gui::TableNextRow();
 						Gui::TableSetColumnIndex(1);
-						Gui::SeparatorText(entry.Section.data());
+						navigation.DrawHeading(entry.Section);
 						lastSection = entry.Section;
 					}
 
@@ -646,7 +702,7 @@ namespace PeepoDrumKit
 			return false;
 		}
 
-		static b8 DrawInputEntriesListTableGui(InputSettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempInputState& state)
+		static b8 DrawInputEntriesListTableGui(InputSettingsEntry* entries, size_t entriesCount, ImGuiTextFilter* filter, ChartSettingsWindowTempInputState& state, ChartSettingsSectionNavigation& navigation)
 		{
 			const auto& style = Gui::GetStyle();
 			b8 changesWereMade = false;
@@ -685,6 +741,9 @@ namespace PeepoDrumKit
 				for (size_t entryIndex = 0; entryIndex < entriesCount; entryIndex++)
 				{
 					InputSettingsEntry& entry = entries[entryIndex];
+					std::string_view section = GuiSplitCategoryText(entry.Name).Category;
+					while (!section.empty() && (section.back() == ':' || section.back() == ' ')) section.remove_suffix(1);
+					if (entry.Binding != nullptr) navigation.RegisterSection(section);
 					if (filter != nullptr)
 					{
 						if (!filter->PassFilter(Gui::StringViewStart(entry.Name), Gui::StringViewEnd(entry.Name)))
@@ -722,6 +781,7 @@ namespace PeepoDrumKit
 
 					Gui::SameLine(0.0f, 0.0f);
 					GuiTextWithCategoryHighlight(entry.Name);
+					navigation.ScrollToSection(section);
 					if (clicked) { state.SelectedMultiBinding = entry.Binding; memcpy(&state.SelectedMultiBindingOnOpenCopy, entry.Binding, sizeof(state.SelectedMultiBindingOnOpenCopy)); openMultiBindingPopupAtEndOfFrame = true; }
 
 					Gui::TableSetColumnIndex(2);
@@ -934,6 +994,8 @@ namespace PeepoDrumKit
 		f32 categoryWidth = 0.0f;
 		for (cstr label : categoryLabels)
 			categoryWidth = Max(categoryWidth, Gui::CalcTextSize(label).x);
+		for (const std::string& section : sectionNavigation.Sections)
+			categoryWidth = Max(categoryWidth, Gui::CalcTextSize(section).x + GuiScale(14.0f));
 		categoryWidth += GuiScale(24.0f) + Gui::GetStyle().ScrollbarSize;
 		categoryWidth = Min(categoryWidth, Max(1.0f, Gui::GetContentRegionAvail().x * 0.38f));
 
@@ -945,16 +1007,22 @@ namespace PeepoDrumKit
 				const auto category = static_cast<ChartSettingsCategory>(categoryIndex);
 				if (Gui::Selectable(categoryLabels[categoryIndex], selectedCategory == category, ImGuiSelectableFlags_None, vec2(0.0f, Gui::GetFrameHeight())) && selectedCategory != category)
 				{
-					selectedCategory = category;
-					settingsFilterMain.Clear();
+					SelectCategory(category);
 					lastActiveGroup = {};
 					inputState.SelectedMultiBinding = nullptr;
 					inputState.TempAssignedBinding = nullptr;
 					inputState.MultiBindingPopupFadeCurrent = inputState.MultiBindingPopupFadeTarget = 0.0f;
 					testPlayCalibrationActive = false;
 				}
-				if (Gui::IsItemHovered())
-					Gui::SetTooltip("%s", categoryLabels[categoryIndex]);
+				if (selectedCategory == category)
+				{
+					Gui::PushID(static_cast<i32>(category));
+					Gui::Indent(GuiScale(14.0f));
+					for (const std::string& section : sectionNavigation.Sections)
+						if (Gui::Selectable(section.c_str(), sectionNavigation.SelectedSection == section)) SelectSection(section);
+					Gui::Unindent(GuiScale(14.0f));
+					Gui::PopID();
+				}
 			}
 			Gui::PopStyleVar();
 		}
@@ -964,6 +1032,7 @@ namespace PeepoDrumKit
 		Gui::PushID(static_cast<i32>(selectedCategory));
 		if (Gui::BeginChild("SettingsContent", vec2(0.0f, 0.0f), ImGuiChildFlags_None))
 		{
+			sectionNavigation.Sections.clear();
 			Gui::UpdateSmoothScrollWindow();
 			Gui::SeparatorText(categoryLabels[static_cast<size_t>(selectedCategory)]);
 
@@ -971,7 +1040,7 @@ namespace PeepoDrumKit
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
-					Gui::SeparatorText(UI_Str("SETTINGS_TAB_LANGUAGE"));
+					sectionNavigation.DrawHeading(UI_Str("SETTINGS_TAB_LANGUAGE"));
 					std::string selectedLanguageName = SelectedGuiLanguage;
 					for (const auto& it : i18n::LocaleEntries)
 					{
@@ -1035,11 +1104,22 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_RECENT_DISPLAY_DESC"),
 							SettingsGui::WidgetType::B8_RecentFilesDisplay),
 
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_OPEN"),
+							settings.General.TaikojiroExecutablePath,
+							UI_Str("SETTINGS_TAIKOJIRO_EXECUTABLE"),
+							UI_Str("SETTINGS_TAIKOJIRO_EXECUTABLE_DESC"),
+							SettingsGui::WidgetType::StdString_TaikojiroExecutable),
+
 						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_SAVE"),
 							settings.General.TJAFileSaveFormat,
 							UI_Str("SETTINGS_TJA_SAVE_FORMAT"),
 							UI_Str("SETTINGS_TJA_SAVE_FORMAT_DESC"),
 							SettingsGui::WidgetType::I32_TJAFileSaveFormat),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("VIDEO_EXPORT_WINDOW"),
+							settings.General.VideoExportHardwareEncoding,
+							UI_Str("SETTINGS_VIDEO_HARDWARE_ENCODING"),
+							UI_Str("SETTINGS_VIDEO_HARDWARE_ENCODING_DESC")),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::File, UI_Str("SETTINGS_SECTION_SAVE"),
 							settings.General.IncludePeepoDrumKitComment,
@@ -1137,6 +1217,11 @@ namespace PeepoDrumKit
 							settings.General.ShowChartSubtitleLocalized,
 							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS"),
 							UI_Str("SETTINGS_PROPERTIES_SHOW_SUBTITLE_TRANSLATIONS_DESC")),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
+							settings.General.AutoPrefixChartSubtitle,
+							UI_Str("SETTINGS_PROPERTIES_AUTO_PREFIX_SUBTITLE"),
+							UI_Str("SETTINGS_PROPERTIES_AUTO_PREFIX_SUBTITLE_DESC")),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PROPERTIES"),
 							settings.General.ShowChartOtherMetadata,
@@ -1242,7 +1327,7 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_VSyncOffFPSLimit),
 					};
 
-					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), selectedCategory == ChartSettingsCategory::Appearance ? nullptr : &settingsFilterMain, lastActiveGroup, selectedCategory);
+					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesMain, ArrayCount(settingsEntriesMain), selectedCategory == ChartSettingsCategory::Appearance ? nullptr : &settingsFilterMain, lastActiveGroup, sectionNavigation, selectedCategory);
 				}
 				Gui::PopStyleVar();
 			}
@@ -1300,7 +1385,7 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_AudioBufferFrameSize),
 					};
 
-					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup);
+					changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesAudio, ArrayCount(settingsEntriesAudio), nullptr, lastActiveGroup, sectionNavigation);
 				}
 				Gui::PopStyleVar();
 			}
@@ -1340,7 +1425,7 @@ namespace PeepoDrumKit
 
 					SettingsGui::SettingsEntry(ChartSettingsCategory::TestPlay, UI_Str("SETTINGS_SECTION_INPUT_COMPENSATION"), settings.TestPlay.InputLatencyCompensationMilliseconds, UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET"), UI_Str("SETTINGS_TEST_PLAY_INPUT_OFFSET_DESC")),
 				};
-				changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesTestPlay, ArrayCount(settingsEntriesTestPlay), nullptr, lastActiveGroup);
+				changesWereMade |= SettingsGui::DrawEntriesListTableGui(settingsEntriesTestPlay, ArrayCount(settingsEntriesTestPlay), nullptr, lastActiveGroup, sectionNavigation);
 				const i32 pausedThreshold = Clamp(settings.TestPlay.PausedJudgementThresholdMilliseconds.Value, 0, 1000);
 				if (settings.TestPlay.PausedJudgementThresholdMilliseconds.Value != pausedThreshold)
 				{
@@ -1368,7 +1453,7 @@ namespace PeepoDrumKit
 					settings.TestPlay.BadWindowMilliseconds.SetHasValueIfNotDefault();
 					changesWereMade = true;
 				}
-				Gui::SeparatorText(UI_Str("SETTINGS_SECTION_CALIBRATION"));
+				sectionNavigation.DrawHeading(UI_Str("SETTINGS_SECTION_CALIBRATION"));
 				Gui::TextWrapped("%s", UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_DESC"));
 				if (Gui::Button(testPlayCalibrationActive ? UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_STOP") : UI_Str("SETTINGS_TEST_PLAY_CALIBRATION_START")))
 				{
@@ -1435,7 +1520,7 @@ namespace PeepoDrumKit
 			{
 				Gui::PushStyleVar(ImGuiStyleVar_FramePadding, originalFramePadding);
 				{
-					Gui::SeparatorText(UI_Str("SETTINGS_SECTION_COLORS"));
+					sectionNavigation.DrawHeading(UI_Str("SETTINGS_SECTION_COLORS"));
 					static constexpr ImGuiColorEditFlags colorEditFlags = ImGuiColorEditFlags_AlphaPreviewHalf;
 					auto drawColorSetting = [&](cstr label, WithDefault<u32>& setting)
 					{
@@ -1634,11 +1719,12 @@ namespace PeepoDrumKit
 						{ &settings.Input.Dialog_SelectPreviousTab, "Dialog: Select Previous Tab", },
 					};
 
-					changesWereMade |= SettingsGui::DrawInputEntriesListTableGui(settingsEntriesInput, ArrayCount(settingsEntriesInput), &settingsFilterInput, inputState);
+					changesWereMade |= SettingsGui::DrawInputEntriesListTableGui(settingsEntriesInput, ArrayCount(settingsEntriesInput), &settingsFilterInput, inputState, sectionNavigation);
 				}
 				Gui::PopStyleVar();
 			}
 
+			sectionNavigation.RequestedSection.clear();
 		}
 		Gui::EndChild();
 		Gui::PopID();

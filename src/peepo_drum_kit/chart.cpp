@@ -76,10 +76,12 @@ namespace PeepoDrumKit
 		}
 	}
 
-	const TempoMapAccelerationStructure& ChartCourse::GetPlaybackTiming(BranchType branch) const
+	const TempoMapAccelerationStructure& ChartCourse::RebuildPlaybackTiming(BranchType branch) const
 	{
-		if (GetDelayChanges(branch).empty()) return TempoMap.AccelerationStructure;
 		auto& timing = PlaybackTiming[EnumToIndex(branch)];
+		auto& key = PlaybackTimingKeys[EnumToIndex(branch)];
+		const auto& delays = GetDelayChanges(branch);
+		key = { TempoMap.Revision, delays.Revision, delays.data(), delays.size(), SourceTempoChangeCount };
 		timing.BaseTiming = &TempoMap.AccelerationStructure;
 		timing.FirstTempoBPM = TempoMap.AccelerationStructure.FirstTempoBPM;
 		timing.LastTempoBPM = TempoMap.AccelerationStructure.LastTempoBPM;

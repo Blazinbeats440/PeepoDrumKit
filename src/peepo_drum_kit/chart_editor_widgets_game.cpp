@@ -451,19 +451,10 @@ namespace PeepoDrumKit
 		}
 	}
 
-	struct ForEachBarLaneData
-	{
-		Beat Beat;
-		Time Time;
-		Tempo Tempo;
-		Complex ScrollSpeed;
-		ScrollMethod ScrollType;
-		i32 BarIndex;
-		b8 IsVisible;
-	};
+	using ForEachBarLaneData = ChartGamePreview::BarLaneData;
 
 	template <typename Func>
-	static void ForEachBarOnNoteLane(const ChartCourse& course, BranchType branch, Beat maxBeatDuration, std::function<Complex(Complex)> scrollTypeToView, Func perBarFunc)
+	static void ForEachBarOnNoteLane(ChartContext& context, const ChartCourse& course, BranchType branch, Beat maxBeatDuration, std::function<Complex(Complex)> scrollTypeToView, Func perBarFunc)
 	{
 		const SortedScrollChangesList& scrollChanges = course.GetScrollChanges(branch);
 		BeatSortedForwardIterator<TempoChange> tempoChangeIt {};
@@ -472,13 +463,9 @@ namespace PeepoDrumKit
 		BeatSortedForwardIterator<ScrollType> scrollTypeIt {};
 		BeatSortedForwardIterator<JPOSScrollChange> JPOSscrollChangeIt {};
 
-		course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& it)
+		for (const auto& it : context.GetBeatBarIndex(course, maxBeatDuration).Bars)
 		{
-			if (it.Beat > maxBeatDuration)
-				return ControlFlow::Break;
-
-			if (!it.IsBar)
-				return ControlFlow::Continue;
+			if (it.Beat > maxBeatDuration) break;
 
 			const b8 isVisible = VisibleOrDefault(barLineChangeIt.Next(course.BarLineChanges.Sorted, it.Beat));
 
@@ -489,15 +476,62 @@ namespace PeepoDrumKit
 				ScrollTypeOrDefault(scrollTypeIt.Next(course.ScrollTypes.Sorted, it.Beat)),
 				it.BarIndex, isVisible });
 
-			return ControlFlow::Continue;
-		});
+		}
 	}
 
-	struct ForEachNoteLaneData : ChartGamePreview::NoteAttr
+	ChartGamePreview::BarLaneCache& ChartGamePreview::GetCachedBarLaneData(ChartContext& context, ChartCourse& course, BranchType branch, Beat endBeat)
 	{
-		Note* OriginalNote;
-		struct NoteAttr Tail;
-	};
+		auto& cache = BarLaneCaches[{ &course, branch }];
+		const auto key = context.GetCourseCacheKey(course, branch);
+		const i32 scrollView = *Settings.General.ScrollSpeedViewType;
+		if (cache.Key == key && cache.ScrollView == scrollView && cache.EndBeat == endBeat) return cache;
+		cache.Bars.clear(); cache.TimeBars.clear(); cache.HBBars.clear(); cache.UnboundedBars.clear();
+		cache.MinimumTimeSpeed = cache.MinimumHBSpeed = F64Max;
+		const auto& timing = course.GetPlaybackTiming(branch);
+		ForEachBarOnNoteLane(context, course, branch, endBeat, GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(scrollView)),
+			[&](const ForEachBarLaneData& bar)
+			{
+				const size_t index = cache.Bars.size(); cache.Bars.push_back(bar);
+				const b8 usesHB = bar.ScrollType == ScrollMethod::HBSCROLL || bar.ScrollType == ScrollMethod::BMSCROLL;
+				const f64 speed = usesHB
+					? abs(bar.ScrollType == ScrollMethod::BMSCROLL ? 1.0 : bar.ScrollSpeed.GetRealPart()) / Beat::TicksPerBeat
+					: abs((bar.Tempo.BPM * bar.ScrollSpeed.GetRealPart()) / 60.0f);
+				const f64 position = usesHB ? timing.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(bar.Beat, bar.Time) : bar.Time.Seconds;
+				if (speed <= 0.0 || !std::isfinite(speed) || !std::isfinite(position)) cache.UnboundedBars.push_back(index);
+				else if (usesHB) { cache.HBBars.push_back({ position, index }); cache.MinimumHBSpeed = Min(cache.MinimumHBSpeed, speed); }
+				else { cache.TimeBars.push_back({ position, index }); cache.MinimumTimeSpeed = Min(cache.MinimumTimeSpeed, speed); }
+			});
+		std::sort(cache.TimeBars.begin(), cache.TimeBars.end()); std::sort(cache.HBBars.begin(), cache.HBBars.end());
+		cache.Key = key; cache.ScrollView = scrollView; cache.EndBeat = endBeat;
+		return cache;
+	}
+
+	static const std::vector<size_t>& FindVisiblePreviewBars(ChartGamePreview::BarLaneCache& cache, const GameCamera& camera,
+		Time cursorTime, f64 cursorHB, f32 originX, f64 pxWorldPer4Beats, b8 dynamicScrolls)
+	{
+		auto& visible = cache.VisibleBars; visible.clear();
+		if (dynamicScrolls || !std::isfinite(originX) || !std::isfinite(pxWorldPer4Beats) || pxWorldPer4Beats == 0.0)
+		{
+			for (size_t index = 0; index < cache.Bars.size(); ++index) visible.push_back(index);
+			return visible;
+		}
+		visible.insert(visible.end(), cache.UnboundedBars.begin(), cache.UnboundedBars.end());
+		const f64 distance = Max(abs(-280.0 - originX), abs(camera.LaneWidth() + 280.0 - originX)) + 1.0;
+		const auto append = [&](const auto& entries, f64 cursor, f64 minimumSpeed)
+		{
+			if (entries.empty()) return;
+			const f64 range = distance / (minimumSpeed * abs(pxWorldPer4Beats / 4)) * 1.00001 + 1.0;
+			const auto first = std::lower_bound(entries.begin(), entries.end(), cursor - range, [](const auto& entry, f64 value) { return entry.first < value; });
+			const auto last = std::upper_bound(first, entries.end(), cursor + range, [](f64 value, const auto& entry) { return value < entry.first; });
+			for (auto it = first; it != last; ++it) visible.push_back(it->second);
+		};
+		append(cache.TimeBars, cursorTime.Seconds, cache.MinimumTimeSpeed);
+		append(cache.HBBars, cursorHB, cache.MinimumHBSpeed);
+		std::sort(visible.begin(), visible.end());
+		return visible;
+	}
+
+	using ForEachNoteLaneData = ChartGamePreview::NoteLaneData;
 
 	template <typename Func>
 	static void ForEachNoteOnNoteLane(ChartCourse& course, BranchType branch, std::function<Complex(Complex)> scrollSpeedToView, Func perNoteFunc)
@@ -539,6 +573,232 @@ namespace PeepoDrumKit
 				},
 			});
 		}
+	}
+
+	static ChartGamePreview::NotePositionCache CreateNotePositionCache(const ChartGamePreview::NoteAttr& note)
+	{
+		ChartGamePreview::NotePositionCache cache;
+		cache.SuddenMoveTime = note.Time - Time::FromMS(std::trunc(note.Sudden.MovementOffset.ToMS())); // TJAP3 behavior
+		cache.SuddenShowTime = note.Time - note.Sudden.AppearanceOffset;
+		return cache;
+	}
+
+	struct GameNotePosition { vec2 Original, Moved; };
+	struct VideoPreviewRollHitCounts { i32 Total = 0, Current = 0; };
+
+	static VideoPreviewRollHitCounts GetVideoPreviewRollHitCounts(const ChartCourse& course, const Note& note, f32 rollsPerSecond, Time cursor)
+	{
+		if (!std::isfinite(rollsPerSecond) || rollsPerSecond <= 0.0f) return {};
+		const Time head = course.BeatToPlaybackTime(note.BeatTime) + note.TimeOffset;
+		const Time tail = course.BeatToPlaybackTime(note.GetEnd()) + note.TimeOffset;
+		if (!(head < tail)) return {};
+		const auto getHitTime = [&](i32 index) { return head + Time::FromSec(static_cast<f64>(index) / rollsPerSecond); };
+		const i32 maximum = IsBalloonNote(note.Type) ? Max(note.BalloonPopCount, 0) : I32Max - 1;
+		i32 limit = static_cast<i32>(std::clamp(std::ceil((tail - head).Seconds * rollsPerSecond) + 2.0, 0.0, static_cast<f64>(maximum)));
+		while (limit > 0 && limit < maximum && getHitTime(limit - 1) < tail)
+			limit = static_cast<i32>(Min(static_cast<i64>(maximum), static_cast<i64>(limit) * 2));
+		const i32 total = FindRollHitIndex(limit, tail, getHitTime);
+		return { total, FindRollHitIndex(total, cursor, getHitTime, true) };
+	}
+
+	static std::pair<f32, f32> GetGamePreviewVisibleLaneXRange(const GameCamera& camera)
+	{
+		const vec2 worldMin = camera.ScreenToWorldSpace(camera.ScreenSpaceViewportRect.TL);
+		const vec2 worldMax = camera.ScreenToWorldSpace(camera.ScreenSpaceViewportRect.BR);
+		const f32 laneMin = camera.WorldToLaneSpace(worldMin.x, worldMin.y).x;
+		const f32 laneMax = camera.WorldToLaneSpace(worldMax.x, worldMax.y).x;
+		return { Min(laneMin, laneMax) - 280.0f, Max(laneMin, laneMax) + 280.0f };
+	}
+
+	static GameNotePosition GetCachedGameNotePosition(const GameCamera& camera, const ChartGamePreview::NoteAttr& note,
+		const ChartGamePreview::NotePositionCache& cache, vec2 originLane, Time cursorTime, f64 cursorHBScrollBeat,
+		f64 pxWorldPer4Beats, const TempoMapAccelerationStructure& timing, const SortedJPOSScrollChangesList& jposChanges)
+	{
+		const b8 usesHBScrollBeat = note.ScrollType == ScrollMethod::HBSCROLL || note.ScrollType == ScrollMethod::BMSCROLL;
+		if (usesHBScrollBeat)
+		{
+			// A branch transition can render cached notes using another branch's timing map.
+			if (cache.Timing != &timing)
+			{
+				cache.Timing = &timing;
+				cache.HasNoteHBScrollBeatTick = cache.HasSuddenMoveHBScrollBeatTick = false;
+			}
+			if (!cache.HasNoteHBScrollBeatTick)
+			{
+				cache.NoteHBScrollBeatTick = timing.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(note.Beat, note.Time);
+				cache.HasNoteHBScrollBeatTick = true;
+			}
+		}
+		const auto getCoordinates = [&](Time positionTime, f64 positionHBScrollBeat)
+		{
+			if (!usesHBScrollBeat)
+				return camera.GetNoteCoordinatesLane(originLane, positionTime, positionHBScrollBeat, note.Time, note.Beat,
+					note.Tempo, note.ScrollSpeedView, note.ScrollType, pxWorldPer4Beats, timing, jposChanges);
+			const Complex scroll = note.ScrollType == ScrollMethod::BMSCROLL ? Complex(1.0f, 0.0f) : note.ScrollSpeedView;
+			const f64 beatDistance = (cache.NoteHBScrollBeatTick - positionHBScrollBeat) / Beat::TicksPerBeat;
+			return vec2(originLane.x + static_cast<f32>(scroll.GetRealPart() * beatDistance * (pxWorldPer4Beats / 4)),
+				originLane.y + static_cast<f32>(scroll.GetImaginaryPart() * beatDistance * (pxWorldPer4Beats / 4)));
+		};
+		GameNotePosition position;
+		position.Original = position.Moved = getCoordinates(cursorTime, cursorHBScrollBeat);
+		if (!(cursorTime >= cache.SuddenMoveTime))
+		{
+			if (usesHBScrollBeat && !cache.HasSuddenMoveHBScrollBeatTick)
+			{
+				const Beat moveBeat = timing.ConvertTimeToBeatWithHint(cache.SuddenMoveTime, note.Beat, true);
+				cache.SuddenMoveHBScrollBeatTick = camera.GetCursorHBScrollBeatTick(moveBeat, cache.SuddenMoveTime, timing);
+				cache.HasSuddenMoveHBScrollBeatTick = true;
+			}
+			position.Moved = getCoordinates(cache.SuddenMoveTime, usesHBScrollBeat ? cache.SuddenMoveHBScrollBeatTick : cursorHBScrollBeat);
+			position.Moved.y = position.Original.y; // TJAP3 behavior
+		}
+		return position;
+	}
+
+	const std::vector<ChartGamePreview::NoteLaneData>& ChartGamePreview::GetCachedNoteLaneData(ChartContext& context, ChartCourse& course, BranchType branch)
+	{
+		auto& cache = NoteLaneCaches[{ &course, branch }];
+		const auto key = context.GetCourseCacheKey(course, branch);
+		const i32 scrollView = *Settings.General.ScrollSpeedViewType;
+		if (cache.Key != key || cache.ScrollView != scrollView)
+		{
+			cache.Notes.clear();
+			ForEachNoteOnNoteLane(course, branch, GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(scrollView)),
+				[&](const ForEachNoteLaneData& note)
+				{
+					auto& cached = cache.Notes.emplace_back(note);
+					cached.HeadPosition = CreateNotePositionCache(cached);
+					cached.TailPosition = CreateNotePositionCache(cached.Tail);
+				});
+			cache.Key = key;
+			cache.ScrollView = scrollView;
+		}
+		return cache.Notes;
+	}
+
+	b8 RunGamePreviewNoteSelfTest(std::string& error)
+	{
+		error.clear();
+		ChartContext context;
+		TJA::ErrorList errors;
+		const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Preview position test\nBPM:120\nCOURSE:Oni\n#START\n#SUDDEN 3.5 1.2349\n#SCROLL 1.5+0.4i\n1000,\n"
+			"#DELAY 0.75\n#BPMCHANGE -90\n5000,\n#DELAY -1.25\n#SUDDEN 0.25 -0.0009\n#SCROLL -1.25+0.5i\n8000,\n"
+			"#BPMCHANGE 180\n#SCROLL 0\n1000,\n#SUDDEN 0 0\n#SCROLL 1\n1000,\n#END\n")), errors);
+		if (!errors.Errors.empty() || !CreateChartProjectFromTJA(parsed, context.Chart)) { error = "Cannot import preview position fixture"; return false; }
+		auto& course = *context.Chart.Courses[0];
+		context.SetSelectedChart(&course, BranchType::Normal);
+		auto expertDelay = course.DelayChanges_Normal[0]; expertDelay.Duration += Time::FromSec(0.4);
+		course.DelayChanges_Expert.InsertOrUpdate(expertDelay);
+		ChartGamePreview preview;
+		GameCamera camera;
+		camera.LaneRect = { vec2(0.0f), vec2(1280.0f, 300.0f) };
+		camera.ScreenSpaceViewportRect = { vec2(50.0f, 80.0f), vec2(1970.0f, 1160.0f) };
+		camera.LaneContentOffset = vec2(0.0f, -4.0f);
+		for (f32 scale : { 0.5f, 1.0f, 2.0f })
+		{
+			camera.WorldToScreenScaleFactor = scale;
+			const auto [minimum, maximum] = GetGamePreviewVisibleLaneXRange(camera);
+			for (f32 laneX : { -2000.0f, -600.0f, -400.0f, -280.0f, 0.0f, 800.0f, 2000.0f })
+			{
+				const f32 screenX = camera.LaneToScreenSpace(vec2(laneX, 0.0f)).x;
+				const b8 visible = screenX >= camera.ScreenSpaceViewportRect.TL.x - 280.0f * scale
+					&& screenX <= camera.ScreenSpaceViewportRect.BR.x + 280.0f * scale;
+				if (visible != (laneX >= minimum && laneX <= maximum))
+				{ error = "Preview culling excludes notes inside the viewport margin"; return false; }
+			}
+		}
+		const vec2 origin(123.0f, -17.0f);
+		const auto same = [](f32 first, f32 second)
+		{
+			return first == second || (std::isnan(first) && std::isnan(second))
+				|| (std::isfinite(first) && std::isfinite(second) && Absolute(first - second) < 0.001f);
+		};
+		for (const auto& cached : preview.GetCachedNoteLaneData(context, course, BranchType::Normal))
+			for (const auto* source : { static_cast<const ChartGamePreview::NoteAttr*>(&cached), &cached.Tail })
+				for (ScrollMethod method : { ScrollMethod::NMSCROLL, ScrollMethod::HBSCROLL, ScrollMethod::BMSCROLL })
+					for (Time moveOffset : { source->Sudden.MovementOffset, SuddenOrDefault(nullptr).MovementOffset })
+					{
+						auto note = *source; note.ScrollType = method; note.Sudden.MovementOffset = moveOffset;
+						const auto cache = CreateNotePositionCache(note);
+						for (BranchType timingBranch : { BranchType::Normal, BranchType::Expert, BranchType::Normal })
+							for (f64 seconds : { -3.0, -0.5, 0.0, 1.0, 2.0, 3.0, 4.5, 7.0, 11.0, 20.0 })
+							{
+								const auto& timing = course.GetPlaybackTiming(timingBranch);
+								const Time cursor = Time::FromSec(seconds);
+								const f64 cursorHB = camera.GetCursorHBScrollBeatTick(timing.ConvertTimeToBeatWithHint(cursor, note.Beat, true), cursor, timing);
+								const auto position = GetCachedGameNotePosition(camera, note, cache, origin, cursor, cursorHB, 800.0, timing, course.JPOSScrollChanges);
+								const vec2 original = camera.GetNoteCoordinatesLane(origin, cursor, cursorHB, note.Time, note.Beat,
+									note.Tempo, note.ScrollSpeedView, method, 800.0, timing, course.JPOSScrollChanges);
+								Time moveTime = cursor; f64 moveHB = cursorHB;
+								if (!(cursor >= cache.SuddenMoveTime))
+								{
+									moveTime = cache.SuddenMoveTime;
+									moveHB = camera.GetCursorHBScrollBeatTick(timing.ConvertTimeToBeatWithHint(moveTime, note.Beat, true), moveTime, timing);
+								}
+								vec2 moved = camera.GetNoteCoordinatesLane(origin, moveTime, moveHB, note.Time, note.Beat,
+									note.Tempo, note.ScrollSpeedView, method, 800.0, timing, course.JPOSScrollChanges);
+								moved.y = original.y;
+								if (!same(position.Original.x, original.x) || !same(position.Original.y, original.y)
+									|| !same(position.Moved.x, moved.x) || !same(position.Moved.y, moved.y))
+								{ error = "Cached preview position differs from the original calculation"; return false; }
+								if (method == ScrollMethod::NMSCROLL && (cache.HasNoteHBScrollBeatTick || cache.HasSuddenMoveHBScrollBeatTick))
+								{ error = "NMSCROLL computed unused HBSCROLL coordinates"; return false; }
+							}
+						// Cached timing values must be discarded even if another branch was last used to render this note.
+						cached.HeadPosition.Timing = &course.GetPlaybackTiming(BranchType::Expert);
+						cached.HeadPosition.HasNoteHBScrollBeatTick = cached.HeadPosition.HasSuddenMoveHBScrollBeatTick = true;
+					}
+		course.DelayChanges_Expert.NotifyChanged();
+		const auto& refreshed = preview.GetCachedNoteLaneData(context, course, BranchType::Normal);
+		if (refreshed.empty() || refreshed[0].HeadPosition.Timing != nullptr || refreshed[0].HeadPosition.HasNoteHBScrollBeatTick
+			|| refreshed[0].HeadPosition.HasSuddenMoveHBScrollBeatTick)
+		{ error = "Changing another branch's delay retained stale preview coordinates"; return false; }
+		for (ScrollMethod method : { ScrollMethod::NMSCROLL, ScrollMethod::HBSCROLL, ScrollMethod::BMSCROLL })
+		{
+			ScrollType change {}; change.BeatTime = Beat::Zero(); change.Method = method;
+			course.ScrollTypes.InsertOrUpdate(change);
+			auto& bars = preview.GetCachedBarLaneData(context, course, BranchType::Normal, Beat::FromBars(512));
+			const auto& timing = course.GetPlaybackTiming();
+			for (f64 seconds : { -3.0, 0.0, 1.0, 3.0, 7.0, 11.0, 120.0, 600.0 })
+			for (f32 originX : { -1000.0f, 0.0f, 3000.0f })
+			for (f64 scale : { 16.0, 800.0, 1600.0 })
+			{
+				const Time cursor = Time::FromSec(seconds);
+				const f64 cursorHB = camera.GetCursorHBScrollBeatTick(timing.ConvertTimeToBeatWithHint(cursor, Beat::Zero(), true), cursor, timing);
+				const auto& visible = FindVisiblePreviewBars(bars, camera, cursor, cursorHB, originX, scale, false);
+				for (size_t index = 0; index < bars.Bars.size(); ++index)
+				{
+					const auto& bar = bars.Bars[index];
+					const vec2 position = camera.GetNoteCoordinatesLane(vec2(originX, 0.0f), cursor, cursorHB, bar.Time, bar.Beat,
+						bar.Tempo, bar.ScrollSpeed, bar.ScrollType, scale, timing, course.JPOSScrollChanges);
+					if (camera.IsPointVisibleOnLane(position.x) && !std::binary_search(visible.begin(), visible.end(), index))
+					{ error = "Indexed bar culling omitted a visible bar"; return false; }
+				}
+			}
+			if (FindVisiblePreviewBars(bars, camera, Time::Zero(), 0.0, 0.0f, 800.0, true).size() != bars.Bars.size())
+			{ error = "Dynamic scroll changes did not retain all bar candidates"; return false; }
+			if (FindVisiblePreviewBars(bars, camera, Time::Zero(), 0.0, 0.0f, 800.0, false).size() >= bars.Bars.size() / 4)
+			{ error = "Indexed bar culling did not narrow a long chart"; return false; }
+		}
+		for (const Note& note : course.Notes_Normal)
+		{
+			if (!IsLongNote(note.Type)) continue;
+			for (NoteType type : { note.Type, NoteType::Balloon })
+			for (f32 speed : { 0.0f, 1.0f, 7.0f, 30.0f, 120.0f })
+			for (f64 offset : { 0.0, 1000000000.0 })
+			for (f64 seconds : { -0.01, 0.0, 1.0, 2.0, 10.0 })
+			{
+				Note roll = note; roll.Type = type; roll.BalloonPopCount = 7; roll.TimeOffset = Time::FromSec(offset);
+				const Time cursor = course.BeatToPlaybackTime(roll.BeatTime) + roll.TimeOffset + Time::FromSec(seconds);
+				VideoPreviewRollHitCounts expected;
+				ForEachVideoRollHit(course, roll, speed, [&](Time time, b8) { ++expected.Total; if (time <= cursor) ++expected.Current; });
+				const auto actual = GetVideoPreviewRollHitCounts(course, roll, speed, cursor);
+				if (actual.Total != expected.Total || actual.Current != expected.Current)
+				{ error = "Video roll counts differ from original hit enumeration"; return false; }
+			}
+		}
+		return true;
 	}
 
 	void ChartCourse::RecalculateSENotes(BranchType branch)
@@ -1436,6 +1696,12 @@ namespace PeepoDrumKit
 
 	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
 	{
+		if (NoteLaneCacheRevision != context.Undo.Revision)
+		{
+			NoteLaneCaches.clear();
+			BarLaneCaches.clear();
+			NoteLaneCacheRevision = context.Undo.Revision;
+		}
 		const b8 isVideoExport = VideoExportTime.has_value();
 		if (isVideoExport) animatedCursorTime = *VideoExportTime;
 		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
@@ -1542,10 +1808,10 @@ namespace PeepoDrumKit
 			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetHeight() / Camera.WorldSpaceSize.y;
 			laneRectBase = Rect::FromTLSize(vec2(GameLanePaddingL, GameLanePaddingTop), vec2(extendedLaneWidth, GameLaneSlice.TotalHeight()));
 		}
-		// Keep the lane frame fixed and move only its contents. At 1080p the capture path
-		// otherwise rasterizes notes, the hit circle and bar lines four pixels too low.
-		Camera.LaneContentOffset = VideoExportPixelAligned
-			? vec2(0.0f, -4.0f * (Camera.WorldSpaceSize.x / 1920.0f))
+		// Set to false to disable the 1 px upward correction at 1080p.
+		static constexpr b8 EnableVideoExportVerticalOffset = true;
+		Camera.LaneContentOffset = EnableVideoExportVerticalOffset && VideoExportPixelAligned
+			? vec2(0.0f, -1.0f * (Camera.WorldSpaceSize.x / 1920.0f))
 			: vec2(0.0f);
 
 #if 0 // DEBUG: ...
@@ -1565,7 +1831,7 @@ namespace PeepoDrumKit
 			rasterScale = std::max(rasterScale, context.Gfx.GetInfo(SprID::Game_Note_Don).RasterScale);
 		if (!context.Gfx.IsAsyncLoading())
 			context.Gfx.Rasterize(SprGroup::Game, rasterScale);
-		ImDrawList* drawList = Gui::GetWindowDrawList();
+		ImDrawList* drawList = isVideoExport && VideoExportDrawListTarget ? VideoExportDrawListTarget : Gui::GetWindowDrawList();
 		const f32 videoCaptureScale = isVideoExport && VideoExportResolutionWidth > 0
 			? static_cast<f32>(VideoExportResolutionWidth) / Camera.ScreenSpaceViewportRect.GetWidth() : 1.0f;
 		const f32 previousFontDensity = FontMain->CurrentRasterizerDensity;
@@ -2060,7 +2326,7 @@ namespace PeepoDrumKit
 						std::string_view(barLineStr, sprintf_s(barLineStr, "%d", bar.BarIndex)));
 				}
 			};
-			ForEachBarOnNoteLane(*course, branch, chartBeatDuration, scrollSpeedToView, [&](ForEachBarLaneData it)
+			auto drawPreviewBar = [&](ForEachBarLaneData it)
 			{
 				if (playbackScrolls)
 				{
@@ -2087,7 +2353,10 @@ namespace PeepoDrumKit
 					else
 						reverseBarLineDrawBuffer.push_back(bar);
 				}
-			});
+			};
+			auto& barCache = GetCachedBarLaneData(context, *course, branch, chartBeatDuration);
+			for (size_t index : FindVisiblePreviewBars(barCache, Camera, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, hitCirclePosLane.x, pxWorldPer4Beats, playbackScrolls != nullptr))
+				drawPreviewBar(barCache.Bars[index]);
 
 #if 0 // DEBUG: ...
 			if (Gui::Begin("Game Preview - Debug", nullptr, ImGuiWindowFlags_NoDocking))
@@ -2111,31 +2380,44 @@ namespace PeepoDrumKit
 
 			drawList->ChannelsSetCurrent(3);
 			std::vector<Rect> testPlayLabelBounds;
-			auto drawTestPlayNote = [&](ForEachNoteLaneData it, BranchType noteBranch)
+			TestPlayInterval<Time> testPlayNoteInterval {};
+			if (IsTestPlaying)
 			{
-			if (!IsTestPlaying && IsRegularNote(it.OriginalNote->Type) &&
-				TimeSinceNoteHit(it.Time, cursorTimeOrAnimated) > GetTotalGameNoteHitAnimationDuration(it.OriginalNote->Type)) return;
+				const auto selectedRange = GetTestPlaySelectedRange(context);
+				testPlayNoteInterval = !isPlayback && selectedRange.IsValid() ? selectedRange : GetTestPlayInterval(context);
+			}
+			const auto [visibleNoteMinX, visibleNoteMaxX] = GetGamePreviewVisibleLaneXRange(Camera);
+			auto drawTestPlayNote = [&](const ForEachNoteLaneData& cachedNote, BranchType noteBranch)
+			{
+				if (!IsTestPlaying && IsRegularNote(cachedNote.OriginalNote->Type) &&
+					TimeSinceNoteHit(cachedNote.Time, cursorTimeOrAnimated) > GetTotalGameNoteHitAnimationDuration(cachedNote.OriginalNote->Type)) return;
 				const b8 slidingNote = branchSliding && transitionIndex < course->Branches.size()
-					&& it.Beat >= course->Branches[transitionIndex].GetStart()
-					&& it.Beat < GetBranchRangeEnd(course->Branches, course->Branches[transitionIndex]);
-				if (autoBranchLane && !slidingNote && (videoRoute ? videoRoute->GetDisplayBranch(*course, it.Beat, cursorTimeOrAnimated) : GetTestPlayNoteBranch(it.Beat)) != noteBranch) return;
+					&& cachedNote.Beat >= course->Branches[transitionIndex].GetStart()
+					&& cachedNote.Beat < GetBranchRangeEnd(course->Branches, course->Branches[transitionIndex]);
+				if (autoBranchLane && !slidingNote && (videoRoute ? videoRoute->GetDisplayBranch(*course, cachedNote.Beat, cursorTimeOrAnimated) : GetTestPlayNoteBranch(cachedNote.Beat)) != noteBranch) return;
+				ForEachNoteLaneData scrollOverride;
 				if (playbackScrolls)
 				{
+					scrollOverride = cachedNote;
+					auto& it = scrollOverride;
 					const auto& timeline = (slidingNote ? *transitionScrolls : *playbackScrolls)[EnumToIndex(getScrollBranch(it.Beat, noteBranch))];
 					it.ScrollSpeed = timeline.GetScroll(it.Beat);
 					it.ScrollSpeedView = scrollSpeedToView(it.ScrollSpeed);
 					it.Tail.ScrollSpeed = timeline.GetScroll(it.Tail.Beat);
 					it.Tail.ScrollSpeedView = scrollSpeedToView(it.Tail.ScrollSpeed);
 				}
+				const auto& it = playbackScrolls ? scrollOverride : cachedNote;
 				const f32 slideYOffset = slidingNote ? (branchSlidePosition - static_cast<f32>(EnumToIndex(noteBranch))) * GameLaneSlice.Content : 0.0f;
-				if (IsTestPlaying)
-				{
-					const TestPlayInterval<Time> selectedRange = GetTestPlaySelectedRange(context);
-					const TestPlayInterval<Time> interval = !isPlayback && selectedRange.IsValid() ? selectedRange : GetTestPlayInterval(context);
-					if (!interval.Contains(it.Time)) return;
-				}
-				vec2 laneHeadOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-				laneHeadOrig.y += slideYOffset;
+				if (IsTestPlaying && !testPlayNoteInterval.Contains(it.Time)) return;
+				const b8 canCullRegularNote = !IsTestPlaying && !doBoxSelectThisFrame && !it.OriginalNote->IsSelected
+					&& IsRegularNote(it.OriginalNote->Type) && cursorTimeOrAnimated < it.Time;
+				if (canCullRegularNote && !(cursorTimeOrAnimated >= cachedNote.HeadPosition.SuddenShowTime)) return;
+				auto headPosition = GetCachedGameNotePosition(Camera, it, cachedNote.HeadPosition, hitCirclePosLane,
+					cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+				headPosition.Original.y += slideYOffset;
+				headPosition.Moved.y += slideYOffset;
+				if (canCullRegularNote && (headPosition.Moved.x < visibleNoteMinX || headPosition.Moved.x > visibleNoteMaxX)) return;
+				const vec2 laneHeadOrig = headPosition.Original;
 				if (IsTestPlaying && !isPlayback && IsComboNote(it.OriginalNote->Type))
 				{
 					const auto record = context.TestPlayJudgements.find(it.OriginalNote);
@@ -2149,8 +2431,14 @@ namespace PeepoDrumKit
 						else ImGui::SetTooltip("%s (%s)", label, UI_Str("TEST_PLAY_MISSED"));
 					}
 				}
-				vec2 laneTailOrig = Camera.GetNoteCoordinatesLane(hitCirclePosLane, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-				laneTailOrig.y += slideYOffset;
+				auto tailPosition = headPosition;
+				if (it.Beat != it.Tail.Beat)
+				{
+					tailPosition = GetCachedGameNotePosition(Camera, it.Tail, cachedNote.TailPosition, hitCirclePosLane,
+						cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
+					tailPosition.Original.y += slideYOffset;
+					tailPosition.Moved.y += slideYOffset;
+				}
 				if (IsTestPlaying && !isPlayback && IsComboNote(it.OriginalNote->Type))
 				{
 					const auto record = context.TestPlayJudgements.find(it.OriginalNote);
@@ -2186,35 +2474,11 @@ namespace PeepoDrumKit
 					timeSinceHeadHit = (state->Judgement > 0 && state->Judgement < 4) ? TimeSinceNoteHit(state->HitTime, cursorTimeOrAnimated) : Time::FromSec(-1.0);
 				const Time timeSinceTailHit = TimeSinceNoteHit(it.Tail.Time, cursorTimeOrAnimated);
 
-				// sudden move
-				Time positionTime = cursorTimeOrAnimated;
-				f64 positionHBScrollBeat = cursorHBScrollBeatOrAnimated;
-				Time positionTimeEnd = cursorTimeOrAnimated;
-				f64 positionHBScrollBeatEnd = cursorHBScrollBeatOrAnimated;
-				Time suddenMoveOffsetHead = Time::FromMS(std::trunc(it.Sudden.MovementOffset.ToMS())); // TJAP3 behavior
-				Time suddenMoveOffsetTail = Time::FromMS(std::trunc(it.Tail.Sudden.MovementOffset.ToMS())); // TJAP3 behavior
-				Time suddenMoveTimeHead = it.Time - suddenMoveOffsetHead;
-				Time suddenMoveTimeTail = it.Tail.Time - suddenMoveOffsetTail;
-				b8 isPreMoveHead = !(cursorTimeOrAnimated >= suddenMoveTimeHead);
-				b8 isPreMoveTail = !(cursorTimeOrAnimated >= suddenMoveTimeTail);
-				if (isPreMoveHead) {
-					positionTime = suddenMoveTimeHead;
-					positionHBScrollBeat = Camera.GetCursorHBScrollBeatTick(tempoChanges.ConvertTimeToBeatWithHint(positionTime, it.Beat, true), positionTime, tempoChanges);
-				}
-				if (isPreMoveTail) {
-					positionTimeEnd = suddenMoveTimeTail;
-					positionHBScrollBeatEnd = Camera.GetCursorHBScrollBeatTick(tempoChanges.ConvertTimeToBeatWithHint(positionTimeEnd, it.Tail.Beat, true), positionTimeEnd, tempoChanges);
-				}
-				vec2 laneHeadMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTime, positionHBScrollBeat, it.Time, it.Beat, it.Tempo, it.ScrollSpeedView, it.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-				vec2 laneTailMove = Camera.GetNoteCoordinatesLane(hitCirclePosLane, positionTimeEnd, positionHBScrollBeatEnd, it.Tail.Time, it.Tail.Beat, it.Tail.Tempo, it.Tail.ScrollSpeedView, it.Tail.ScrollType, pxWorldPer4Beats, tempoChanges, jposScrollChanges);
-
-				// TJAP3 behavior
-				laneHeadMove.y = laneHeadOrig.y;
-				laneTailMove.y = laneTailOrig.y;
+				const vec2 laneHeadMove = headPosition.Moved, laneTailMove = tailPosition.Moved;
 
 				// sudden show
-				const Time suddenShowTimeHead = it.Time - it.Sudden.AppearanceOffset;
-				const Time suddenShowTimeTail = it.Tail.Time - it.Tail.Sudden.AppearanceOffset;
+				const Time suddenShowTimeHead = cachedNote.HeadPosition.SuddenShowTime;
+				const Time suddenShowTimeTail = cachedNote.TailPosition.SuddenShowTime;
 				b8 isVisibleHead = (cursorTimeOrAnimated >= suddenShowTimeHead);
 				b8 isVisibleTail = (cursorTimeOrAnimated >= suddenShowTimeTail);
 				b8 isVisibleBody = true;
@@ -2303,15 +2567,15 @@ namespace PeepoDrumKit
 			if (branchSliding || videoRoute)
 			{
 				for (BranchType layer = BranchType::Normal; layer < BranchType::Count; IncrementEnum(layer))
-					ForEachNoteOnNoteLane(*course, layer, scrollSpeedToView, [&](const ForEachNoteLaneData& it) { drawTestPlayNote(it, layer); });
+					for (const auto& note : GetCachedNoteLaneData(context, *course, layer)) drawTestPlayNote(note, layer);
 			}
 			else
 			{
-				ForEachNoteOnNoteLane(*course, branch, scrollSpeedToView, [&](const ForEachNoteLaneData& it) { drawTestPlayNote(it, branch); });
+				for (const auto& note : GetCachedNoteLaneData(context, *course, branch)) drawTestPlayNote(note, branch);
 				if (autoBranchLane && TestPlayVisualBranch != branch && TestPlayVisualBranch != BranchType::Normal)
-					ForEachNoteOnNoteLane(*course, TestPlayVisualBranch, scrollSpeedToView, [&](const ForEachNoteLaneData& it) { drawTestPlayNote(it, TestPlayVisualBranch); });
+					for (const auto& note : GetCachedNoteLaneData(context, *course, TestPlayVisualBranch)) drawTestPlayNote(note, TestPlayVisualBranch);
 				if (autoBranchLane && branch != BranchType::Normal)
-					ForEachNoteOnNoteLane(*course, BranchType::Normal, scrollSpeedToView, [&](const ForEachNoteLaneData& it) { drawTestPlayNote(it, BranchType::Normal); });
+					for (const auto& note : GetCachedNoteLaneData(context, *course, BranchType::Normal)) drawTestPlayNote(note, BranchType::Normal);
 			}
 
 			if (!barLinesBehindNotes)
@@ -2343,11 +2607,11 @@ namespace PeepoDrumKit
 				if (IsLongNote(it->OriginalNote->Type))
 				{
 					i32 videoHitCount = 0, videoTotalHits = 0;
-					if (videoRoute) ForEachVideoRollHit(*course, *it->OriginalNote, rollsPerSecond, [&](Time time, b8)
+					if (videoRoute)
 					{
-						++videoTotalHits;
-						if (time <= cursorTimeOrAnimated) ++videoHitCount;
-					});
+						const auto hits = GetVideoPreviewRollHitCounts(*course, *it->OriginalNote, rollsPerSecond, cursorTimeOrAnimated);
+						videoTotalHits = hits.Total; videoHitCount = hits.Current;
+					}
 					if (IsBalloonNote(it->OriginalNote->Type))
 					{
 						if (videoRoute && it->OriginalNote->BalloonPopCount > 0 && videoHitCount >= it->OriginalNote->BalloonPopCount) continue;
@@ -2375,6 +2639,8 @@ namespace PeepoDrumKit
 					{
 						const Time rollDuration = it->Tail.Time - it->Time;
 						const i32 maxHitCount = videoRoute ? videoTotalHits - 1 : static_cast<i32>(Floor(rollDuration.ToSec() * rollsPerSecond));
+						const i32 hitCount = Max(maxHitCount + 1, 0);
+						const auto getHitTime = [&](i32 index) { return it->Time + drumrollHitInterval * index; };
 
 						i32 drumrollHitsSoFar = 0;
 						if (timeSinceHit >= Time::Zero())
@@ -2382,12 +2648,7 @@ namespace PeepoDrumKit
 							if (videoRoute) drumrollHitsSoFar = videoHitCount;
 							else if (IsTestPlaying)
 								drumrollHitsSoFar = longState ? longState->HitCount : 0;
-							else for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
-							{
-								const Time subHitTime = it->Time + (drumrollHitInterval * iHit);
-								if (subHitTime <= cursorTimeOrAnimated)
-									drumrollHitsSoFar++;
-							}
+							else drumrollHitsSoFar = FindRollHitIndex(hitCount, cursorTimeOrAnimated, getHitTime, true);
 						}
 
 						const f32 hitPercentage = ConvertRangeClampOutput(0.0f, static_cast<f32>(ClampBot(maxHitCount, 4)), 0.0f, 1.0f, static_cast<f32>(drumrollHitsSoFar));
@@ -2400,7 +2661,10 @@ namespace PeepoDrumKit
 
 						if (timeSinceHit >= Time::Zero() && !IsTestPlaying)
 						{
-							for (i32 iHit = maxHitCount; iHit >= 0; iHit--)
+							const auto relativeHitTime = [&](i32 index) { return getHitTime(index) - cursorTimeOrAnimated; };
+							const i32 firstHit = FindRollHitIndex(hitCount, -GameNoteHitAnimationDuration, relativeHitTime);
+							const i32 lastHit = FindRollHitIndex(hitCount, Time::Zero(), relativeHitTime);
+							for (i32 iHit = lastHit - 1; iHit >= firstHit; iHit--)
 							{
 								const Time subHitTime = it->Time + (drumrollHitInterval * iHit);
 								const Time timeSinceSubHit = TimeSinceNoteHit(subHitTime, cursorTimeOrAnimated);
@@ -2459,7 +2723,7 @@ namespace PeepoDrumKit
 						case BoxSelectionAction::Sub: { if (isInsideSelectionBox) isSelected = false; } break;
 						case BoxSelectionAction::XOR: { isSelected ^= isInsideSelectionBox; } break;
 						}
-						it->OriginalNote->IsSelected = isSelected;
+						if (it->OriginalNote->IsSelected != isSelected) { it->OriginalNote->IsSelected = isSelected; ++course->SelectionRevision; }
 					}
 
 					if (it->OriginalNote->IsSelected || *Settings.General.GamePreviewShowUnselectedNoteTooltips) {
@@ -2720,7 +2984,8 @@ namespace PeepoDrumKit
 			const std::string infoLines[] = { splitInfo ? laneInfo[0] + " /" : rightInfo, splitInfo ? laneInfo[1] : std::string{} };
 			const f32 infoWidth = VideoTextWidth(FontMain, infoFontSize, rightInfo);
 			const std::string_view title = context.Chart.ChartTitle;
-			const std::string_view subtitle = VideoShowSubtitle ? std::string_view(context.Chart.ChartSubtitle) : std::string_view{};
+			std::string_view subtitle = VideoShowSubtitle ? std::string_view(context.Chart.ChartSubtitle) : std::string_view{};
+			if (subtitle.substr(0, 2) == "--") subtitle.remove_prefix(2);
 			std::string combinedTitle(title);
 			if (!subtitle.empty())
 			{
