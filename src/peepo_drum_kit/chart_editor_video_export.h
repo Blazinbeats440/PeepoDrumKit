@@ -160,6 +160,24 @@ namespace PeepoDrumKit
 		f32 SongVolume = 1.0f, DrumVolume = 1.0f, BalloonVolume = 1.0f;
 	};
 
+	struct VideoExportAudioRenderState
+	{
+		const VideoExportSoundEvent* TimelineEvents = nullptr;
+		size_t EventCount = SIZE_MAX, NextEvent = 0;
+		Time ChartStartTime = Time::Zero();
+		i64 NextOutputFrame = -1, MaxSoundFrames = 0;
+		std::array<i64, EnumCount<SoundEffectType>> SourceFrameCounts = {};
+		std::vector<i64> EventFrames;
+		std::vector<size_t> OrderedEvents, ActiveEvents;
+		std::vector<f32> MixedSamples;
+
+		void Reset() { EventCount = SIZE_MAX; NextOutputFrame = -1; }
+		void Prepare(const VideoExportAudioSources& sources, const VideoExportSoundTimeline& sounds,
+			Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount);
+	};
+
 	void RenderVideoExportAudio(const VideoExportAudioSources& sources, const VideoExportSoundTimeline& sounds,
-		Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount, std::vector<i16>& outInterleavedStereo);
+		Time chartStartTime, i64 firstOutputFrame, u32 outputFrameCount, std::vector<i16>& outInterleavedStereo,
+		VideoExportAudioRenderState* renderState = nullptr);
+	b8 RunVideoAudioSelfTest(std::string& error);
 }

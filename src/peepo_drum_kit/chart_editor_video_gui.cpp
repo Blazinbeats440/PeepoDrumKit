@@ -3,6 +3,8 @@
 #endif
 #include "chart_editor.h"
 #include "core_io.h"
+#include "imgui/backend/imgui_impl_d3d11.h"
+#include "imgui/backend/imgui_impl_win32.h"
 #include <cmath>
 #include <filesystem>
 #include <Windows.h>
@@ -228,9 +230,9 @@ namespace PeepoDrumKit
 		return {};
 	}
 
-	static b8 DiscardTemporaryVideo(VideoExportWriter& writer, std::string_view path)
+	static b8 DiscardTemporaryVideo(VideoExportAsyncWriter& writer, std::string_view path)
 	{
-		writer.Finish();
+		writer.Cancel(); writer.Wait();
 		if (path.empty()) return true;
 		std::error_code error;
 		std::filesystem::remove(std::filesystem::u8path(path), error);
@@ -289,6 +291,7 @@ namespace PeepoDrumKit
 			exportData.BackgroundInitialized = true;
 		}
 		preview.VideoExportDrawList = nullptr;
+		preview.VideoExportDrawListTarget = nullptr;
 		preview.VideoExportPixelAligned = false;
 		preview.VideoExportResolutionWidth = VideoResolutionPresets[exportData.Resolution].Width;
 		preview.VideoExportBranch = VideoBranchForCourse(*context.ChartSelectedCourse,
@@ -316,6 +319,7 @@ namespace PeepoDrumKit
 
 	void ChartEditor::DrawVideoExportWindow()
 	{
+		if (GetIsVideoExportActive()) { DrawVideoExportProgress(); return; }
 		auto& exportData = videoExport;
 		if (!exportData.ShowWindow) return;
 		exportData.FramePrepared = false;
@@ -792,7 +796,9 @@ namespace PeepoDrumKit
 			if (!song) { Gui::TextUnformatted(UI_Str("VIDEO_EXPORT_NO_SONG")); Gui::SameLine(); }
 			const f32 startWidth = std::max(GuiScale(120.0f), Gui::CalcTextSize(UI_Str("VIDEO_EXPORT_START")).x + Gui::GetStyle().FramePadding.x * 2.0f);
 			Gui::SetCursorPosX(Gui::GetCursorPosX() + std::max(0.0f, Gui::GetContentRegionAvail().x - startWidth));
-			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady || !movieFrameReady);
+			Gui::BeginDisabled(!song || selectedEnd <= selectedStart || !exportData.RouteReady || !movieFrameReady || context.TestPlayActive ||
+				loadSongFuture.valid() || loadJacketFuture.valid() || importChartFuture.valid() || context.Gfx.IsAsyncLoading() || context.SfxVoicePool.LoadSoundEffectFuture.valid() ||
+				screenshotWindowRequested || screenshotPreviewRequested || screenshotMovieWaiting);
 			if (Gui::Button(UI_Str("VIDEO_EXPORT_START"), vec2(startWidth, 0.0f)))
 			{
 				exportData.OutputBasePath.clear();
@@ -825,6 +831,8 @@ namespace PeepoDrumKit
 					}
 					else
 					{
+						context.Undo.FlushAndExecuteEndOfFrameCommands();
+						Gui::ClearActiveID();
 						exportData.Course = context.ChartSelectedCourse;
 						exportData.SongSource = context.SongSource;
 						exportData.ChartChanges = context.Undo.NumberOfChangesMade;
@@ -837,6 +845,7 @@ namespace PeepoDrumKit
 						exportData.Preparing = true;
 						exportData.Finalizing = false;
 						exportData.FramePrepared = false;
+						exportData.CancelRequested = exportData.FinishRequested = exportData.FailureReported = exportData.PendingFrameReady = false;
 					}
 				}
 			}
@@ -857,13 +866,98 @@ namespace PeepoDrumKit
 		Gui::EndChild();
 	}
 
+	void ChartEditor::DrawVideoExportProgress()
+	{
+		auto& data = videoExport;
+		data.FramePrepared = false;
+		data.WorkerProgress = data.Writer.GetProgress();
+		Gui::SetNextWindowViewport(Gui::GetMainViewport()->ID);
+		const std::string title = std::string(UI_Str("VIDEO_EXPORT_WINDOW")) + "###VideoExportWindowHorizontal";
+		if (!Gui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
+		{
+			Gui::End();
+			return;
+		}
+		Gui::TextUnformatted(UI_Str("VIDEO_EXPORT_EDITOR_LOCKED"));
+		const vec2 available = Gui::GetContentRegionAvail();
+		const f32 previewHeight = std::max(72.0f, std::min(available.y - Gui::GetTextLineHeightWithSpacing() * 6.0f, available.x * 9.0f / 16.0f));
+		const vec2 previewSize(std::max(128.0f, previewHeight * 16.0f / 9.0f), previewHeight);
+		if (Gui::BeginChild("##ExportProgressPreview", previewSize, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+		{
+			const vec2 previewPosition = Gui::GetCursorScreenPos();
+			if (!data.CancelRequested && !data.FinishRequested && data.FrameIndex < data.FrameCount &&
+				data.WorkerProgress.Status == VideoExportWorkerStatus::Writing && ApplicationHost::GetAsyncDrawListCaptureStatus() == ApplicationHost::DrawListCaptureStatus::Ready)
+			{
+				auto& preview = data.Preview;
+				preview.VideoExportTime = data.StartTime + Time::FromFrames(static_cast<f64>(data.FrameIndex), data.FramesPerSecond);
+				if (preview.VideoUseBackgroundMovie) preview.UpdateBackgroundMovie(context, *preview.VideoExportTime, true);
+				if (!preview.VideoUseBackgroundMovie || preview.MovieStatus != BackgroundMovieStatus::Pending)
+				{
+					if (!data.RenderDrawList) data.RenderDrawList = IM_NEW(ImDrawList)(Gui::GetDrawListSharedData());
+					data.RenderDrawList->_ResetForNewFrame();
+					data.RenderDrawList->PushTexture(Gui::GetWindowDrawList()->_CmdHeader.TexRef);
+					data.RenderDrawList->PushClipRect(Gui::GetCurrentWindow()->ClipRect.Min, Gui::GetCurrentWindow()->ClipRect.Max);
+					preview.VideoExportDrawListTarget = data.RenderDrawList;
+					preview.DrawGui(context, *preview.VideoExportTime);
+					preview.VideoExportDrawListTarget = nullptr;
+					data.RenderDrawList->ChannelsMerge();
+					data.RenderDrawList->PopClipRect(); data.RenderDrawList->PopTexture(); data.RenderDrawList->_PopUnusedDrawCmd();
+					data.FramePrepared = !preview.VideoUseBackgroundMovie || preview.MovieStatus == BackgroundMovieStatus::Ready || preview.MovieStatus == BackgroundMovieStatus::Inactive;
+				}
+			}
+			Gui::SetCursorScreenPos(previewPosition);
+			const auto texture = ApplicationHost::GetAsyncDrawListCapturePreviewTexture();
+			if (texture) Gui::Image(ImTextureRef(static_cast<ImTextureID>(texture)), previewSize);
+			else Gui::Dummy(previewSize);
+		}
+		Gui::EndChild();
+		Gui::TextUnformatted(data.CancelRequested ? UI_Str("VIDEO_EXPORT_CANCELING") : data.Finalizing ? UI_Str("VIDEO_EXPORT_FINALIZING") :
+			data.WorkerProgress.Status == VideoExportWorkerStatus::Starting || data.Preparing ? UI_Str("VIDEO_EXPORT_PREPARING") : UI_Str("VIDEO_EXPORT_WRITING"));
+		Gui::ProgressBar(data.FrameCount > 0 ? static_cast<f32>(data.WorkerProgress.WrittenFrames) / data.FrameCount : 0.0f);
+		Gui::Text("%s: %lld / %lld", UI_Str("VIDEO_EXPORT_FRAMES"), data.WorkerProgress.WrittenFrames, data.FrameCount);
+		char elapsed[32]; FormatVideoExportTime(elapsed, data.ExportStopwatch.GetElapsed().ToSec());
+		Gui::SameLine(); Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_ELAPSED"), elapsed);
+		if (data.SecondsPerFrame > 0.0 && !data.Finalizing)
+		{
+			char remaining[32]; FormatVideoExportTime(remaining, data.SecondsPerFrame * (data.FrameCount - data.WorkerProgress.WrittenFrames));
+			Gui::Text("%s: %s", UI_Str("VIDEO_EXPORT_REMAINING"), remaining);
+		}
+		Gui::BeginDisabled(data.CancelRequested);
+		if (Gui::Button(UI_Str("VIDEO_EXPORT_CANCEL")) || Gui::IsAnyPressed(*Settings.Input.Dialog_Cancel, false))
+		{
+			data.CancelRequested = true;
+			data.Writer.Cancel();
+		}
+		Gui::EndDisabled();
+		Gui::End();
+	}
+
+	void ChartEditor::StopVideoExport()
+	{
+		const b8 wasActive = GetIsVideoExportActive();
+		videoExport.Writer.Cancel(); videoExport.Writer.Wait();
+		if (wasActive && !videoExport.TemporaryPath.empty()) DiscardTemporaryVideo(videoExport.Writer, videoExport.TemporaryPath);
+		ApplicationHost::ReleaseDrawListCaptureResources();
+	}
+
 	void ChartEditor::OnAfterRender()
 	{
-		SavePendingScreenshots();
+		if (!GetIsVideoExportActive()) SavePendingScreenshots();
 		auto& exportData = videoExport;
+		defer {
+			ApplicationHost::GlobalState.UnthrottledRendering = GetIsVideoExportActive();
+			ApplicationHost::GlobalState.ThrottleWindowPresentation = GetIsVideoExportActive();
+			if (!GetIsVideoExportActive()) ApplicationHost::ReleaseDrawListCaptureResources();
+		};
 		if (exportData.Preparing)
 		{
 			exportData.Preparing = false;
+			if (exportData.CancelRequested)
+			{
+				DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath);
+				exportData.Status = UI_Str("VIDEO_EXPORT_STOPPED");
+				return;
+			}
 			if (context.ChartSelectedCourse != exportData.Course || context.SongSource != exportData.SongSource ||
 				context.Undo.NumberOfChangesMade != exportData.ChartChanges)
 			{
@@ -872,14 +966,8 @@ namespace PeepoDrumKit
 			}
 			const auto& resolution = VideoResolutionPresets[exportData.Resolution];
 			const u32 bitrate = resolution.Bitrate * std::max(exportData.FramesPerSecond, 30) / 60;
-			if (!exportData.Writer.Start(exportData.TemporaryPath, resolution.Width, resolution.Height, exportData.FramesPerSecond, bitrate, exportData.AudioBitRate))
-			{
-				exportData.ErrorDetails = std::string(exportData.Writer.GetError());
-				if (!DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath))
-					exportData.ErrorDetails += "\n" + std::string(UI_Str("VIDEO_EXPORT_TEMP_LEFT")) + " " + exportData.TemporaryPath;
-				exportData.Status = UI_Str("VIDEO_EXPORT_START_FAILED");
-				return;
-			}
+			exportData.Writer.Start(exportData.TemporaryPath, resolution.Width, resolution.Height, exportData.FramesPerSecond, bitrate, exportData.AudioBitRate, *Settings.General.VideoExportHardwareEncoding);
+			ApplicationHost::BeginAsyncDrawListCapture();
 			context.SetIsPlayback(false);
 			exportData.LastFrameElapsedSeconds = exportData.SecondsPerFrame = 0.0;
 			exportData.ExportStopwatch.Restart();
@@ -896,6 +984,29 @@ namespace PeepoDrumKit
 			}
 			std::sort(exportData.Sounds.Events.begin(), exportData.Sounds.Events.end(),
 				[](const auto& left, const auto& right) { return left.HitTime < right.HitTime; });
+			exportData.AudioRenderState.Reset();
+			exportData.ReadbackFrames = exportData.LastWrittenFrames = 0;
+			exportData.PendingFrame = {};
+			auto& sources = exportData.AudioSources;
+			sources = {};
+			sources.Song = context.SongSource == Audio::SourceHandle::Invalid ? nullptr : Audio::Engine.GetSourceSampleBufferView(context.SongSource);
+			for (SoundEffectType type : { SoundEffectType::TaikoDon, SoundEffectType::TaikoKa, SoundEffectType::Balloon })
+			{
+				const auto source = context.SfxVoicePool.TryGetSourceForType(type);
+				if (source != Audio::SourceHandle::Invalid) sources.SoundEffects[EnumToIndex(type)] = Audio::Engine.GetSourceSampleBufferView(source);
+			}
+			sources.SongOffset = context.Chart.SongOffset;
+			sources.SongVolume = exportData.SongVolume * context.Chart.SongVolume;
+			sources.DrumVolume = exportData.DrumVolume * context.Chart.SoundEffectVolume;
+			sources.BalloonVolume = sources.DrumVolume * *Settings.Audio.BalloonVolume;
+			if (exportData.AudioFade)
+			{
+				sources.ContentStart = exportData.ContentStartTime; sources.ContentEnd = exportData.ContentEndTime;
+				sources.FadeInSeconds = exportData.LeadInSeconds; sources.FadeOutSeconds = exportData.TailSeconds;
+			}
+			exportData.Preview.VideoFadeContentStart = exportData.ContentStartTime;
+			exportData.Preview.VideoFadeContentEnd = exportData.ContentEndTime;
+			exportData.Preview.VideoFadeFrameSeconds = 1.0f / exportData.FramesPerSecond;
 			exportData.Exporting = true;
 			exportData.Status.clear();
 			return;
@@ -903,19 +1014,27 @@ namespace PeepoDrumKit
 		if (!exportData.Exporting) return;
 		const auto failExport = [&](cstr message, std::string details)
 		{
-			exportData.Exporting = false;
-			exportData.Finalizing = false;
-			exportData.ExportStopwatch.Stop();
+			exportData.FailureReported = exportData.CancelRequested = true;
 			exportData.Status = message;
 			exportData.ErrorDetails = std::move(details);
-			if (!DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath))
-				exportData.ErrorDetails += "\n" + std::string(UI_Str("VIDEO_EXPORT_TEMP_LEFT")) + " " + exportData.TemporaryPath;
+			exportData.Writer.Cancel();
 		};
-		if (exportData.Finalizing)
+		exportData.WorkerProgress = exportData.Writer.GetProgress();
+		const auto& progress = exportData.WorkerProgress;
+		if (progress.Status == VideoExportWorkerStatus::Finished || progress.Status == VideoExportWorkerStatus::Canceled || progress.Status == VideoExportWorkerStatus::Failed)
 		{
-			if (!exportData.Writer.Finish())
+			exportData.Writer.Wait();
+			exportData.Preparing = exportData.Exporting = exportData.Finalizing = false;
+			exportData.ExportStopwatch.Stop();
+			if (progress.Status != VideoExportWorkerStatus::Finished || exportData.CancelRequested)
 			{
-				failExport(UI_Str("VIDEO_EXPORT_FINALIZE_FAILED"), std::string(exportData.Writer.GetError()));
+				if (!exportData.FailureReported)
+				{
+					exportData.Status = exportData.CancelRequested ? UI_Str("VIDEO_EXPORT_STOPPED") : UI_Str("VIDEO_EXPORT_WRITE_FAILED");
+					exportData.ErrorDetails = progress.Error;
+				}
+				if (!DiscardTemporaryVideo(exportData.Writer, exportData.TemporaryPath))
+					exportData.ErrorDetails += "\n" + std::string(UI_Str("VIDEO_EXPORT_TEMP_LEFT")) + " " + exportData.TemporaryPath;
 				return;
 			}
 			if (!CommitTemporaryVideo(exportData.TemporaryPath, exportData.OutputBasePath, exportData.OutputPath))
@@ -935,6 +1054,7 @@ namespace PeepoDrumKit
 			exportData.Status = UI_Str("VIDEO_EXPORT_FINISHED");
 			return;
 		}
+		if (exportData.CancelRequested || progress.Status != VideoExportWorkerStatus::Writing || exportData.FinishRequested) return;
 		if (context.ChartSelectedCourse != exportData.Course || context.SongSource != exportData.SongSource ||
 			context.Undo.NumberOfChangesMade != exportData.ChartChanges)
 		{
@@ -946,52 +1066,184 @@ namespace PeepoDrumKit
 			failExport(UI_Str("BACKGROUND_MOVIE_FAILED"), exportData.Preview.MovieError);
 			return;
 		}
-		if (!exportData.FramePrepared) return;
-		const auto& resolution = VideoResolutionPresets[exportData.Resolution];
-		const u32 width = resolution.Width;
-		const u32 height = resolution.Height;
-		if (!ApplicationHost::CaptureDrawListToBGRA(exportData.Preview.VideoExportDrawList,
-			exportData.Preview.VideoExportViewport, width, height, exportData.Pixels))
+		if (ApplicationHost::GetAsyncDrawListCaptureStatus() == ApplicationHost::DrawListCaptureStatus::Failed)
 		{
 			failExport(UI_Str("VIDEO_EXPORT_CAPTURE_FAILED"), {});
 			return;
 		}
-		const i64 firstAudioFrame = exportData.FrameIndex * Audio::Engine.OutputSampleRate / exportData.FramesPerSecond;
-		const i64 lastAudioFrame = (exportData.FrameIndex + 1) * Audio::Engine.OutputSampleRate / exportData.FramesPerSecond;
-		VideoExportAudioSources sources;
-		sources.Song = Audio::Engine.GetSourceSampleBufferView(context.SongSource);
-		for (SoundEffectType type : { SoundEffectType::TaikoDon, SoundEffectType::TaikoKa, SoundEffectType::Balloon })
+		if (exportData.PendingFrameReady && exportData.Writer.TrySubmit(exportData.PendingFrame)) exportData.PendingFrameReady = false;
+		if (!exportData.PendingFrameReady && exportData.ReadbackFrames < exportData.FrameIndex && progress.PendingFrames < VideoExportAsyncWriter::MaxPendingFrames)
 		{
-			const Audio::SourceHandle source = context.SfxVoicePool.TryGetSourceForType(type);
-			if (source != Audio::SourceHandle::Invalid)
-				sources.SoundEffects[EnumToIndex(type)] = Audio::Engine.GetSourceSampleBufferView(source);
+			const auto status = ApplicationHost::PollAsyncDrawListCapture(exportData.PendingFrame.Pixels, exportData.PendingFrame.Index);
+			if (status == ApplicationHost::DrawListCaptureStatus::Failed) { failExport(UI_Str("VIDEO_EXPORT_CAPTURE_FAILED"), {}); return; }
+			if (status == ApplicationHost::DrawListCaptureStatus::Ready)
+			{
+				if (exportData.PendingFrame.Index != exportData.ReadbackFrames++) { failExport(UI_Str("VIDEO_EXPORT_CAPTURE_FAILED"), "Unexpected frame order"); return; }
+				const i64 index = exportData.PendingFrame.Index;
+				const i64 firstAudio = index * Audio::Engine.OutputSampleRate / exportData.FramesPerSecond;
+				const i64 lastAudio = (index + 1) * Audio::Engine.OutputSampleRate / exportData.FramesPerSecond;
+				exportData.PendingFrame.FirstAudioSample = firstAudio;
+				RenderVideoExportAudio(exportData.AudioSources, exportData.Sounds, exportData.StartTime, firstAudio,
+					static_cast<u32>(lastAudio - firstAudio), exportData.PendingFrame.AudioSamples, &exportData.AudioRenderState);
+				exportData.PendingFrameReady = !exportData.Writer.TrySubmit(exportData.PendingFrame);
+			}
 		}
-		sources.SongOffset = context.Chart.SongOffset;
-		sources.SongVolume = exportData.SongVolume * context.Chart.SongVolume;
-		sources.DrumVolume = exportData.DrumVolume * context.Chart.SoundEffectVolume;
-		sources.BalloonVolume = sources.DrumVolume * *Settings.Audio.BalloonVolume;
-		if (exportData.AudioFade)
+		const auto& resolution = VideoResolutionPresets[exportData.Resolution];
+		if (exportData.FramePrepared && exportData.FrameIndex < exportData.FrameCount)
 		{
-			sources.ContentStart = exportData.ContentStartTime;
-			sources.ContentEnd = exportData.ContentEndTime;
-			sources.FadeInSeconds = exportData.LeadInSeconds;
-			sources.FadeOutSeconds = exportData.TailSeconds;
+			const auto status = ApplicationHost::QueueAsyncDrawListCapture(exportData.Preview.VideoExportDrawList, exportData.Preview.VideoExportViewport,
+				resolution.Width, resolution.Height, exportData.FrameIndex);
+			if (status == ApplicationHost::DrawListCaptureStatus::Failed) { failExport(UI_Str("VIDEO_EXPORT_CAPTURE_FAILED"), {}); return; }
+			if (status == ApplicationHost::DrawListCaptureStatus::Ready) ++exportData.FrameIndex;
 		}
-		RenderVideoExportAudio(sources, exportData.Sounds, exportData.StartTime, firstAudioFrame,
-			static_cast<u32>(lastAudioFrame - firstAudioFrame), exportData.AudioSamples);
-		if (!exportData.Writer.WriteVideoFrame(exportData.Pixels.data(), width * 4, exportData.FrameIndex) ||
-			!exportData.Writer.WriteAudioSamples(exportData.AudioSamples.data(), static_cast<u32>(lastAudioFrame - firstAudioFrame), firstAudioFrame))
+		exportData.WorkerProgress = exportData.Writer.GetProgress();
+		if (exportData.WorkerProgress.WrittenFrames > exportData.LastWrittenFrames)
 		{
-			failExport(UI_Str("VIDEO_EXPORT_WRITE_FAILED"), std::string(exportData.Writer.GetError()));
-			return;
+			const f64 elapsed = exportData.ExportStopwatch.GetElapsed().ToSec();
+			const f64 seconds = (elapsed - exportData.LastFrameElapsedSeconds) / (exportData.WorkerProgress.WrittenFrames - exportData.LastWrittenFrames);
+			exportData.SecondsPerFrame = exportData.SecondsPerFrame > 0.0 ? exportData.SecondsPerFrame * 0.85 + seconds * 0.15 : seconds;
+			exportData.LastFrameElapsedSeconds = elapsed; exportData.LastWrittenFrames = exportData.WorkerProgress.WrittenFrames;
 		}
-		const f64 elapsedSeconds = exportData.ExportStopwatch.GetElapsed().ToSec();
-		const f64 frameSeconds = elapsedSeconds - exportData.LastFrameElapsedSeconds;
-		if (frameSeconds > 0.0)
-			exportData.SecondsPerFrame = exportData.SecondsPerFrame > 0.0
-				? exportData.SecondsPerFrame * 0.85 + frameSeconds * 0.15 : frameSeconds;
-		exportData.LastFrameElapsedSeconds = elapsedSeconds;
-		if (++exportData.FrameIndex >= exportData.FrameCount)
+		if (exportData.WorkerProgress.SubmittedFrames == exportData.FrameCount)
+		{
+			exportData.Writer.Finish(); exportData.FinishRequested = true;
 			exportData.Finalizing = true;
+		}
+	}
+
+	b8 ChartEditor::RunVideoExportSelfTest(std::string& error)
+	{
+		error.clear();
+		const auto fail = [&](std::string message) { error = std::move(message); return false; };
+		const auto savedSettings = Settings_Mutable;
+		const auto savedPersistent = PersistentApp;
+		ImFont* savedFont = FontMain;
+		defer { Settings_Mutable = savedSettings; PersistentApp = savedPersistent; FontMain = savedFont; };
+		Settings_Mutable.Audio.OpenDeviceOnStartup = false;
+		Settings_Mutable.General.AutoPrefixChartSubtitle = true;
+		FontMain = Gui::GetIO().Fonts->Fonts[0];
+		Audio::Engine.ApplicationStartup();
+		defer { Audio::Engine.ApplicationShutdown(); };
+		ChartEditor editor;
+		auto& data = editor.videoExport;
+		auto& context = editor.context;
+		const ULONGLONG loadingDeadline = GetTickCount64() + 15000;
+		while (context.Gfx.IsAsyncLoading() || context.SfxVoicePool.LoadSoundEffectFuture.valid())
+		{
+			context.Gfx.UpdateAsyncLoading(); context.SfxVoicePool.UpdateAsyncLoading();
+			if (GetTickCount64() > loadingDeadline) return fail("Loading export assets timed out");
+			Sleep(1);
+		}
+		context.Chart.ChartTitle = "Export pipeline test";
+		context.Chart.ChartSubtitle = "Must remain unchanged";
+		Note don {}, ka {};
+		don.BeatTime = Beat::FromBeatsFraction(0.5); don.Type = NoteType::Don;
+		ka.BeatTime = Beat::FromBeats(1); ka.Type = NoteType::Ka;
+		context.ChartSelectedCourse->Notes_Normal.Sorted = { don, ka };
+		Audio::PCMSampleBuffer song;
+		song.SampleRate = Audio::Engine.OutputSampleRate; song.ChannelCount = 2; song.FrameCount = song.SampleRate;
+		song.InterleavedSamples = std::make_unique<i16[]>(song.FrameCount * 2);
+		for (u32 sample = 0; sample < song.FrameCount; ++sample)
+			song.InterleavedSamples[sample * 2] = song.InterleavedSamples[sample * 2 + 1] = static_cast<i16>(500 * std::sin(sample * 0.1));
+		context.SongSource = Audio::Engine.LoadSourceFromBufferMove("Export test song", std::move(song));
+		const auto* selectedCourse = context.ChartSelectedCourse;
+		const i32 revision = context.Undo.NumberOfChangesMade;
+		data.BackgroundInitialized = true; data.BackgroundSource = 0;
+		data.BackgroundColor = IM_COL32_BLACK; data.LaneBackgroundTransparency = 0.0f;
+		data.Resolution = 0; data.FramesPerSecond = 30;
+		data.LeadInSeconds = data.TailSeconds = 0.0f;
+		data.Course = context.ChartSelectedCourse; data.SongSource = context.SongSource; data.ChartChanges = revision;
+		data.StartTime = data.ContentStartTime = Time::Zero();
+		data.EndTime = data.ContentEndTime = Time::FromSec(1.0);
+		for (i32 lane = 0; lane < 2; ++lane)
+		{
+			auto& selection = data.Selections[lane];
+			selection.Route = BuildFixedVideoBranchRoute(*data.Course, BranchType::Normal);
+			selection.Lane.Course = data.Course; selection.Lane.Route = &selection.Route;
+			data.Preview.VideoExportLanes[lane] = &selection.Lane;
+		}
+		const std::string prefix = "build/video-pipeline-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
+		const auto begin = [&](i32 test)
+		{
+			data.FrameCount = 30; data.FrameIndex = 0;
+			data.OutputBasePath = prefix + "-" + std::to_string(test);
+			data.OutputPath.clear(); data.TemporaryPath = MakeTemporaryVideoPath(data.OutputBasePath);
+			data.Preparing = true; data.Exporting = data.Finalizing = data.Finished = false;
+			data.CancelRequested = data.FinishRequested = data.FailureReported = data.PendingFrameReady = false;
+			data.ErrorDetails.clear(); data.Status.clear();
+			data.Layout = test % 2 == 0 ? ChartGamePreview::VideoLayout::Original : ChartGamePreview::VideoLayout::Taiko;
+			data.Preview.VideoExportLaneCount = test == 2 || test == 3 ? 2 : 1;
+			editor.ConfigureVideoPreview(data.Preview);
+			data.Preview.VideoExportPixelAligned = true;
+			data.Preview.VideoFadeInSeconds = data.Preview.VideoFadeOutSeconds = 0.0f;
+		};
+		const auto step = [&](b8 injectInput)
+		{
+			ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
+			auto& io = Gui::GetIO(); io.DisplaySize = vec2(1280, 720);
+			io.AddKeyEvent(ImGuiMod_Ctrl, injectInput); io.AddKeyEvent(ImGuiKey_N, injectInput);
+			io.AddKeyEvent(ImGuiKey_Delete, injectInput); io.AddKeyEvent(ImGuiKey_Space, injectInput);
+			if (injectInput) ApplicationHost::GlobalState.FilePathsDroppedThisFrame = { "build/nonexistent-export-drop.tja" };
+			Gui::NewFrame(); Gui::PushFont(FontMain, 16.0f);
+			Gui::SetNextWindowPos(vec2(0, 0)); Gui::SetNextWindowSize(vec2(1000, 650));
+			editor.DrawGui();
+			Gui::PopFont(); Gui::Render(); editor.OnAfterRender();
+			ApplicationHost::GlobalState.FilePathsDroppedThisFrame.clear();
+		};
+		for (i32 test = 0; test < 8; ++test)
+		{
+			Settings_Mutable.General.VideoExportHardwareEncoding = test % 2 != 0;
+			begin(test);
+			if (test == 4) data.CancelRequested = true;
+			if (test == 7) data.TemporaryPath = prefix + "-missing-directory/output.mp4";
+			const ULONGLONG deadline = GetTickCount64() + 30000;
+			while (editor.GetIsVideoExportActive())
+			{
+				step((Gui::GetFrameCount() % 4) == 0);
+				if (data.FramePrepared && data.RenderDrawList->_Splitter._Count != 1) return fail("Export draw layers were not merged");
+				if (context.ChartSelectedCourse != selectedCourse || context.Undo.NumberOfChangesMade != revision ||
+					context.Chart.ChartSubtitle != "Must remain unchanged" || editor.importChartFuture.valid()) return fail("Export allowed chart editing");
+				if (editor.GetIsVideoExportActive() && !data.CancelRequested && ((test == 5 && data.FrameIndex >= 3) || (test == 6 && data.FinishRequested)))
+				{
+					if (editor.OnWindowCloseRequest() != ApplicationHost::CloseResponse::SupressExit) return fail("Closing did not wait for export cancellation");
+					editor.tryToCloseApplicationOnNextFrame = false;
+				}
+				if (GetTickCount64() > deadline) return fail("Export pipeline timed out: " + data.ErrorDetails);
+				Sleep(1);
+			}
+			if (test < 4)
+			{
+				if (!data.Finished || !File::Exists(data.OutputPath) || data.FrameIndex != 30 || data.ReadbackFrames != 30 || data.WorkerProgress.WrittenFrames != 30 ||
+					!data.AudioSources.Song || data.Sounds.Events.empty())
+					return fail("Export pipeline did not complete: " + data.ErrorDetails);
+				BackgroundMovieReader reader;
+				BackgroundMovieFrame frame;
+				reader.Request(data.OutputPath, Time::Zero());
+				BackgroundMovieStatus status;
+				const ULONGLONG decodeDeadline = GetTickCount64() + 10000;
+				while ((status = reader.Poll(frame)) == BackgroundMovieStatus::Pending && GetTickCount64() < decodeDeadline) Sleep(1);
+				if (status != BackgroundMovieStatus::Ready || frame.Size != ivec2(640, 360) || frame.Pixels.size() != 640 * 360 * 4)
+					return fail("Could not decode exported chart: " + reader.GetError());
+				size_t redPixels = 0, bluePixels = 0, footerPixels = 0;
+				for (size_t pixel = 0; pixel < frame.Pixels.size(); pixel += 4)
+				{
+					const i32 blue = frame.Pixels[pixel], green = frame.Pixels[pixel + 1], red = frame.Pixels[pixel + 2];
+					redPixels += red > 180 && green < 110 && blue < 110;
+					bluePixels += blue > 140 && green > 140 && red < 130;
+					footerPixels += std::abs(red - 132) < 8 && std::abs(green - 132) < 8 && std::abs(blue - 132) < 8;
+				}
+				std::string screenshotPath;
+				if (!SaveScreenshotPNG(frame.Size.x, frame.Size.y, frame.Pixels, screenshotPath)) return fail("Could not save the exported chart verification image");
+				std::printf("Exported chart verification case %d: %s\n", test, screenshotPath.c_str());
+				if (redPixels < 50 || bluePixels < 50 || footerPixels < 640)
+					return fail("Exported chart is missing notes or lane (case " + std::to_string(test) + ", red " + std::to_string(redPixels) +
+						", blue " + std::to_string(bluePixels) + ", lane " + std::to_string(footerPixels) + ")");
+			}
+			else if (data.Finished || File::Exists(data.TemporaryPath)) return fail("Canceled export retained its temporary video");
+			if (test == 7 && data.ErrorDetails.empty()) return fail("Export startup failure was not reported");
+		}
+		Gui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false); Gui::GetIO().AddKeyEvent(ImGuiKey_N, false);
+		Gui::GetIO().AddKeyEvent(ImGuiKey_Delete, false); Gui::GetIO().AddKeyEvent(ImGuiKey_Space, false);
+		return true;
 	}
 }

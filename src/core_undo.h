@@ -52,6 +52,7 @@ namespace Undo
 		std::vector<std::unique_ptr<Command>> CommandsToExecutedAtEndOfFrame;
 		b8 HasPendingChanges = false;
 		i32 NumberOfChangesMade = 0;
+		u64 Revision = 0;
 
 		i32 NumberOfCommandsToDisallowMergesFor = 0;
 		Time CommandMergeTimeThreshold = Time::FromSec(2.0);
@@ -82,7 +83,7 @@ namespace Undo
 
 		inline b8 CanUndo() const { return !UndoStack.empty(); }
 		inline b8 CanRedo() const { return !RedoStack.empty(); }
-		inline void NotifyChangesWereMade() { HasPendingChanges = true; NumberOfChangesMade++; }
+		inline void NotifyChangesWereMade() { HasPendingChanges = true; NumberOfChangesMade++; Revision++; }
 		inline void ClearChangesWereMade() { HasPendingChanges = false; NumberOfChangesMade = 0; }
 
 		inline void DisallowMergeForLastCommand() { NumberOfCommandsToDisallowMergesFor = 1; }

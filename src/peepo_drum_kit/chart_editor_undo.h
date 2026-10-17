@@ -163,6 +163,12 @@ namespace PeepoDrumKit
 		template <typename TEvent>
 		static void RefreshChart(ChartCourse* Course, ChartCourseListType<TEvent>* Map)
 		{
+			if constexpr (expect_type_v<TEvent, Note>)
+			{
+				if (Map != nullptr) Map->NotifyChanged();
+				else for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch)) Course->GetNotes(branch).NotifyChanged();
+			}
+			else GetEventList<TempoMapMemberPointer<TEvent>>(*Map).NotifyChanged();
 			if constexpr (expect_type_v<TEvent, TempoChange>) Map->RebuildAccelerationStructure();
 			if constexpr (TempoMapMemberPointer<TEvent> != nullptr) Course->RecalculateNoteStates();
 			else if constexpr (expect_type_v<TEvent, Note>) { Course->RecalculateNoteStates(); }

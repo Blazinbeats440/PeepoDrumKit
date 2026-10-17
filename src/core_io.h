@@ -106,6 +106,7 @@ namespace Shell
 	// std::string ResolveFileLink(std::string_view lnkFilePath);
 
 	void OpenInExplorer(std::string_view filePath);
+	b8 OpenFileWithExecutable(std::string_view executablePath, std::string_view filePath);
 	// void OpenExplorerProperties(std::string_view filePath);
 	// void OpenWithDefaultProgram(std::string_view filePath);
 

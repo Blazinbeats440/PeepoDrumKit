@@ -153,8 +153,10 @@ namespace PeepoDrumKit
 			WithDefault<i32> VSyncOffFPSLimit = 0;
 			WithDefault<std::string> DefaultCreatorName = {};
 			WithDefault<std::string> ChartOpenDirectory = {};
+			WithDefault<std::string> TaikojiroExecutablePath = {};
 			WithDefault<b8> RecentFilesShowFullPath = true;
 			WithDefault<i32> TJAFileSaveFormat = 0;
+			WithDefault<b8> VideoExportHardwareEncoding = false;
 			WithDefault<i32> FolderDropSearchDepth = 2;
 			WithDefault<b8> WarnTaikojiroIncompatibleCharts = false;
 			WithDefault<b8> IncludePeepoDrumKitComment = true;
@@ -164,6 +166,7 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowForcedBranchButtons = true;
 			WithDefault<b8> ShowChartTitleLocalized = false;
 			WithDefault<b8> ShowChartSubtitleLocalized = false;
+			WithDefault<b8> AutoPrefixChartSubtitle = false;
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
@@ -468,6 +471,7 @@ namespace PeepoDrumKit
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, UserSettingsData& out);
 	void SettingsToIni(const UserSettingsData& in, std::string& out);
 	std::string GetChartOpenDirectory(std::string_view configuredDirectory);
+	std::string GetTaikojiroExecutablePath(std::string_view configuredPath);
 
 	struct IniMemberVoidPtr { void* Address; size_t ByteSize; };
 	struct IniMemberParseResult { b8 HasError; cstr ErrorMessage; };

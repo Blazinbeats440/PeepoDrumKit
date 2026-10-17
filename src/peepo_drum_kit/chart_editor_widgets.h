@@ -16,6 +16,8 @@
 
 namespace PeepoDrumKit
 {
+	b8 RunEditorCacheSelfTest(std::string& error);
+	b8 RunGamePreviewNoteSelfTest(std::string& error);
 	struct LoadingTextAnimation
 	{
 		b8 WasLoadingLastFrame = false;
@@ -111,6 +113,16 @@ namespace PeepoDrumKit
 	{
 		f32 FontScale = 1.0f;
 		b8 ShowBasicInfo = true;
+		ChartContext::CourseCacheKey StatsKey = {};
+		Beat StatsRangeMin = {}, StatsRangeMax = {};
+		b8 StatsHasRange = false;
+		struct StatsData
+		{
+			i32 DonSmall = 0, DonBig = 0, KaSmall = 0, KaBig = 0;
+			i32 KaDon = 0, Adlib = 0, Bomb = 0;
+			f64 RollDuration = 0.0, BalloonDuration = 0.0;
+			i32 BalloonHits = 0;
+		} CachedStats;
 		void DrawGui(ChartContext& context);
 	};
 
@@ -417,6 +429,7 @@ namespace PeepoDrumKit
 		u32 VideoTitleColor = 0xFFFFFFFF, VideoTitleBandColor = 0xB0000000;
 		Rect VideoExportViewport = {};
 		ImDrawList* VideoExportDrawList = nullptr;
+		ImDrawList* VideoExportDrawListTarget = nullptr;
 		struct TestPlayNoteState { Note* Source; Time NoteTime; i32 Judgement; Time HitTime; i32 TimingError = 0; b8 WasHit = false; BranchType Branch = BranchType::Normal; };
 		std::vector<TestPlayNoteState> TestPlayNotes;
 		std::unordered_map<const Note*, size_t> TestPlayNoteIndices;
@@ -483,6 +496,50 @@ namespace PeepoDrumKit
 			ScrollMethod ScrollType;
 			TJA::SuddenParams Sudden;
 		};
+		struct NotePositionCache
+		{
+			Time SuddenMoveTime = {}, SuddenShowTime = {};
+			mutable const TempoMapAccelerationStructure* Timing = nullptr;
+			mutable f64 NoteHBScrollBeatTick = 0.0, SuddenMoveHBScrollBeatTick = 0.0;
+			mutable b8 HasNoteHBScrollBeatTick = false, HasSuddenMoveHBScrollBeatTick = false;
+		};
+		struct NoteLaneData : NoteAttr
+		{
+			Note* OriginalNote;
+			NoteAttr Tail;
+			NotePositionCache HeadPosition, TailPosition;
+		};
+		struct NoteLaneCache
+		{
+			ChartContext::CourseCacheKey Key = {};
+			i32 ScrollView = -1;
+			std::vector<NoteLaneData> Notes;
+		};
+		struct BarLaneData
+		{
+			Beat Beat;
+			Time Time;
+			Tempo Tempo;
+			Complex ScrollSpeed;
+			ScrollMethod ScrollType;
+			i32 BarIndex;
+			b8 IsVisible;
+		};
+		struct BarLaneCache
+		{
+			ChartContext::CourseCacheKey Key = {};
+			i32 ScrollView = -1;
+			Beat EndBeat = Beat::Zero();
+			std::vector<BarLaneData> Bars;
+			std::vector<std::pair<f64, size_t>> TimeBars, HBBars;
+			std::vector<size_t> UnboundedBars, VisibleBars;
+			f64 MinimumTimeSpeed = F64Max, MinimumHBSpeed = F64Max;
+		};
+		std::map<std::pair<ChartCourse*, BranchType>, BarLaneCache> BarLaneCaches;
+		BarLaneCache& GetCachedBarLaneData(ChartContext& context, ChartCourse& course, BranchType branch, Beat endBeat);
+		std::map<std::pair<ChartCourse*, BranchType>, NoteLaneCache> NoteLaneCaches;
+		u64 NoteLaneCacheRevision = 0;
+		const std::vector<NoteLaneData>& GetCachedNoteLaneData(ChartContext& context, ChartCourse& course, BranchType branch);
 
 		struct DeferredNoteDrawData : NoteAttr {
 			Note* OriginalNote;

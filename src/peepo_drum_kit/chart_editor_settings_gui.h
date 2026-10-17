@@ -26,12 +26,25 @@ namespace PeepoDrumKit
 		std::array<std::string, 3> GridDivisionTexts = {};
 	};
 
+	struct ChartSettingsSectionNavigation
+	{
+		std::vector<std::string> Sections;
+		std::string RequestedSection, SelectedSection;
+		void RegisterSection(std::string_view section);
+		void ScrollToSection(std::string_view section);
+		void DrawHeading(std::string_view section);
+	};
+
 	struct ChartSettingsWindow
 	{
 		b8 DrawGui(ChartContext& context, UserSettingsData& settings);
+		void SelectCategory(ChartSettingsCategory category) { selectedCategory = category; settingsFilterMain.Clear(); sectionNavigation = {}; }
+		static b8 RunNavigationSelfTest(std::string& error);
 
 	private:
+		void SelectSection(std::string_view section);
 		ChartSettingsCategory selectedCategory = ChartSettingsCategory::General;
+		ChartSettingsSectionNavigation sectionNavigation;
 		ImGuiTextFilter settingsFilterMain = {};
 		ImGuiTextFilter settingsFilterInput = {};
 		ChartSettingsWindowTempActiveWidgetGroup lastActiveGroup = {};

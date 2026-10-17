@@ -4,6 +4,85 @@
 
 namespace PeepoDrumKit
 {
+	struct BeatBarIndex
+	{
+		struct Entry : SortedTempoMap::ForEachBeatBarData { Time BaseTime; };
+		u64 TempoRevision = 0, SignatureRevision = 0;
+		Beat EndBeat = Beat::Zero();
+		std::vector<Entry> Beats, Bars;
+		void Update(const ChartCourse& course, Beat endBeat)
+		{
+			if (!Beats.empty() && TempoRevision == course.TempoMap.Revision && SignatureRevision == course.TempoMap.Signature.Revision && EndBeat > endBeat) return;
+			Beats.clear(); Bars.clear();
+			course.TempoMap.ForEachBeatBar([&](const SortedTempoMap::ForEachBeatBarData& bar)
+			{
+				const Entry entry { bar, course.TempoMap.BeatToTime(bar.Beat) };
+				Beats.push_back(entry);
+				if (bar.IsBar) Bars.push_back(entry);
+				EndBeat = bar.Beat;
+				return bar.IsBar && bar.Beat > endBeat ? ControlFlow::Break : ControlFlow::Fallthrough;
+			});
+			TempoRevision = course.TempoMap.Revision; SignatureRevision = course.TempoMap.Signature.Revision;
+		}
+		auto FindTimeRange(Time minimum, Time maximum) const
+		{
+			const auto first = std::lower_bound(Beats.begin(), Beats.end(), minimum, [](const Entry& entry, Time time) { return entry.BaseTime < time; });
+			const auto last = std::upper_bound(first, Beats.end(), maximum, [](Time time, const Entry& entry) { return time < entry.BaseTime; });
+			return std::make_pair(first, last);
+		}
+		auto FindBarRange(Beat minimum, Beat maximum) const
+		{
+			auto first = std::upper_bound(Bars.begin(), Bars.end(), minimum, [](Beat beat, const Entry& entry) { return beat < entry.Beat; });
+			if (first != Bars.begin()) --first;
+			const auto last = std::upper_bound(first, Bars.end(), maximum, [](Beat beat, const Entry& entry) { return beat < entry.Beat; });
+			return std::make_pair(first, last);
+		}
+	};
+
+	struct TimedBeatIndex
+	{
+		struct Entry { SortedTempoMap::ForEachBeatBarData Bar; Time Time; };
+		std::vector<Entry> Beats;
+		void Build(const ChartCourse& course, BranchType branch, const BeatBarIndex& source)
+		{
+			Beats.clear();
+			for (const auto& bar : source.Beats) Beats.push_back({ bar, course.BeatToPlaybackTime(bar.Beat, branch) });
+			std::stable_sort(Beats.begin(), Beats.end(), [](const Entry& first, const Entry& second) { return first.Time < second.Time; });
+		}
+		auto FindRange(Time minimum, Time maximum) const
+		{
+			const auto first = std::lower_bound(Beats.begin(), Beats.end(), minimum, [](const Entry& entry, Time time) { return entry.Time < time; });
+			const auto last = std::upper_bound(first, Beats.end(), maximum, [](Time time, const Entry& entry) { return time < entry.Time; });
+			return std::make_pair(first, last);
+		}
+	};
+
+	struct TimedNoteIndex
+	{
+		struct Entry { const Note* OriginalNote; Time HeadTime, TailTime, FirstTime, LatestEnd; };
+		std::vector<Entry> Notes;
+		void Build(const ChartCourse& course, BranchType branch, b8 playbackTiming)
+		{
+			Notes.clear();
+			for (const Note& note : course.GetNotes(branch))
+			{
+				const Time head = (playbackTiming ? course.BeatToPlaybackTime(note.GetStart(), branch) : course.TempoMap.BeatToTime(note.GetStart())) + note.TimeOffset;
+				const Time tail = note.BeatDuration > Beat::Zero()
+					? (playbackTiming ? course.BeatToPlaybackTime(note.GetEnd(), branch) : course.TempoMap.BeatToTime(note.GetEnd())) + note.TimeOffset : head;
+				Notes.push_back({ &note, head, tail, Min(head, tail), Max(head, tail) });
+			}
+			std::stable_sort(Notes.begin(), Notes.end(), [](const Entry& first, const Entry& second) { return first.FirstTime < second.FirstTime; });
+			Time latest = Time::FromSec(-F64Max);
+			for (auto& entry : Notes) entry.LatestEnd = latest = Max(latest, entry.LatestEnd);
+		}
+		auto FindRange(Time minimum, Time maximum) const
+		{
+			const auto first = std::lower_bound(Notes.begin(), Notes.end(), minimum, [](const Entry& entry, Time time) { return entry.LatestEnd < time; });
+			const auto last = std::upper_bound(first, Notes.end(), maximum, [](Time time, const Entry& entry) { return time < entry.FirstTime; });
+			return std::make_pair(first, last);
+		}
+	};
+
 	struct PlaybackTimelineSection
 	{
 		Beat StartBeat, EndBeat;
