@@ -63,7 +63,7 @@ namespace PeepoDrumKit
 	ChartEditor::ChartEditor()
 	{
 		const auto& videoSettings = PersistentApp.VideoExport;
-		videoExport.Layout = static_cast<ChartGamePreview::VideoLayout>(Clamp(videoSettings.Layout, 0, 1));
+		videoExport.Layout = static_cast<ChartGamePreview::VideoLayout>(Clamp(videoSettings.Layout, 0, 2));
 		videoExport.Resolution = Clamp(videoSettings.Resolution, 0, ArrayCountI32(VideoResolutionPresets) - 1);
 		videoExport.FramesPerSecond = videoSettings.FramesPerSecond == 15 || videoSettings.FramesPerSecond == 30 ||
 			videoSettings.FramesPerSecond == 60 || videoSettings.FramesPerSecond == 120 ? videoSettings.FramesPerSecond : 60;
@@ -1503,11 +1503,11 @@ namespace PeepoDrumKit
 			const b8 noOpenPopup = (!assetSave.Active && Gui::GetCurrentContext()->OpenPopupStack.Size <= 0);
 			if (noActiveID && noOpenPopup && Gui::IsAnyPressed(*Settings.Input.Editor_TogglePreviewLayout, false))
 			{
-				auto& layout = Settings_Mutable.General.GamePreviewLayout;
-				layout.Value = layout.Value == 0 ? 1 : 0;
-				layout.SetHasValueIfNotDefault();
-				Settings_Mutable.IsDirty = true;
-				context.ShowStatusMessage(layout.Value == 0 ? UI_Str("PREVIEW_STATUS_LAYOUT_ORIGINAL") : UI_Str("PREVIEW_STATUS_LAYOUT_ARCADE"));
+				Settings_Mutable.CycleGamePreviewLayout();
+				const auto& general = Settings.General;
+				context.ShowStatusMessage(*general.GamePreviewLayout == 0 ? UI_Str("PREVIEW_STATUS_LAYOUT_ORIGINAL")
+					: *general.GamePreviewLayout == 1 ? (*general.GamePreviewArcadeSizeMode == 0 ? UI_Str("PREVIEW_STATUS_LAYOUT_ARCADE") : UI_Str("PREVIEW_STATUS_LAYOUT_ARCADE_MAXIMIZED"))
+					: (*general.GamePreviewJiroSizeMode == 0 ? UI_Str("PREVIEW_STATUS_LAYOUT_JIRO") : UI_Str("PREVIEW_STATUS_LAYOUT_JIRO_MAXIMIZED")));
 			}
 			if (noActiveID)
 			{

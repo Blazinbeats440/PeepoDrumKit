@@ -480,7 +480,7 @@ namespace PeepoDrumKit
 		};
 		const auto drawLayoutOptions = [&]()
 		{
-			const char* layoutNames[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
+			const char* layoutNames[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO"), UI_Str("VIDEO_EXPORT_LAYOUT_JIRO") };
 			i32 layoutIndex = static_cast<i32>(exportData.Layout);
 			settingLabel(UI_Str("VIDEO_EXPORT_LAYOUT"));
 			if (Gui::Combo("##Layout", &layoutIndex, layoutNames, ArrayCountI32(layoutNames)))
@@ -1171,8 +1171,9 @@ namespace PeepoDrumKit
 			data.Preparing = true; data.Exporting = data.Finalizing = data.Finished = false;
 			data.CancelRequested = data.FinishRequested = data.FailureReported = data.PendingFrameReady = false;
 			data.ErrorDetails.clear(); data.Status.clear();
-			data.Layout = test % 2 == 0 ? ChartGamePreview::VideoLayout::Original : ChartGamePreview::VideoLayout::Taiko;
-			data.Preview.VideoExportLaneCount = test == 2 || test == 3 ? 2 : 1;
+			data.Layout = test >= 8 ? ChartGamePreview::VideoLayout::Jiro
+				: test % 2 == 0 ? ChartGamePreview::VideoLayout::Original : ChartGamePreview::VideoLayout::Taiko;
+			data.Preview.VideoExportLaneCount = test == 2 || test == 3 || test == 9 ? 2 : 1;
 			editor.ConfigureVideoPreview(data.Preview);
 			data.Preview.VideoExportPixelAligned = true;
 			data.Preview.VideoFadeInSeconds = data.Preview.VideoFadeOutSeconds = 0.0f;
@@ -1190,8 +1191,24 @@ namespace PeepoDrumKit
 			Gui::PopFont(); Gui::Render(); editor.OnAfterRender();
 			ApplicationHost::GlobalState.FilePathsDroppedThisFrame.clear();
 		};
-		for (i32 test = 0; test < 8; ++test)
+		for (i32 test = 0; test < 10; ++test)
 		{
+			if (test == 8)
+			{
+				auto& notes = context.ChartSelectedCourse->Notes_Normal;
+				notes.Sorted.clear();
+				for (i32 index = -27; index < 16; ++index)
+				{
+					Note note {};
+					note.BeatTime = Beat::FromBeatsFraction(index < 0 ? index * 0.25 : (index + 1) * 0.25);
+					note.Type = index % 2 == 0 ? NoteType::Don : NoteType::Ka;
+					notes.Sorted.push_back(note);
+				}
+				notes.NotifyChanged();
+				context.ChartSelectedCourse->RecalculateComboCounts(BranchType::Normal);
+				for (auto& selection : data.Selections)
+					selection.Route = BuildFixedVideoBranchRoute(*data.Course, BranchType::Normal);
+			}
 			Settings_Mutable.General.VideoExportHardwareEncoding = test % 2 != 0;
 			Settings_Mutable.General.GamePreviewBarLineMode = test >= 2 ? 1 : 0;
 			begin(test);
@@ -1212,7 +1229,7 @@ namespace PeepoDrumKit
 				if (GetTickCount64() > deadline) return fail("Export pipeline timed out: " + data.ErrorDetails);
 				Sleep(1);
 			}
-			if (test < 4)
+			if (test < 4 || test >= 8)
 			{
 				if (!data.Finished || !File::Exists(data.OutputPath) || data.FrameIndex != 30 || data.ReadbackFrames != 30 || data.WorkerProgress.WrittenFrames != 30 ||
 					!data.AudioSources.Song || data.Sounds.Events.empty())
@@ -1239,12 +1256,56 @@ namespace PeepoDrumKit
 				if (redPixels < 50 || bluePixels < 50 || footerPixels < 640)
 					return fail("Exported chart is missing notes or lane (case " + std::to_string(test) + ", red " + std::to_string(redPixels) +
 						", blue " + std::to_string(bluePixels) + ", lane " + std::to_string(footerPixels) + ")");
+				if (test >= 8)
+				{
+					if (data.Selections[0].Lane.Combos.GetCurrentCombo(Time::Zero()) != 27)
+						return fail("Jiro export did not display the expected current combo");
+					for (i32 y = 0; y < 360; ++y)
+					for (i32 x : { 16, 624 })
+					{
+						const size_t pixel = (y * 640 + x) * 4;
+						if (frame.Pixels[pixel] > 12 || frame.Pixels[pixel + 1] > 12 || frame.Pixels[pixel + 2] > 12)
+							return fail("Jiro export stretched into the side margins");
+					}
+				}
 			}
 			else if (data.Finished || File::Exists(data.TemporaryPath)) return fail("Canceled export retained its temporary video");
 			if (test == 7 && data.ErrorDetails.empty()) return fail("Export startup failure was not reported");
 		}
 		Gui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false); Gui::GetIO().AddKeyEvent(ImGuiKey_N, false);
 		Gui::GetIO().AddKeyEvent(ImGuiKey_Delete, false); Gui::GetIO().AddKeyEvent(ImGuiKey_Space, false);
+		context.SetCursorTime(Time::Zero());
+		context.ChartSelectedCourse->Notes_Expert = context.ChartSelectedCourse->Notes_Normal;
+		context.ChartSelectedCourse->Notes_Normal.TryFindLastAtBeat(Beat::Zero())->TempComboCount = 9999;
+		context.ChartSelectedCourse->Notes_Expert.TryFindLastAtBeat(Beat::Zero())->TempComboCount = 10000;
+		for (i32 sizeMode : { 0, 1 })
+		for (i32 layout : { 2, 1 })
+		for (i32 laneCount : { 1, 2 })
+		{
+			Settings_Mutable.General.GamePreviewLayout = layout;
+			Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+			Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
+			context.ResetChartsCompared();
+			context.CompareMode = laneCount == 2;
+			if (laneCount == 2) context.ChartsCompared[context.ChartSelectedCourse].insert(BranchType::Expert);
+			ChartGamePreview preview;
+			ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
+			Gui::GetIO().DisplaySize = vec2(640, 360);
+			Gui::NewFrame(); Gui::PushFont(FontMain, 16.0f);
+			Gui::SetNextWindowPos(vec2(0)); Gui::SetNextWindowSize(vec2(640, 360));
+			Gui::Begin("Game preview verification", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+			ImDrawList* previewDrawList = Gui::GetWindowDrawList();
+			preview.DrawGui(context, Time::Zero());
+			Gui::End(); Gui::PopFont(); Gui::Render();
+			const u32 width = static_cast<u32>(Round(preview.Camera.ScreenSpaceViewportRect.GetWidth()));
+			const u32 height = static_cast<u32>(Round(preview.Camera.ScreenSpaceViewportRect.GetHeight()));
+			std::vector<u8> pixels;
+			std::string screenshotPath;
+			if (!ApplicationHost::CaptureDrawListToBGRA(previewDrawList, preview.Camera.ScreenSpaceViewportRect, width, height, pixels)
+				|| !SaveScreenshotPNG(width, height, pixels, screenshotPath)) return fail("Could not capture the game preview");
+			std::printf("%s preview verification (%d lanes, %s): %s\n", layout == 2 ? "Jiro" : "Arcade", laneCount,
+				sizeMode == 0 ? "keep aspect" : "maximize", screenshotPath.c_str());
+		}
 		return true;
 	}
 }

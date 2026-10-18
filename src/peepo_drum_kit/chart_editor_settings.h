@@ -144,6 +144,7 @@ namespace PeepoDrumKit
 	struct UserSettingsData
 	{
 		inline void ResetDefault() { *this = UserSettingsData {}; }
+		void CycleGamePreviewLayout();
 
 		// NOTE: Defer save ini settings file on application exit
 		b8 IsDirty = false;
@@ -170,7 +171,9 @@ namespace PeepoDrumKit
 			WithDefault<b8> ShowChartOtherMetadata = false;
 			WithDefault<b8> ShowCourseOtherMetadata = false;
 			WithDefault<b8> TimelineShowBranchStartLines = true;
-			WithDefault<i32> GamePreviewLayout = 0; // 0: original, 1: arcade
+			WithDefault<i32> GamePreviewLayout = 0; // 0: original, 1: arcade, 2: Jiro
+			WithDefault<i32> GamePreviewArcadeSizeMode = 0; // 0: preserve aspect ratio, 1: maximize
+			WithDefault<i32> GamePreviewJiroSizeMode = 1;
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
 			WithDefault<i32> GamePreviewBarLineMode = 0; // 0: Normal, 1: Jiro
 			WithDefault<b8> GamePreviewBarLinesBehindNotes = true;
@@ -284,6 +287,7 @@ namespace PeepoDrumKit
 			WithDefault<u32> MarkerLineColor = 0xFF00FF00;
 			WithDefault<u32> BranchStartLineColor = 0xFF00FFFF;
 			WithDefault<u32> BranchAreaBackgroundColor = 0x2800FFFF;
+			WithDefault<f32> PreviewLaneBackgroundTransparency = 0.0f;
 			WithDefault<u32> PreviewBranchExpertLaneBackgroundColor = 0x3CFF9C0B;
 			WithDefault<u32> PreviewBranchMasterLaneBackgroundColor = 0x3CCA0BFF;
 			WithDefault<u32> PreviewCommentTextColor = 0xFFFFFFFF;

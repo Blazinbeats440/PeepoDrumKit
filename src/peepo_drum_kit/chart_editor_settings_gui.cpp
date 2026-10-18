@@ -174,7 +174,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, F32_SENoteOffset, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewBarLineMode,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode, I32_GamePreviewBarLineMode,
 		};
 
 		struct SettingsEntry
@@ -362,9 +362,15 @@ namespace PeepoDrumKit
 					}
 					else if (in.Widget == WidgetType::I32_GamePreviewLayout)
 					{
-						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
-						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
+						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO"), UI_Str("VIDEO_EXPORT_LAYOUT_JIRO") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
 						changesWereMade |= Gui::Combo("##", &inOutI32->Value, layouts, ArrayCountI32(layouts));
+					}
+					else if (in.Widget == WidgetType::I32_GamePreviewSizeMode)
+					{
+						const cstr modes[] = { UI_Str("SETTINGS_PREVIEW_SIZE_KEEP_ASPECT"), UI_Str("SETTINGS_PREVIEW_SIZE_MAXIMIZE") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, modes, ArrayCountI32(modes));
 					}
 					else if (in.Widget == WidgetType::I32_GamePreviewBarLineMode)
 					{
@@ -1321,6 +1327,18 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_GamePreviewLayout),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewArcadeSizeMode,
+							UI_Str("SETTINGS_PREVIEW_ARCADE_SIZE_MODE"),
+							UI_Str("SETTINGS_PREVIEW_SIZE_MODE_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewSizeMode),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewJiroSizeMode,
+							UI_Str("SETTINGS_PREVIEW_JIRO_SIZE_MODE"),
+							UI_Str("SETTINGS_PREVIEW_SIZE_MODE_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewSizeMode),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.ScrollSpeedViewType,
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
@@ -1629,6 +1647,24 @@ namespace PeepoDrumKit
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_MARKER_LINE_COLOR"), settings.Appearance.MarkerLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR"), settings.Appearance.BranchStartLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
+					auto& laneTransparency = settings.Appearance.PreviewLaneBackgroundTransparency;
+					Gui::AlignTextToFramePadding();
+					Gui::TextUnformatted(UI_Str("SETTINGS_APPEARANCE_PREVIEW_LANE_TRANSPARENCY"));
+					if (laneTransparency.HasValue)
+					{
+						Gui::SameLine();
+						Gui::PushID("PreviewLaneBackgroundTransparency");
+						if (Gui::SmallButton(UI_Str("SETTINGS_RESET_DEFAULT")))
+						{
+							laneTransparency.ResetToDefault();
+							changesWereMade = true;
+						}
+						Gui::PopID();
+					}
+					Gui::SetNextItemWidth(-1.0f);
+					changesWereMade |= Gui::SliderFloat("##PreviewLaneBackgroundTransparency", &laneTransparency.Value,
+						0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+					laneTransparency.SetHasValueIfNotDefault();
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR"), settings.Appearance.PreviewBranchExpertLaneBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR"), settings.Appearance.PreviewBranchMasterLaneBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR"), settings.Appearance.PreviewCommentTextColor);

@@ -24,7 +24,7 @@ namespace PeepoDrumKit
 	constexpr f32 GameWorldSpaceDistancePerLaneBeat = 356.0f;
 	constexpr f32 GameLaneStandardWidth = 1422.0f;
 	constexpr f32 GameLaneBarLineThickness = 3.0f;
-	constexpr struct
+	struct GameLaneSliceDimensions
 	{
 		f32 TopBorder = 12.0f;
 		f32 Content = 195.0f;
@@ -34,7 +34,21 @@ namespace PeepoDrumKit
 		constexpr f32 ContentCenterY() const { return TopBorder + (Content / 2.0f); }
 		constexpr f32 FooterCenterY() const { return TopBorder + Content + MidBorder + (Footer / 2.0f); }
 		constexpr f32 TotalHeight() const { return TopBorder + Content + MidBorder + Footer + BotBorder; }
-	} GameLaneSlice;
+	};
+	constexpr GameLaneSliceDimensions GameLaneSlice;
+	constexpr struct
+	{
+		f32 Scale = 3.5f;
+		vec2 WorldSize = vec2(512.0f, 384.0f) * Scale;
+		f32 LaneLeft = 92.0f * Scale;
+		f32 LaneTop = 154.0f * Scale;
+		f32 LaneWidth = 420.0f * Scale;
+		f32 HitCircleOffsetX = 35.0f * Scale;
+		vec2 ComboCenter = vec2(46.0f, 195.0f) * Scale;
+		// A sixteenth at SCROLL 1 is 26.25 px apart at 512x384; the 105 px note image becomes 30 px.
+		f32 ScrollDistanceScale = (420.0f * Scale) / (GameWorldSpaceDistancePerLaneBeat * 4.0f);
+		GameLaneSliceDimensions LaneSlice = { 2.0f * Scale, 65.0f * Scale, 2.0f * Scale, 14.0f * Scale, 2.0f * Scale };
+	} GameJiroLayout;
 	constexpr f32 GameLanePaddingL = 6.0f;
 	constexpr f32 GameLanePaddingR = 6.0f;
 	constexpr f32 GameLanePaddingTop = 64.0f;

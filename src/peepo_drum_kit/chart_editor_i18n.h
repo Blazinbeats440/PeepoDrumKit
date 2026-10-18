@@ -622,6 +622,7 @@ X("SETTINGS_TAB_APPEARANCE", "Appearance") \
 X("SETTINGS_APPEARANCE_MARKER_LINE_COLOR", "Marker Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_LANE_TRANSPARENCY", "Preview & Test Play: Lane Background Transparency") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR", "Chart Preview: Expert Branch Lane Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR", "Chart Preview: Master Branch Lane Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR", "Chart Preview: Comment Text Color") \
@@ -685,10 +686,18 @@ X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Line
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
 X("SETTINGS_PREVIEW_LAYOUT", "Game Preview & Test Play: Layout") \
-X("SETTINGS_PREVIEW_LAYOUT_DESC", "Use the arcade layout at 16:9 for one or two lanes. Three or more lanes use the original layout. Exported video uses its own setting. The default shortcut is F4.") \
-X("SETTINGS_KEY_PREVIEW_LAYOUT", "Editor: Toggle Preview & Test Play Layout") \
+X("SETTINGS_PREVIEW_LAYOUT_DESC", "Choose Original, Arcade, or Jiro. Arcade and Jiro support one or two lanes; three or more lanes use Original. Set each layout's preview size below. Exported video uses its own setting. The default F4 shortcut cycles Original, Arcade (16:9), Arcade (Maximized), Jiro (4:3), and Jiro (Maximized).") \
+X("SETTINGS_PREVIEW_ARCADE_SIZE_MODE", "Arcade: Preview Size") \
+X("SETTINGS_PREVIEW_JIRO_SIZE_MODE", "Jiro: Preview Size") \
+X("SETTINGS_PREVIEW_SIZE_MODE_DESC", "Preserve Aspect Ratio uses 16:9 for Arcade and 4:3 for Jiro. Maximize enlarges the lanes to fit the preview window. Also applies to test play. Exported video uses its own setting.") \
+X("SETTINGS_PREVIEW_SIZE_KEEP_ASPECT", "Preserve Aspect Ratio") \
+X("SETTINGS_PREVIEW_SIZE_MAXIMIZE", "Maximize") \
+X("SETTINGS_KEY_PREVIEW_LAYOUT", "Editor: Cycle Preview & Test Play Layout and Size") \
 X("PREVIEW_STATUS_LAYOUT_ORIGINAL", "Preview & test play layout: Original") \
-X("PREVIEW_STATUS_LAYOUT_ARCADE", "Preview & test play layout: Arcade") \
+X("PREVIEW_STATUS_LAYOUT_ARCADE", "Preview & test play layout: Arcade (16:9)") \
+X("PREVIEW_STATUS_LAYOUT_ARCADE_MAXIMIZED", "Preview & test play layout: Arcade (Maximized)") \
+X("PREVIEW_STATUS_LAYOUT_JIRO", "Preview & test play layout: Jiro (4:3)") \
+X("PREVIEW_STATUS_LAYOUT_JIRO_MAXIMIZED", "Preview & test play layout: Jiro (Maximized)") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are displayed in the game preview. Hidden bar lines can show numbers while the lines remain hidden.") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
@@ -878,6 +887,7 @@ X("TEST_PLAY_VIDEO_ROUTE_RECORDED", "Video branch route recorded in memory. Unpl
 X("VIDEO_EXPORT_LAYOUT", "Layout") \
 X("VIDEO_EXPORT_LAYOUT_ORIGINAL", "Original") \
 X("VIDEO_EXPORT_LAYOUT_TAIKO", "Taiko") \
+X("VIDEO_EXPORT_LAYOUT_JIRO", "Jiro") \
 X("VIDEO_EXPORT_RESOLUTION", "Resolution") \
 X("VIDEO_EXPORT_FPS", "Frame rate") \
 X("VIDEO_EXPORT_AUDIO_BIT_RATE", "Audio bit rate") \

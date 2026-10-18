@@ -468,6 +468,35 @@ namespace PeepoDrumKit
 			writer.LineComment("...");
 	}
 
+	void UserSettingsData::CycleGamePreviewLayout()
+	{
+		auto& layout = General.GamePreviewLayout;
+		auto& arcadeSize = General.GamePreviewArcadeSizeMode;
+		auto& jiroSize = General.GamePreviewJiroSizeMode;
+		switch (layout.Value)
+		{
+		case 0:
+			layout.Value = 1;
+			arcadeSize.Value = 0;
+			break;
+		case 1:
+			if (arcadeSize.Value == 0) arcadeSize.Value = 1;
+			else { layout.Value = 2; jiroSize.Value = 0; }
+			break;
+		case 2:
+			if (jiroSize.Value == 0) jiroSize.Value = 1;
+			else layout.Value = 0;
+			break;
+		default:
+			layout.Value = 0;
+			break;
+		}
+		layout.SetHasValueIfNotDefault();
+		arcadeSize.SetHasValueIfNotDefault();
+		jiroSize.SetHasValueIfNotDefault();
+		IsDirty = true;
+	}
+
 	SettingsParseResult ParseSettingsIni(std::string_view fileContent, UserSettingsData& out)
 	{
 		Ini::IniParser parser = {};
@@ -535,7 +564,9 @@ namespace PeepoDrumKit
 
 		out.General.DrumrollPreviewRollsPerSecond.Value = Clamp(out.General.DrumrollPreviewRollsPerSecond.Value, 0.1f, 100.0f);
 		out.General.VSyncOffFPSLimit.Value = Max(0, out.General.VSyncOffFPSLimit.Value);
-		out.General.GamePreviewLayout.Value = Clamp(out.General.GamePreviewLayout.Value, 0, 1);
+		out.General.GamePreviewLayout.Value = Clamp(out.General.GamePreviewLayout.Value, 0, 2);
+		out.General.GamePreviewArcadeSizeMode.Value = Clamp(out.General.GamePreviewArcadeSizeMode.Value, 0, 1);
+		out.General.GamePreviewJiroSizeMode.Value = Clamp(out.General.GamePreviewJiroSizeMode.Value, 0, 1);
 		out.General.GamePreviewBarLineMode.Value = Clamp(out.General.GamePreviewBarLineMode.Value, 0, 1);
 		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
 		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
@@ -554,6 +585,10 @@ namespace PeepoDrumKit
 		out.Audio.MasterVolume.Value = Clamp(out.Audio.MasterVolume.Value, 0.0f, 1.0f);
 		out.Audio.BalloonVolume.Value = Clamp(out.Audio.BalloonVolume.Value, 0.0f, 1.0f);
 		out.Audio.MetronomeVolume.Value = Clamp(out.Audio.MetronomeVolume.Value, 0.0f, 1.0f);
+		if (!std::isfinite(out.Appearance.PreviewLaneBackgroundTransparency.Value))
+			out.Appearance.PreviewLaneBackgroundTransparency.ResetToDefault();
+		else
+			out.Appearance.PreviewLaneBackgroundTransparency.Value = Clamp(out.Appearance.PreviewLaneBackgroundTransparency.Value, 0.0f, 100.0f);
 		out.General.TJAFileSaveFormat.Value = Clamp(out.General.TJAFileSaveFormat.Value, 0, 1);
 		out.General.InspectorScrollInputMode.Value = Clamp(out.General.InspectorScrollInputMode.Value, 0, 1);
 		for (auto& offset : out.Developer.SENoteOffsetX)
@@ -639,6 +674,8 @@ namespace PeepoDrumKit
 			X(General.ShowCourseOtherMetadata, "show_course_other_metadata");
 			X(General.TimelineShowBranchStartLines, "timeline_show_branch_start_lines");
 			X(General.GamePreviewLayout, "game_preview_layout");
+			X(General.GamePreviewArcadeSizeMode, "game_preview_arcade_size_mode");
+			X(General.GamePreviewJiroSizeMode, "game_preview_jiro_size_mode");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
 			X(General.GamePreviewBarLineMode, "game_preview_bar_line_mode");
 			X(General.GamePreviewBarLinesBehindNotes, "game_preview_bar_lines_behind_notes");
@@ -719,6 +756,7 @@ namespace PeepoDrumKit
 			X(Appearance.MarkerLineColor, "marker_line_color");
 			X(Appearance.BranchStartLineColor, "branch_start_line_color");
 			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");
+			X(Appearance.PreviewLaneBackgroundTransparency, "preview_lane_background_transparency");
 			X(Appearance.PreviewBranchExpertLaneBackgroundColor, "preview_branch_expert_lane_background_color");
 			X(Appearance.PreviewBranchMasterLaneBackgroundColor, "preview_branch_master_lane_background_color");
 			X(Appearance.PreviewCommentTextColor, "preview_comment_text_color");

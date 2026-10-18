@@ -253,6 +253,7 @@ namespace PeepoDrumKit
 		f32 WorldToScreenScaleFactor = 1.0f;
 		vec2 WorldSpaceSize {};
 		Rect LaneRect {};
+		GameLaneSliceDimensions LaneSlice = GameLaneSlice;
 		vec2 LaneContentOffset {};
 
 		constexpr f32 LaneWidth() const { return LaneRect.GetWidth(); }
@@ -402,7 +403,7 @@ namespace PeepoDrumKit
 		BackgroundMovieStatus MovieStatus = BackgroundMovieStatus::Inactive;
 		b8 MovieVisible = false, VideoUseBackgroundMovie = false;
 		enum class VideoBackgroundFit { Stretch, Contain, ContainWithWidth, Width, Height };
-		enum class VideoLayout { Original, Taiko };
+		enum class VideoLayout { Original, Taiko, Jiro };
 		GameCamera Camera = {};
 		std::optional<Time> VideoExportTime;
 		Time VideoFadeContentStart = Time::Zero(), VideoFadeContentEnd = Time::Zero();
