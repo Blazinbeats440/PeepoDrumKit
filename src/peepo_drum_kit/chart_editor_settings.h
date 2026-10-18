@@ -175,7 +175,6 @@ namespace PeepoDrumKit
 			WithDefault<i32> GamePreviewArcadeSizeMode = 0; // 0: preserve aspect ratio, 1: maximize
 			WithDefault<i32> GamePreviewJiroSizeMode = 1;
 			WithDefault<i32> GamePreviewShowMeasureNumbers = 1; // 0: hidden, 1: visible bar lines, 2: all bar lines
-			WithDefault<i32> GamePreviewBarLineMode = 0; // 0: Normal, 1: Jiro
 			WithDefault<b8> GamePreviewBarLinesBehindNotes = true;
 			WithDefault<b8> GamePreviewShowJPOSPosition = false;
 			WithDefault<b8> GamePreviewUseBackgroundMovie = false;

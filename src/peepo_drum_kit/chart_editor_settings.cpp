@@ -567,7 +567,6 @@ namespace PeepoDrumKit
 		out.General.GamePreviewLayout.Value = Clamp(out.General.GamePreviewLayout.Value, 0, 2);
 		out.General.GamePreviewArcadeSizeMode.Value = Clamp(out.General.GamePreviewArcadeSizeMode.Value, 0, 1);
 		out.General.GamePreviewJiroSizeMode.Value = Clamp(out.General.GamePreviewJiroSizeMode.Value, 0, 1);
-		out.General.GamePreviewBarLineMode.Value = Clamp(out.General.GamePreviewBarLineMode.Value, 0, 1);
 		out.TestPlay.LeadInMilliseconds.Value = Clamp(out.TestPlay.LeadInMilliseconds.Value, 0, 5000);
 		out.TestPlay.InputLatencyCompensationMilliseconds.Value = Clamp(out.TestPlay.InputLatencyCompensationMilliseconds.Value, -500, 500);
 		out.TestPlay.GoodWindowMilliseconds.Value = Clamp(out.TestPlay.GoodWindowMilliseconds.Value, 1, 500);
@@ -677,7 +676,6 @@ namespace PeepoDrumKit
 			X(General.GamePreviewArcadeSizeMode, "game_preview_arcade_size_mode");
 			X(General.GamePreviewJiroSizeMode, "game_preview_jiro_size_mode");
 			X(General.GamePreviewShowMeasureNumbers, "game_preview_show_measure_numbers");
-			X(General.GamePreviewBarLineMode, "game_preview_bar_line_mode");
 			X(General.GamePreviewBarLinesBehindNotes, "game_preview_bar_lines_behind_notes");
 			X(General.GamePreviewShowJPOSPosition, "game_preview_show_jpos_position");
 			X(General.GamePreviewUseBackgroundMovie, "game_preview_use_background_movie");

@@ -174,7 +174,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, F32_SENoteOffset, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode, I32_GamePreviewBarLineMode,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode,
 		};
 
 		struct SettingsEntry
@@ -369,12 +369,6 @@ namespace PeepoDrumKit
 					else if (in.Widget == WidgetType::I32_GamePreviewSizeMode)
 					{
 						const cstr modes[] = { UI_Str("SETTINGS_PREVIEW_SIZE_KEEP_ASPECT"), UI_Str("SETTINGS_PREVIEW_SIZE_MAXIMIZE") };
-						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
-						changesWereMade |= Gui::Combo("##", &inOutI32->Value, modes, ArrayCountI32(modes));
-					}
-					else if (in.Widget == WidgetType::I32_GamePreviewBarLineMode)
-					{
-						const cstr modes[] = { "Normal", "Jiro" };
 						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
 						changesWereMade |= Gui::Combo("##", &inOutI32->Value, modes, ArrayCountI32(modes));
 					}
@@ -1349,12 +1343,6 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
 							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
-
-						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
-							settings.General.GamePreviewBarLineMode,
-							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE"),
-							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC"),
-							SettingsGui::WidgetType::I32_GamePreviewBarLineMode),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.GamePreviewBarLinesBehindNotes,

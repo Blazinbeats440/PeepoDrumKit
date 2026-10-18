@@ -686,7 +686,7 @@ X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Line
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
 X("SETTINGS_PREVIEW_LAYOUT", "Game Preview & Test Play: Layout") \
-X("SETTINGS_PREVIEW_LAYOUT_DESC", "Choose Original, Arcade, or Jiro. Arcade and Jiro support one or two lanes; three or more lanes use Original. Set each layout's preview size below. Exported video uses its own setting. The default F4 shortcut cycles Original, Arcade (16:9), Arcade (Maximized), Jiro (4:3), and Jiro (Maximized).") \
+X("SETTINGS_PREVIEW_LAYOUT_DESC", "Choose Original, Arcade, or Jiro. Arcade and Jiro support one or two lanes; three or more lanes use Original. Jiro selects up to eight bar lines per lane in measure order and removes each one second after its scheduled arrival. Set each layout's preview size below. Exported video uses its own setting. The default F4 shortcut cycles Original, Arcade (16:9), Arcade (Maximized), Jiro (4:3), and Jiro (Maximized).") \
 X("SETTINGS_PREVIEW_ARCADE_SIZE_MODE", "Arcade: Preview Size") \
 X("SETTINGS_PREVIEW_JIRO_SIZE_MODE", "Jiro: Preview Size") \
 X("SETTINGS_PREVIEW_SIZE_MODE_DESC", "Preserve Aspect Ratio uses 16:9 for Arcade and 4:3 for Jiro. Maximize enlarges the lanes to fit the preview window. Also applies to test play. Exported video uses its own setting.") \
@@ -702,8 +702,6 @@ X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are 
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
-X("SETTINGS_PREVIEW_BAR_LINE_MODE", "Game Preview: Bar Line Mode") \
-X("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC", "Normal keeps the existing behavior. Jiro selects up to eight bar lines per lane in measure order and removes each one second after its scheduled arrival, regardless of scroll speed or position. Lines outside the screen keep their slots until then; #BARLINEOFF lines do not count. Measure numbers follow the same limit. Also applies to test play and exported video.") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES", "Game Preview: Always Draw Bar Lines Behind Notes") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC", "Keep bar lines behind all notes regardless of timing. Disable to draw bar lines and notes in TJA placement order, with earlier chart elements in front. Also applies to exported video.") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \

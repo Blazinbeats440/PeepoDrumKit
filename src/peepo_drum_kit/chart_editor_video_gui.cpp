@@ -1210,7 +1210,6 @@ namespace PeepoDrumKit
 					selection.Route = BuildFixedVideoBranchRoute(*data.Course, BranchType::Normal);
 			}
 			Settings_Mutable.General.VideoExportHardwareEncoding = test % 2 != 0;
-			Settings_Mutable.General.GamePreviewBarLineMode = test >= 2 ? 1 : 0;
 			begin(test);
 			if (test == 4) data.CancelRequested = true;
 			if (test == 7) data.TemporaryPath = prefix + "-missing-directory/output.mp4";

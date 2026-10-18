@@ -941,6 +941,39 @@ namespace PeepoDrumKit
 			if (expectedAlpha != 0 ? backgroundVertices < 4 || footerVertices < 4 : backgroundVertices != 0 || footerVertices != 0)
 				{ error = "Lane background colors differ from Original or do not become transparent"; return false; }
 		}
+		context.SetCursorTime(Time::FromSec(1.0));
+		for (i32 renderMode : { 0, 1, 2 })
+		{
+			ChartGamePreview preview;
+			preview.IsTestPlaying = renderMode == 1;
+			preview.TestPlayCourse = context.ChartSelectedCourse;
+			if (renderMode == 2) preview.VideoExportTime = Time::FromSec(1.0);
+			for (i32 sizeMode : { 0, 1 })
+			for (i32 layout : { 0, 2, 1, 2, 0 })
+			{
+				Settings_Mutable.General.GamePreviewLayout.Value = renderMode == 2 ? (layout == 2 ? 0 : 2) : layout;
+				Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+				Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
+				preview.VideoExportLayout = static_cast<ChartGamePreview::VideoLayout>(layout);
+				drawPreview(preview, vec2(1280.0f, 720.0f));
+				if (!error.empty()) return false;
+				const auto found = preview.BarLaneCaches.find({ context.ChartSelectedCourse, BranchType::Normal });
+				if (found == preview.BarLaneCaches.end())
+					{ error = "Layout did not prepare its bar line candidates"; return false; }
+				const auto& bars = found->second;
+				const b8 containsFirstBar = std::find(bars.VisibleBars.begin(), bars.VisibleBars.end(), size_t(0)) != bars.VisibleBars.end();
+				if (containsFirstBar != (layout != 2))
+					{ error = "Switching layouts did not switch bar line expiration in preview, test play, or export"; return false; }
+				if (layout == 2)
+				{
+					if (bars.VisibleBars.size() > 8)
+						{ error = "Jiro layout selected more than eight bar lines"; return false; }
+					for (size_t index : bars.VisibleBars)
+						if (bars.Bars[index].Time + Time::FromSec(1.0) <= Time::FromSec(1.0))
+							{ error = "Jiro layout retained an expired bar line"; return false; }
+				}
+			}
+		}
 		return true;
 	}
 

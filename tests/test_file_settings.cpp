@@ -91,7 +91,6 @@ int main()
 	Check(*defaults.General.GamePreviewLayout == 0, "old user settings retain the original preview layout");
 	Check(*defaults.General.GamePreviewArcadeSizeMode == 0 && *defaults.General.GamePreviewJiroSizeMode == 1,
 		"old settings preserve the arcade aspect ratio and maximize Jiro previews");
-	Check(*defaults.General.GamePreviewBarLineMode == 0, "old user settings retain Normal bar lines");
 	Check(*defaults.Input.Editor_TogglePreviewLayout == MultiInputBinding(KeyBinding(ImGuiKey_F4)),
 		"old user settings use F4 as the preview layout shortcut");
 	UserSettingsData configured;
@@ -111,8 +110,6 @@ int main()
 	configured.General.GamePreviewArcadeSizeMode.SetHasValueIfNotDefault();
 	configured.General.GamePreviewJiroSizeMode.Value = 0;
 	configured.General.GamePreviewJiroSizeMode.SetHasValueIfNotDefault();
-	configured.General.GamePreviewBarLineMode.Value = 1;
-	configured.General.GamePreviewBarLineMode.SetHasValueIfNotDefault();
 	configured.Input.Editor_TogglePreviewLayout.Value = MultiInputBinding(KeyBinding(ImGuiKey_F10));
 	configured.Input.Editor_TogglePreviewLayout.SetHasValueIfNotDefault();
 	for (size_t index = 0; index < ArrayCount(configured.Developer.SENoteOffsetX); ++index)
@@ -187,14 +184,18 @@ int main()
 	restoredSettings.General.GamePreviewJiroSizeMode.ResetToDefault();
 	Check(*restoredSettings.General.GamePreviewArcadeSizeMode == 0 && *restoredSettings.General.GamePreviewJiroSizeMode == 1,
 		"reset restores each layout's preview size default");
-	Check(*restoredSettings.General.GamePreviewBarLineMode == 1, "Jiro bar line mode survives reload");
-	restoredSettings.General.GamePreviewBarLineMode.ResetToDefault();
-	Check(*restoredSettings.General.GamePreviewBarLineMode == 0, "reset restores Normal bar lines");
-	UserSettingsData invalidBarLineMode;
-	Check(!ParseSettingsIni("[general]\ngame_preview_bar_line_mode = 99\n", invalidBarLineMode).HasError
-		&& *invalidBarLineMode.General.GamePreviewBarLineMode == 1, "bar line mode clamps a high value");
-	Check(!ParseSettingsIni("[general]\ngame_preview_bar_line_mode = -1\n", invalidBarLineMode).HasError
-		&& *invalidBarLineMode.General.GamePreviewBarLineMode == 0, "bar line mode clamps a negative value");
+	for (i32 layout : { 0, 2 })
+	{
+		UserSettingsData legacyBarLines;
+		const std::string legacyBarLineIni = "[general]\ngame_preview_layout = " + std::to_string(layout)
+			+ "\ngame_preview_bar_line_mode = " + (layout == 2 ? "0\n" : "1\n");
+		Check(!ParseSettingsIni(legacyBarLineIni, legacyBarLines).HasError && *legacyBarLines.General.GamePreviewLayout == layout,
+			"retired bar line mode does not interfere with the selected layout");
+		std::string upgradedIni;
+		SettingsToIni(legacyBarLines, upgradedIni);
+		Check(upgradedIni.find("game_preview_bar_line_mode") == std::string::npos,
+			"retired bar line mode is omitted when settings are saved");
+	}
 	Check(*restoredSettings.Input.Editor_TogglePreviewLayout == *configured.Input.Editor_TogglePreviewLayout,
 		"custom preview layout shortcut survives reload");
 	UserSettingsData invalidLayout;

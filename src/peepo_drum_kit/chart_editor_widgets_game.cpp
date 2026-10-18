@@ -2421,7 +2421,6 @@ namespace PeepoDrumKit
 			};
 			const b8 barLinesBehindNotes = *Settings.General.GamePreviewBarLinesBehindNotes;
 			const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
-			const b8 jiroBarLines = *Settings.General.GamePreviewBarLineMode == 1;
 			std::vector<DeferredBarLineDrawData> reverseBarLineDrawBuffer;
 			auto drawBarLine = [&](const DeferredBarLineDrawData& bar)
 			{
@@ -2463,7 +2462,7 @@ namespace PeepoDrumKit
 				}
 			};
 			auto& barCache = GetCachedBarLaneData(context, *course, branch, chartBeatDuration);
-			const auto& visibleBars = jiroBarLines ? FindJiroPreviewBars(barCache, cursorTimeOrAnimated)
+			const auto& visibleBars = isJiroLayout ? FindJiroPreviewBars(barCache, cursorTimeOrAnimated)
 				: FindVisiblePreviewBars(barCache, Camera, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, hitCirclePosLane.x, pxWorldPer4Beats, playbackScrolls != nullptr);
 			for (size_t index : visibleBars)
 				drawPreviewBar(barCache.Bars[index]);
