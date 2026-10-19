@@ -512,6 +512,23 @@ X("SETTINGS_SECTION_PROPERTIES", "Chart Properties") \
 X("SETTINGS_SECTION_EVENTS", "Events & Branches") \
 X("SETTINGS_SECTION_PREVIEW", "Chart Preview") \
 X("SETTINGS_SECTION_ANIMATION", "Animation") \
+X("SETTINGS_SECTION_THEME", "Theme") \
+X("SETTINGS_APPEARANCE_COLOR_THEME", "Color Theme") \
+X("SETTINGS_APPEARANCE_COLOR_THEME_DESC", "Choose the colors of windows, menus, and the timeline. Default preserves the original colors. Changes apply without restarting.") \
+X("SETTINGS_THEME_DEFAULT", "Default") \
+X("SETTINGS_THEME_DARK", "Dark") \
+X("SETTINGS_THEME_LIGHT", "Light") \
+X("SETTINGS_APPEARANCE_ACCENT_COLOR", "Accent Color") \
+X("SETTINGS_APPEARANCE_ACCENT_COLOR_DESC", "Change selection highlights, controls, and the timeline cursor. Standard keeps the theme's original accent. Custom lets you choose a color; shades and transparency are adjusted for each element.") \
+X("SETTINGS_APPEARANCE_CUSTOM_ACCENT_COLOR", "Custom Accent Color") \
+X("SETTINGS_ACCENT_STANDARD", "Standard") \
+X("SETTINGS_ACCENT_GREEN", "Green") \
+X("SETTINGS_ACCENT_BLUE", "Blue") \
+X("SETTINGS_ACCENT_CYAN", "Cyan") \
+X("SETTINGS_ACCENT_PURPLE", "Purple") \
+X("SETTINGS_ACCENT_ORANGE", "Orange") \
+X("SETTINGS_ACCENT_PINK", "Pink") \
+X("SETTINGS_ACCENT_CUSTOM", "Custom") \
 X("SETTINGS_SECTION_PERFORMANCE", "Performance") \
 X("SETTINGS_SECTION_VOLUME", "Volume & Sound Effects") \
 X("SETTINGS_SECTION_DEVICE", "Audio Device") \
@@ -622,6 +639,7 @@ X("SETTINGS_TAB_APPEARANCE", "Appearance") \
 X("SETTINGS_APPEARANCE_MARKER_LINE_COLOR", "Marker Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR", "Branch Start Line Color") \
 X("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR", "Branch Area Color") \
+X("SETTINGS_APPEARANCE_PREVIEW_LANE_TRANSPARENCY", "Preview & Test Play: Lane Background Transparency") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR", "Chart Preview: Expert Branch Lane Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR", "Chart Preview: Master Branch Lane Color") \
 X("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR", "Chart Preview: Comment Text Color") \
@@ -685,16 +703,22 @@ X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES", "Timeline: Show Branch Start Line
 X("SETTINGS_TIMELINE_SHOW_BRANCH_START_LINES_DESC", "Display a yellow line at each #BRANCHSTART position on the timeline.") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS", "Game Preview: Show Measure Numbers") \
 X("SETTINGS_PREVIEW_LAYOUT", "Game Preview & Test Play: Layout") \
-X("SETTINGS_PREVIEW_LAYOUT_DESC", "Use the arcade layout at 16:9 for one or two lanes. Three or more lanes use the original layout. Exported video uses its own setting. The default shortcut is F4.") \
-X("SETTINGS_KEY_PREVIEW_LAYOUT", "Editor: Toggle Preview & Test Play Layout") \
+X("SETTINGS_PREVIEW_LAYOUT_DESC", "Choose Original, Arcade, or Jiro. Arcade and Jiro support one or two lanes; three or more lanes use Original. Jiro selects up to eight bar lines per lane in measure order and removes each one second after its scheduled arrival. Set each layout's preview size below. Exported video uses its own setting. The default F4 shortcut cycles Original, Arcade (16:9), Arcade (Maximized), Jiro (4:3), and Jiro (Maximized).") \
+X("SETTINGS_PREVIEW_ARCADE_SIZE_MODE", "Arcade: Preview Size") \
+X("SETTINGS_PREVIEW_JIRO_SIZE_MODE", "Jiro: Preview Size") \
+X("SETTINGS_PREVIEW_SIZE_MODE_DESC", "Preserve Aspect Ratio uses 16:9 for Arcade and 4:3 for Jiro. Maximize enlarges the lanes to fit the preview window. Also applies to test play. Exported video uses its own setting.") \
+X("SETTINGS_PREVIEW_SIZE_KEEP_ASPECT", "Preserve Aspect Ratio") \
+X("SETTINGS_PREVIEW_SIZE_MAXIMIZE", "Maximize") \
+X("SETTINGS_KEY_PREVIEW_LAYOUT", "Editor: Cycle Preview & Test Play Layout and Size") \
 X("PREVIEW_STATUS_LAYOUT_ORIGINAL", "Preview & test play layout: Original") \
-X("PREVIEW_STATUS_LAYOUT_ARCADE", "Preview & test play layout: Arcade") \
+X("PREVIEW_STATUS_LAYOUT_ARCADE", "Preview & test play layout: Arcade (16:9)") \
+X("PREVIEW_STATUS_LAYOUT_ARCADE_MAXIMIZED", "Preview & test play layout: Arcade (Maximized)") \
+X("PREVIEW_STATUS_LAYOUT_JIRO", "Preview & test play layout: Jiro (4:3)") \
+X("PREVIEW_STATUS_LAYOUT_JIRO_MAXIMIZED", "Preview & test play layout: Jiro (Maximized)") \
 X("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC", "Choose how measure numbers are displayed in the game preview. Hidden bar lines can show numbers while the lines remain hidden.") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_VISIBLE", "Show") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_HIDDEN", "Hide") \
 X("SETTINGS_PREVIEW_MEASURE_NUMBERS_ALL", "Show Numbers on Hidden Bar Lines Too") \
-X("SETTINGS_PREVIEW_BAR_LINE_MODE", "Game Preview: Bar Line Mode") \
-X("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC", "Normal keeps the existing behavior. Jiro selects up to eight bar lines per lane in measure order and removes each one second after its scheduled arrival, regardless of scroll speed or position. Lines outside the screen keep their slots until then; #BARLINEOFF lines do not count. Measure numbers follow the same limit. Also applies to test play and exported video.") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES", "Game Preview: Always Draw Bar Lines Behind Notes") \
 X("SETTINGS_PREVIEW_BAR_LINES_BEHIND_NOTES_DESC", "Keep bar lines behind all notes regardless of timing. Disable to draw bar lines and notes in TJA placement order, with earlier chart elements in front. Also applies to exported video.") \
 X("SETTINGS_PREVIEW_SHOW_JPOS_POSITION", "Game Preview: Show Current JPOS Position") \
@@ -878,6 +902,7 @@ X("TEST_PLAY_VIDEO_ROUTE_RECORDED", "Video branch route recorded in memory. Unpl
 X("VIDEO_EXPORT_LAYOUT", "Layout") \
 X("VIDEO_EXPORT_LAYOUT_ORIGINAL", "Original") \
 X("VIDEO_EXPORT_LAYOUT_TAIKO", "Taiko") \
+X("VIDEO_EXPORT_LAYOUT_JIRO", "Jiro") \
 X("VIDEO_EXPORT_RESOLUTION", "Resolution") \
 X("VIDEO_EXPORT_FPS", "Frame rate") \
 X("VIDEO_EXPORT_AUDIO_BIT_RATE", "Audio bit rate") \

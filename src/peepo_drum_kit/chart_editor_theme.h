@@ -24,7 +24,7 @@ namespace PeepoDrumKit
 	constexpr f32 GameWorldSpaceDistancePerLaneBeat = 356.0f;
 	constexpr f32 GameLaneStandardWidth = 1422.0f;
 	constexpr f32 GameLaneBarLineThickness = 3.0f;
-	constexpr struct
+	struct GameLaneSliceDimensions
 	{
 		f32 TopBorder = 12.0f;
 		f32 Content = 195.0f;
@@ -34,7 +34,21 @@ namespace PeepoDrumKit
 		constexpr f32 ContentCenterY() const { return TopBorder + (Content / 2.0f); }
 		constexpr f32 FooterCenterY() const { return TopBorder + Content + MidBorder + (Footer / 2.0f); }
 		constexpr f32 TotalHeight() const { return TopBorder + Content + MidBorder + Footer + BotBorder; }
-	} GameLaneSlice;
+	};
+	constexpr GameLaneSliceDimensions GameLaneSlice;
+	constexpr struct
+	{
+		f32 Scale = 3.5f;
+		vec2 WorldSize = vec2(512.0f, 384.0f) * Scale;
+		f32 LaneLeft = 92.0f * Scale;
+		f32 LaneTop = 154.0f * Scale;
+		f32 LaneWidth = 420.0f * Scale;
+		f32 HitCircleOffsetX = 35.0f * Scale;
+		vec2 ComboCenter = vec2(46.0f, 195.0f) * Scale;
+		// A sixteenth at SCROLL 1 is 26.25 px apart at 512x384; the 105 px note image becomes 30 px.
+		f32 ScrollDistanceScale = (420.0f * Scale) / (GameWorldSpaceDistancePerLaneBeat * 4.0f);
+		GameLaneSliceDimensions LaneSlice = { 2.0f * Scale, 65.0f * Scale, 2.0f * Scale, 14.0f * Scale, 2.0f * Scale };
+	} GameJiroLayout;
 	constexpr f32 GameLanePaddingL = 6.0f;
 	constexpr f32 GameLanePaddingR = 6.0f;
 	constexpr f32 GameLanePaddingTop = 64.0f;
@@ -234,4 +248,146 @@ namespace PeepoDrumKit
 		colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
 		colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.02f, 0.02f, 0.02f, 0.50f);
 	}
+
+	inline u32 GetEditorThemeAccentColor(i32 accent, u32 customColor)
+	{
+		static constexpr u32 presets[] = { 0, 0xFF66B34D, 0xFFFA963F, 0xFFD1B22A, 0xFFE084B0, 0xFF3DA6ED, 0xFFB075ED };
+		return accent > 0 && accent < ArrayCountI32(presets) ? presets[accent] : customColor;
+	}
+
+	inline void ApplyEditorAccentColor(ImGuiStyle& style, u32 accentColor)
+	{
+		const ImVec4 accent = Gui::ColorConvertU32ToFloat4(accentColor);
+		const ImVec4 reference = style.Colors[ImGuiCol_SliderGrab];
+		f32 hue, saturation, value, referenceHue, referenceSaturation, referenceValue;
+		Gui::ColorConvertRGBtoHSV(accent.x, accent.y, accent.z, hue, saturation, value);
+		Gui::ColorConvertRGBtoHSV(reference.x, reference.y, reference.z, referenceHue, referenceSaturation, referenceValue);
+		const auto recolor = [&](ImVec4 color, b8 surface, b8 tintNeutral = false)
+		{
+			f32 originalHue, originalSaturation, originalValue;
+			Gui::ColorConvertRGBtoHSV(color.x, color.y, color.z, originalHue, originalSaturation, originalValue);
+			if (originalSaturation < 0.01f)
+			{
+				if (!tintNeutral) return color;
+				originalSaturation = referenceSaturation * 0.5f;
+			}
+			const f32 newSaturation = Clamp(originalSaturation * saturation / Max(referenceSaturation, 0.01f), 0.0f, 1.0f);
+			const f32 newValue = Clamp(originalValue * value / Max(referenceValue, 0.01f), 0.0f, surface ? originalValue : 1.0f);
+			Gui::ColorConvertHSVtoRGB(hue, newSaturation, newValue, color.x, color.y, color.z);
+			return color;
+		};
+		const ImGuiCol accentSlots[] =
+		{
+			ImGuiCol_CheckMark, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive,
+			ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_TitleBgActive,
+			ImGuiCol_Button, ImGuiCol_ButtonHovered, ImGuiCol_ButtonActive,
+			ImGuiCol_Header, ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive, ImGuiCol_SeparatorHovered, ImGuiCol_SeparatorActive,
+			ImGuiCol_ResizeGrip, ImGuiCol_ResizeGripHovered, ImGuiCol_ResizeGripActive,
+			ImGuiCol_Tab, ImGuiCol_TabDimmed, ImGuiCol_TabDimmedSelected, ImGuiCol_TabHovered, ImGuiCol_TabSelected, ImGuiCol_TabSelectedOverline,
+			ImGuiCol_DockingPreview, ImGuiCol_PlotLinesHovered, ImGuiCol_PlotHistogram, ImGuiCol_PlotHistogramHovered,
+			ImGuiCol_TextLink, ImGuiCol_TextSelectedBg, ImGuiCol_DragDropTarget, ImGuiCol_NavCursor,
+		};
+		for (ImGuiCol slot : accentSlots)
+		{
+			const b8 foreground = slot == ImGuiCol_CheckMark || slot == ImGuiCol_SliderGrab || slot == ImGuiCol_SliderGrabActive
+				|| slot == ImGuiCol_TabSelectedOverline || slot == ImGuiCol_PlotLinesHovered || slot == ImGuiCol_PlotHistogram
+				|| slot == ImGuiCol_PlotHistogramHovered || slot == ImGuiCol_TextLink || slot == ImGuiCol_DragDropTarget || slot == ImGuiCol_NavCursor;
+			const b8 tintNeutral = slot == ImGuiCol_Header || slot == ImGuiCol_HeaderHovered || slot == ImGuiCol_HeaderActive;
+			style.Colors[slot] = recolor(style.Colors[slot], !foreground, tintNeutral);
+		}
+		u32* timelineAccents[] =
+		{
+			&DragTextHoveredColor, &DragTextActiveColor, &TimelineCursorColor,
+			&TimelineGoGoBackgroundColorBorderSelected, &TimelineLyricsBackgroundColorBorderSelected, &TimelineJPOSScrollBackgroundColorBorderSelected,
+			&TimelineBoxSelectionBackgroundColor, &TimelineBoxSelectionBorderColor, &TimelineBoxSelectionFillColor,
+			&TimelineRangeSelectionBackgroundColor, &TimelineRangeSelectionBorderColor, &TimelineRangeSelectionHeaderHighlightColor,
+			&TimelineSelectedNoteBoxBackgroundColor, &TimelineSelectedNoteBoxBorderColor,
+			&TimelineSongDemoStartMarkerColorFill, &TimelineSongDemoStartMarkerColorBorder,
+		};
+		for (u32* color : timelineAccents)
+			*color = Gui::ColorConvertFloat4ToU32(recolor(Gui::ColorConvertU32ToFloat4(*color), color == &TimelineBoxSelectionFillColor));
+	}
+
+	inline void ApplyEditorColorTheme(i32 theme, ImGuiStyle* destination = &Gui::GetStyle(), i32 accent = 0, u32 accentColor = 0xFFFA963F)
+	{
+		struct ThemeColor { u32* Target; u32 Default, Dark, Light; };
+		static const ThemeColor colors[] =
+		{
+			{ &DragTextHoveredColor, DragTextHoveredColor, 0xFFFFC18A, 0xFFA76020 },
+			{ &DragTextActiveColor, DragTextActiveColor, 0xFFFFD6AC, 0xFF804510 },
+			{ &InputTextWarningTextColor, InputTextWarningTextColor, 0xFF7070FF, 0xFF2525C0 },
+			{ &TimelineBackgroundColor, TimelineBackgroundColor, 0xFF241B15, 0xFFF5F2F0 },
+			{ &TimelineOutOfBoundsDimColor, TimelineOutOfBoundsDimColor, 0x73201812, 0x608C8073 },
+			{ &TimelineWaveformBaseColor, TimelineWaveformBaseColor, 0x809E8A77, 0x80806D5A },
+			{ &TimelineCursorColor, TimelineCursorColor, 0xCCFF9E42, 0xCCA75D20 },
+			{ &TimelineItemTextColor, TimelineItemTextColor, 0xFFF5EDE5, 0xFF423224 },
+			{ &TimelineItemTextColorShadow, TimelineItemTextColorShadow, 0xFF100C08, 0x80FFFFFF },
+			{ &TimelineItemTextColorWarning, TimelineItemTextColorWarning, 0xFF7070FF, 0xFF2525C0 },
+			{ &TimelineItemTextUnderlineColor, TimelineItemTextUnderlineColor, 0xFFF5EDE5, 0xFF423224 },
+			{ &TimelineItemTextUnderlineColorShadow, TimelineItemTextUnderlineColorShadow, 0xFF100C08, 0x80FFFFFF },
+			{ &TimelineGoGoBackgroundColorBorder, TimelineGoGoBackgroundColorBorder, 0xFF16100D, 0xFF9B8974 },
+			{ &TimelineGoGoBackgroundColorBorderSelected, TimelineGoGoBackgroundColorBorderSelected, 0xFFFF9E42, 0xFFA75D20 },
+			{ &TimelineGoGoBackgroundColorOuter, TimelineGoGoBackgroundColorOuter, 0xFF514334, 0xFFDCDFE8 },
+			{ &TimelineGoGoBackgroundColorInner, TimelineGoGoBackgroundColorInner, 0xFF32291F, 0xFFF0F2FA },
+			{ &TimelineLyricsTextColor, TimelineLyricsTextColor, 0xFFF5EDE5, 0xFF423224 },
+			{ &TimelineLyricsTextColorShadow, TimelineLyricsTextColorShadow, 0xFF100C08, 0x80FFFFFF },
+			{ &TimelineLyricsBackgroundColorBorder, TimelineLyricsBackgroundColorBorder, 0xFF16100D, 0xFF9B8974 },
+			{ &TimelineLyricsBackgroundColorBorderSelected, TimelineLyricsBackgroundColorBorderSelected, 0xFFFF9E42, 0xFFA75D20 },
+			{ &TimelineLyricsBackgroundColorOuter, TimelineLyricsBackgroundColorOuter, 0xFF514334, 0xFFE8DFD5 },
+			{ &TimelineLyricsBackgroundColorInner, TimelineLyricsBackgroundColorInner, 0xFF382E24, 0xFFFAF4ED },
+			{ &TimelineJPOSScrollBackgroundColorBorder, TimelineJPOSScrollBackgroundColorBorder, 0xB016100D, 0xB09B8974 },
+			{ &TimelineJPOSScrollBackgroundColorBorderSelected, TimelineJPOSScrollBackgroundColorBorderSelected, 0xFFFF9E42, 0xFFA75D20 },
+			{ &TimelineJPOSScrollBackgroundColorOuter, TimelineJPOSScrollBackgroundColorOuter, 0xFF663F8F, 0xFFE8CEDE },
+			{ &TimelineJPOSScrollBackgroundColorInner, TimelineJPOSScrollBackgroundColorInner, 0xFF382C34, 0xFFF8EBF2 },
+			{ &TimelineHorizontalRowLineColor, TimelineHorizontalRowLineColor, 0x408A7868, 0x405F5144 },
+			{ &TimelineGridBarLineColor, TimelineGridBarLineColor, 0xA09E8A77, 0xA06B5948 },
+			{ &TimelineGridBeatLineColor, TimelineGridBeatLineColor, 0x408A7868, 0x405F5144 },
+			{ &TimelineGridSnapLineColor, TimelineGridSnapLineColor, 0x308A7868, 0x305F5144 },
+			{ &TimelineGridSnapTupletLineColor, TimelineGridSnapTupletLineColor, 0x3022BBBC, 0x602E8888 },
+			{ &TimelineGridSnapQuintupletLineColor, TimelineGridSnapQuintupletLineColor, 0x30B3BC22, 0x60888022 },
+			{ &TimelineGridSnapSeptupletLineColor, TimelineGridSnapSeptupletLineColor, 0x30FF97FF, 0x60974997 },
+			{ &TimelineBoxSelectionBackgroundColor, TimelineBoxSelectionBackgroundColor, 0x26FF9E42, 0x26A75D20 },
+			{ &TimelineBoxSelectionBorderColor, TimelineBoxSelectionBorderColor, 0xFFFF9E42, 0xFFA75D20 },
+			{ &TimelineBoxSelectionFillColor, TimelineBoxSelectionFillColor, 0xFF493729, 0xFFE8D5C3 },
+			{ &TimelineBoxSelectionInnerColor, TimelineBoxSelectionInnerColor, 0xFFF5EDE5, 0xFF423224 },
+			{ &TimelineRangeSelectionBackgroundColor, TimelineRangeSelectionBackgroundColor, 0x12FF9E42, 0x18A75D20 },
+			{ &TimelineRangeSelectionBorderColor, TimelineRangeSelectionBorderColor, 0x80FF9E42, 0x80A75D20 },
+			{ &TimelineRangeSelectionHeaderHighlightColor, TimelineRangeSelectionHeaderHighlightColor, 0x60FF9E42, 0x60A75D20 },
+			{ &TimelineSelectedNoteBoxBackgroundColor, TimelineSelectedNoteBoxBackgroundColor, 0x12FF9E42, 0x18A75D20 },
+			{ &TimelineSelectedNoteBoxBorderColor, TimelineSelectedNoteBoxBorderColor, 0x80FF9E42, 0x80A75D20 },
+			{ &TimelineDefaultLineColor, TimelineDefaultLineColor, 0xDCF5EDE5, 0xDC423224 },
+			{ &TimelineSelectedItemLineColor, TimelineSelectedItemLineColor, 0xDCF5EDE5, 0xDC423224 },
+			{ &TimelineSongDemoStartMarkerColorFill, TimelineSongDemoStartMarkerColorFill, 0x3BFF9E42, 0x3BA75D20 },
+			{ &TimelineSongDemoStartMarkerColorBorder, TimelineSongDemoStartMarkerColorBorder, 0xB3FF9E42, 0xB3A75D20 },
+		};
+		for (const auto& color : colors)
+			*color.Target = theme == 1 ? color.Dark : theme == 2 ? color.Light : color.Default;
+		if (theme == 2) Gui::StyleColorsLight(destination);
+		else
+		{
+			Gui::StyleColorsDark(destination);
+			if (theme != 1) GuiStyleColorPeepoDrumKit(destination);
+		}
+		if (accent > 0) ApplyEditorAccentColor(*destination, GetEditorThemeAccentColor(accent, accentColor));
+	}
+
+	struct EditorColorThemeState
+	{
+		i32 AppliedTheme = -1;
+		i32 AppliedAccent = -1;
+		u32 AppliedAccentColor = 0;
+		f32 AppliedGuiScale = 0.0f;
+		b8 Update(i32 theme, f32 guiScale, ImGuiStyle* destination = &Gui::GetStyle(), i32 accent = 0, u32 accentColor = 0xFFFA963F)
+		{
+			theme = Clamp(theme, 0, 2);
+			accent = Clamp(accent, 0, 7);
+			if (theme == AppliedTheme && guiScale == AppliedGuiScale && accent == AppliedAccent && accentColor == AppliedAccentColor) return false;
+			ApplyEditorColorTheme(theme, destination, accent, accentColor);
+			AppliedTheme = theme;
+			AppliedAccent = accent;
+			AppliedAccentColor = accentColor;
+			AppliedGuiScale = guiScale;
+			return true;
+		}
+	};
 }

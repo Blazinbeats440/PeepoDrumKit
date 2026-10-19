@@ -49,6 +49,7 @@ namespace PeepoDrumKit
 		ImGuiTextFilter settingsFilterMain = {};
 		ImGuiTextFilter settingsFilterInput = {};
 		ChartSettingsWindowTempActiveWidgetGroup lastActiveGroup = {};
+		ChartSettingsWindowTempActiveWidgetGroup lastActiveThemeGroup = {};
 		ChartSettingsWindowTempInputState inputState = {};
 		b8 testPlayCalibrationActive = false;
 		b8 testPlayCalibrationHasCandidate = false;

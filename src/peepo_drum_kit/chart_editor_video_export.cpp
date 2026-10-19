@@ -580,6 +580,9 @@ namespace PeepoDrumKit
 	b8 RunVideoLayoutSelfTest(std::string& error)
 	{
 		error.clear();
+		const UserSettingsData previousSettings = Settings;
+		defer { Settings_Mutable = previousSettings; };
+		Settings_Mutable.Appearance.PreviewLaneBackgroundTransparency.Value = 0.0f;
 		ImGuiContext* previousContext = Gui::GetCurrentContext();
 		ImGuiContext* testContext = Gui::CreateContext();
 		Gui::SetCurrentContext(testContext);
@@ -608,9 +611,12 @@ namespace PeepoDrumKit
 			{ error = "Unable to import dual layout fixture"; return false; }
 		context.SetSelectedChart(context.Chart.Courses[0].get(), BranchType::Normal);
 		for (vec2 resolution : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f) })
-		for (auto layout : { ChartGamePreview::VideoLayout::Original, ChartGamePreview::VideoLayout::Taiko })
+		for (i32 sizeMode : { 0, 1 })
+		for (auto layout : { ChartGamePreview::VideoLayout::Original, ChartGamePreview::VideoLayout::Taiko, ChartGamePreview::VideoLayout::Jiro })
 		for (b8 sameCourse : { false, true })
 		{
+			Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+			Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
 			io.DisplaySize = resolution;
 			ChartGamePreview preview;
 			preview.VideoExportLayout = layout;
@@ -647,6 +653,14 @@ namespace PeepoDrumKit
 					{ error = "Dual lanes changed scale or did not meet at the vertical center"; return false; }
 				if (preview.VideoExportDrawList == nullptr || preview.VideoExportDrawList->VtxBuffer.empty())
 					{ error = "Video layout produced no draw data"; return false; }
+				if (layout != ChartGamePreview::VideoLayout::Original && preview.Camera.WorldSpaceSize !=
+					(layout == ChartGamePreview::VideoLayout::Jiro ? vec2(1792.0f, 1344.0f) : vec2(1920.0f, 1080.0f)))
+					{ error = "Preview size settings changed the exported video layout"; return false; }
+				if (layout == ChartGamePreview::VideoLayout::Jiro && (std::abs(GetAspectRatio(preview.VideoExportViewport) - 16.0f / 9.0f) > 0.001f
+					|| std::abs(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect) - 4.0f / 3.0f) > 0.001f
+					|| preview.Camera.ScreenSpaceViewportRect.TL.x < preview.VideoExportViewport.TL.x - 0.001f
+					|| preview.Camera.ScreenSpaceViewportRect.BR.x > preview.VideoExportViewport.BR.x + 0.001f))
+					{ error = "Jiro export did not preserve 4:3 inside the 16:9 output"; return false; }
 				for (const auto& vertex : preview.VideoExportDrawList->VtxBuffer)
 					if (!std::isfinite(vertex.pos.x) || !std::isfinite(vertex.pos.y))
 						{ error = "Video layout produced an invalid vertex"; return false; }
@@ -657,10 +671,14 @@ namespace PeepoDrumKit
 			{ error = "Unable to load combo digits for the layout test"; return false; }
 		for (vec2 resolution : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f) })
 		for (i32 laneCount : { 1, 2 })
+		for (auto layout : { ChartGamePreview::VideoLayout::Taiko, ChartGamePreview::VideoLayout::Jiro })
 		{
 			io.DisplaySize = resolution;
 			ChartGamePreview preview;
-			preview.VideoExportLayout = ChartGamePreview::VideoLayout::Taiko;
+			preview.VideoExportLayout = layout;
+			const b8 jiroLayout = layout == ChartGamePreview::VideoLayout::Jiro;
+			const f32 digitHeight = jiroLayout ? 75.0f * (306.0f / 243.0f) : 75.0f;
+			const f32 referenceWidth = jiroLayout ? 306.0f : 243.0f;
 			preview.VideoExportResolutionWidth = static_cast<u32>(resolution.x);
 			preview.VideoExportLaneCount = laneCount;
 			preview.VideoExportTime = Time::FromSec(3.0);
@@ -675,7 +693,7 @@ namespace PeepoDrumKit
 				preview.VideoExportLanes[lane] = &lanes[lane];
 			}
 			f32 fourDigitWidth = 0.0f;
-			for (i32 combo : { 1, 12, 999, 1000, 1111, 8888, 10000, 100000 })
+			for (i32 combo : { 1, 12, 999, 1000, 1111, 8888, 9999, 10000, 100000 })
 			{
 				for (i32 lane = 0; lane < laneCount; ++lane) lanes[lane].Combos.HitTimes.assign(combo, Time::Zero());
 				Gui::NewFrame();
@@ -688,14 +706,14 @@ namespace PeepoDrumKit
 				if (!error.empty()) return false;
 				for (i32 lane = 0; lane < laneCount; ++lane)
 				{
-					const f32 laneTop = preview.Camera.LaneRect.TL.y - (laneCount - 1 - lane) * GameLaneSlice.TotalHeight();
-					const vec2 expectedCenter = preview.Camera.WorldToScreenSpace(vec2(368.5f, laneTop + 107.0f));
+					const f32 laneTop = preview.Camera.LaneRect.TL.y - (laneCount - 1 - lane) * preview.Camera.LaneSlice.TotalHeight();
+					const vec2 expectedCenter = preview.Camera.WorldToScreenSpace(jiroLayout ? vec2(161.0f, laneTop + 143.5f) : vec2(368.5f, laneTop + 107.0f));
 					Rect bounds = { vec2(F32Max), vec2(-F32Max) };
 					i32 vertexCount = 0;
 					for (const auto& vertex : preview.VideoExportDrawList->VtxBuffer)
 					{
 						if (vertex.col != IM_COL32(255, 255, 255, 63) ||
-							std::abs(vertex.pos.y - expectedCenter.y) > preview.Camera.WorldToScreenScale(75.0f)) continue;
+							std::abs(vertex.pos.y - expectedCenter.y) > preview.Camera.WorldToScreenScale(digitHeight)) continue;
 						bounds.TL = Min(bounds.TL, vec2(vertex.pos));
 						bounds.BR = Max(bounds.BR, vec2(vertex.pos));
 						++vertexCount;
@@ -704,23 +722,25 @@ namespace PeepoDrumKit
 						{ error = "Combo digits produced an unexpected number of vertices"; return false; }
 					if (std::abs(bounds.GetCenter().x - expectedCenter.x) > 0.001f ||
 						std::abs(bounds.GetCenter().y - expectedCenter.y) > 0.001f ||
-						bounds.GetWidth() > preview.Camera.WorldToScreenScale(243.0f) + 0.001f ||
-						bounds.GetHeight() > preview.Camera.WorldToScreenScale(75.0f) + 0.001f ||
-						bounds.BR.x > preview.Camera.WorldToScreenSpace(vec2(490.0f, laneTop)).x + 0.001f)
+						bounds.GetWidth() > preview.Camera.WorldToScreenScale(referenceWidth) + 0.001f ||
+						std::abs(bounds.GetHeight() - preview.Camera.WorldToScreenScale(digitHeight)) > 0.001f ||
+						bounds.TL.x < preview.Camera.WorldToScreenSpace(vec2(jiroLayout ? 8.0f : 247.0f, laneTop)).x - 0.001f ||
+						bounds.BR.x > preview.Camera.WorldToScreenSpace(vec2(jiroLayout ? 314.0f : 490.0f, laneTop)).x + 0.001f)
 						{ error = "Combo digits changed center or exceeded the four-digit display area"; return false; }
+					if (combo >= 1000 && std::abs(bounds.GetWidth() - preview.Camera.WorldToScreenScale(referenceWidth)) > 0.001f)
+						{ error = "Four or more combo digits did not fill the panel display width"; return false; }
 					if (combo == 1000) fourDigitWidth = bounds.GetWidth();
 					if (combo >= 10000 && std::abs(bounds.GetWidth() - fourDigitWidth) > 0.001f)
 						{ error = "Five or more combo digits did not fit the four-digit width"; return false; }
 				}
 			}
 		}
-		const UserSettingsData previousSettings = Settings;
-		defer { Settings_Mutable = previousSettings; };
 		Settings_Mutable.General.GamePreviewShowComments.Value = true;
 		Settings_Mutable.General.GamePreviewCommentHoldMeasures.Value = 1;
 		Settings_Mutable.General.GamePreviewCommentFontSize.Value = 28;
 		Settings_Mutable.Appearance.PreviewCommentTextColor.Value = IM_COL32(19, 233, 87, 255);
 		context.SetCursorTime(context.ChartSelectedCourse->BeatToPlaybackTime(Beat::Zero(), BranchType::Normal));
+		Rect availablePreviewViewport;
 		const auto drawPreview = [&](ChartGamePreview& preview, vec2 windowSize, b8 drawControls = false)
 		{
 			io.DisplaySize = windowSize;
@@ -731,6 +751,7 @@ namespace PeepoDrumKit
 			Gui::Begin("Game preview layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
 			ImDrawList* drawList = Gui::GetWindowDrawList();
 			drawList->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+			availablePreviewViewport = Rect::FromTLSize(vec2(Gui::GetCursorScreenPos()) + vec2(8.0f), vec2(Gui::GetContentRegionAvail()) - vec2(16.0f));
 			preview.DrawGui(context, context.GetCursorTime());
 			Gui::End();
 			Gui::Render();
@@ -742,8 +763,11 @@ namespace PeepoDrumKit
 				&& first.LaneRect.TL == second.LaneRect.TL && first.LaneRect.BR == second.LaneRect.BR
 				&& first.WorldSpaceSize == second.WorldSpaceSize && first.WorldToScreenScaleFactor == second.WorldToScreenScaleFactor;
 		};
-		for (vec2 windowSize : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f), vec2(800.0f, 800.0f), vec2(1280.0f, 480.0f) })
+		for (i32 sizeMode : { 0, 1 })
+		for (vec2 windowSize : { vec2(640.0f, 360.0f), vec2(1920.0f, 1080.0f), vec2(800.0f, 800.0f), vec2(1280.0f, 480.0f), vec2(480.0f, 800.0f) })
 		{
+			Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+			Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
 			ChartGamePreview preview;
 			for (i32 laneCount : { 1, 2, 3, 2 })
 			{
@@ -756,9 +780,11 @@ namespace PeepoDrumKit
 					for (auto& course : context.Chart.Courses)
 						course->Comments.Sorted = commentText.empty() ? std::vector<CommentChange>() : std::vector<CommentChange>{ { Beat::Zero(), commentText, false } };
 					GameCamera originalCamera;
-					for (i32 layout : { 0, 1 })
+					for (i32 layout : { 0, 1, 2 })
 					{
 						Settings_Mutable.General.GamePreviewLayout.Value = layout;
+						Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = layout == 2 ? 1 - sizeMode : sizeMode;
+						Settings_Mutable.General.GamePreviewJiroSizeMode.Value = layout == 1 ? 1 - sizeMode : sizeMode;
 						ImDrawList* drawList = drawPreview(preview, windowSize);
 						if (!error.empty()) return false;
 						if (preview.VideoExportDrawList != nullptr || preview.VideoExportTime.has_value())
@@ -770,20 +796,50 @@ namespace PeepoDrumKit
 								{ error = "Three preview lanes did not fall back to the original layout"; return false; }
 							continue;
 						}
-						if (std::abs(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect) - 16.0f / 9.0f) > 0.001f
-							|| preview.Camera.WorldSpaceSize != vec2(1920.0f, 1080.0f) || preview.Camera.LaneRect.TL.x != 498.0f
-							|| preview.Camera.LaneRect.TL.y != (laneCount == 1 ? 251.0f : 540.0f)
-							|| preview.Camera.LaneWidth() != GameLaneStandardWidth)
+						const b8 jiroLayout = layout == 2;
+						if (sizeMode == 0 && (std::abs(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect) - (jiroLayout ? 4.0f / 3.0f : 16.0f / 9.0f)) > 0.001f
+							|| preview.Camera.WorldSpaceSize != (jiroLayout ? vec2(1792.0f, 1344.0f) : vec2(1920.0f, 1080.0f))
+							|| preview.Camera.LaneRect.TL.x != (jiroLayout ? 322.0f : 498.0f)
+							|| preview.Camera.LaneRect.TL.y != (jiroLayout ? (laneCount == 1 ? 539.0f : 672.0f) : (laneCount == 1 ? 251.0f : 540.0f))
+							|| preview.Camera.LaneWidth() != (jiroLayout ? 1470.0f : GameLaneStandardWidth)))
 							{
-								error = "Arcade preview changed the video lane arrangement or aspect ratio: lanes=" + std::to_string(laneCount)
+								error = "Aspect-preserving preview changed the reference lane arrangement: lanes=" + std::to_string(laneCount)
 									+ ", ratio=" + std::to_string(GetAspectRatio(preview.Camera.ScreenSpaceViewportRect))
 									+ ", world=" + std::to_string(preview.Camera.WorldSpaceSize.x) + "x" + std::to_string(preview.Camera.WorldSpaceSize.y)
 									+ ", lane=" + std::to_string(preview.Camera.LaneRect.TL.x) + "," + std::to_string(preview.Camera.LaneRect.TL.y)
 									+ ", width=" + std::to_string(preview.Camera.LaneWidth());
 								return false;
 							}
+						if (sizeMode == 1)
+						{
+							const auto& camera = preview.Camera;
+							const f32 availableWidth = availablePreviewViewport.GetWidth();
+							const f32 availableHeight = availablePreviewViewport.GetHeight();
+							const f32 laneHeight = jiroLayout ? 297.5f : 264.0f;
+							const f32 minimumHeight = laneCount * laneHeight + 96.0f;
+							const f32 expectedScale = std::min(availableWidth / (jiroLayout ? 1792.0f : 1920.0f), availableHeight / minimumHeight);
+							const f32 laneTop = camera.LaneRect.TL.y - (laneCount - 1) * laneHeight;
+							if (camera.ScreenSpaceViewportRect.TL != availablePreviewViewport.TL || camera.ScreenSpaceViewportRect.BR != availablePreviewViewport.BR
+								|| std::abs(camera.WorldToScreenScaleFactor - expectedScale) > 0.001f
+								|| camera.LaneRect.TL.x != (jiroLayout ? 322.0f : 498.0f) || std::abs(camera.LaneRect.BR.x - camera.WorldSpaceSize.x) > 0.001f
+								|| std::abs(laneTop - (camera.WorldSpaceSize.y - camera.LaneRect.BR.y)) > 0.001f)
+								{ error = "Maximized preview changed the available aspect ratio or did not maximize the visible lanes"; return false; }
+						}
+						if (jiroLayout)
+						{
+							const auto& timing = context.ChartSelectedCourse->GetPlaybackTiming(BranchType::Normal);
+							const Beat sixteenth = Beat::FromBeatsFraction(0.25);
+							const vec2 note = preview.Camera.GetNoteCoordinatesLane({}, Time::Zero(), 0, Time::FromSec(0.125), sixteenth,
+								Tempo(120), Complex(1, 0), ScrollMethod::NMSCROLL,
+								GetPx720pScrollDistanceView4Beats(EScrollDistanceViewType::PDK) * GameCamera::ScaleFrom720p * GameJiroLayout.ScrollDistanceScale,
+								timing, context.ChartSelectedCourse->JPOSScrollChanges);
+							const vec2 hitPosition = preview.Camera.LaneToWorldSpace(0, 0);
+							if (std::abs(note.x / 3.5f - 26.25f) > 0.001f || std::abs(hitPosition.x / 3.5f - 127.0f) > 0.001f
+								|| std::abs((hitPosition.y - preview.Camera.LaneRect.TL.y) / 3.5f - 34.5f) > 0.001f)
+								{ error = "Jiro sixteenth spacing or judgment position did not match the 512x384 reference"; return false; }
+						}
 						if (commentText.empty()) continue;
-						const f32 markerX = preview.Camera.WorldToScreenSpace(vec2(618.0f, 0.0f)).x;
+						const f32 markerX = preview.Camera.LaneToScreenSpace(vec2(0)).x;
 						const f32 markerWidth = preview.Camera.WorldToScreenScale(28.0f * 0.45f);
 						std::vector<vec2> markerVertices;
 						for (const auto& vertex : drawList->VtxBuffer)
@@ -795,7 +851,8 @@ namespace PeepoDrumKit
 						{
 							const vec2 tip = markerVertices[lane * 3], base = markerVertices[lane * 3 + 1];
 							const b8 above = laneCount == 2 && lane == 0;
-							const f32 laneBoundaryY = preview.Camera.WorldToScreenSpace(vec2(0.0f, above ? 276.0f : preview.Camera.LaneRect.BR.y)).y;
+							const f32 laneBoundaryY = preview.Camera.WorldToScreenSpace(vec2(0.0f,
+								above ? preview.Camera.LaneRect.TL.y - preview.Camera.LaneSlice.TotalHeight() : preview.Camera.LaneRect.BR.y)).y;
 							if ((above && (tip.y <= base.y || tip.y >= laneBoundaryY)) || (!above && (tip.y >= base.y || tip.y <= laneBoundaryY)))
 								{ error = "Preview comment position or triangle direction was incorrect"; return false; }
 						}
@@ -805,6 +862,8 @@ namespace PeepoDrumKit
 		}
 		context.ResetChartsCompared();
 		context.CompareMode = true;
+		Settings_Mutable.General.GamePreviewLayout.Value = 1;
+		Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = 0;
 		context.ChartsCompared[context.Chart.Courses[1].get()].insert(BranchType::Normal);
 		for (size_t commentedCourse : { size_t(0), size_t(1) })
 		{
@@ -825,8 +884,11 @@ namespace PeepoDrumKit
 		Settings_Mutable.TestPlay.ShowStartButtonsInPreview.Value = true;
 		Note* recordedNote = &context.ChartSelectedCourse->Notes_Normal.Sorted.front();
 		context.TestPlayJudgements[recordedNote] = { 1, 0, true };
-		for (i32 layout : { 0, 1 })
+		for (i32 sizeMode : { 0, 1 })
+		for (i32 layout : { 0, 1, 2 })
 		{
+			Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+			Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
 			Settings_Mutable.General.GamePreviewLayout.Value = layout;
 			ChartGamePreview preview;
 			preview.TestPlayCourse = context.ChartSelectedCourse;
@@ -846,6 +908,69 @@ namespace PeepoDrumKit
 					ImGuiWindow* controls = Gui::FindWindowByName(UI_WindowName("TAB_TEST_PLAY"));
 					if (!controls) { error = "Test play controls window was missing"; return false; }
 					controls->StateStorage.SetInt(controls->GetID(UI_Str("TEST_PLAY_RECORDS")), 1);
+				}
+			}
+		}
+		context.CompareMode = false;
+		for (i32 sizeMode : { 0, 1 })
+		for (i32 layout : { 0, 1, 2 })
+		for (f32 transparency : { 0.0f, 50.0f, 100.0f })
+		for (b8 testPlaying : { false, true })
+		{
+			Settings_Mutable.General.GamePreviewLayout.Value = layout;
+			Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+			Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
+			Settings_Mutable.Appearance.PreviewLaneBackgroundTransparency.Value = transparency;
+			ChartGamePreview preview;
+			preview.IsTestPlaying = testPlaying;
+			preview.TestPlayCourse = context.ChartSelectedCourse;
+			ImDrawList* drawList = drawPreview(preview, vec2(1280.0f, 720.0f));
+			if (!error.empty()) return false;
+			const u32 expectedAlpha = transparency == 0.0f ? 255 : transparency == 50.0f ? 128 : 0;
+			i32 backgroundVertices = 0, footerVertices = 0;
+			for (const auto& vertex : drawList->VtxBuffer)
+			{
+				const b8 content = (vertex.col & 0x00FFFFFF) == (GameLaneContentBackgroundColor & 0x00FFFFFF);
+				const b8 footer = (vertex.col & 0x00FFFFFF) == (GameLaneFooterBackgroundColor & 0x00FFFFFF);
+				if (!content && !footer) continue;
+				if ((vertex.col >> 24) != expectedAlpha)
+					{ error = "Lane background opacity differs between layouts or test play"; return false; }
+				backgroundVertices += content;
+				footerVertices += footer;
+			}
+			if (expectedAlpha != 0 ? backgroundVertices < 4 || footerVertices < 4 : backgroundVertices != 0 || footerVertices != 0)
+				{ error = "Lane background colors differ from Original or do not become transparent"; return false; }
+		}
+		context.SetCursorTime(Time::FromSec(1.0));
+		for (i32 renderMode : { 0, 1, 2 })
+		{
+			ChartGamePreview preview;
+			preview.IsTestPlaying = renderMode == 1;
+			preview.TestPlayCourse = context.ChartSelectedCourse;
+			if (renderMode == 2) preview.VideoExportTime = Time::FromSec(1.0);
+			for (i32 sizeMode : { 0, 1 })
+			for (i32 layout : { 0, 2, 1, 2, 0 })
+			{
+				Settings_Mutable.General.GamePreviewLayout.Value = renderMode == 2 ? (layout == 2 ? 0 : 2) : layout;
+				Settings_Mutable.General.GamePreviewArcadeSizeMode.Value = sizeMode;
+				Settings_Mutable.General.GamePreviewJiroSizeMode.Value = sizeMode;
+				preview.VideoExportLayout = static_cast<ChartGamePreview::VideoLayout>(layout);
+				drawPreview(preview, vec2(1280.0f, 720.0f));
+				if (!error.empty()) return false;
+				const auto found = preview.BarLaneCaches.find({ context.ChartSelectedCourse, BranchType::Normal });
+				if (found == preview.BarLaneCaches.end())
+					{ error = "Layout did not prepare its bar line candidates"; return false; }
+				const auto& bars = found->second;
+				const b8 containsFirstBar = std::find(bars.VisibleBars.begin(), bars.VisibleBars.end(), size_t(0)) != bars.VisibleBars.end();
+				if (containsFirstBar != (layout != 2))
+					{ error = "Switching layouts did not switch bar line expiration in preview, test play, or export"; return false; }
+				if (layout == 2)
+				{
+					if (bars.VisibleBars.size() > 8)
+						{ error = "Jiro layout selected more than eight bar lines"; return false; }
+					for (size_t index : bars.VisibleBars)
+						if (bars.Bars[index].Time + Time::FromSec(1.0) <= Time::FromSec(1.0))
+							{ error = "Jiro layout retained an expired bar line"; return false; }
 				}
 			}
 		}

@@ -54,6 +54,7 @@ namespace PeepoDrumKit
 	{
 		ChartEditor ChartEditor = {};
 		EditorWindowLayouts WindowLayouts = {};
+		EditorColorThemeState ColorTheme = {};
 
 		ImGuiApplication()
 		{
@@ -68,11 +69,14 @@ namespace PeepoDrumKit
 			// NOTE: The one downside of disabling this is that is makes tab bars and docked windows look the same
 			style.WindowMenuButtonPosition = ImGuiDir_None;
 
-			GuiStyleColorPeepoDrumKit(&style);
+			ColorTheme.Update(*Settings.Appearance.ColorTheme, GuiScaleFactorTarget, &style,
+				*Settings.Appearance.ColorThemeAccent, *Settings.Appearance.ColorThemeAccentColor);
 		}
 
 		void OnUpdate()
 		{
+			ColorTheme.Update(*Settings.Appearance.ColorTheme, GuiScaleFactorTarget, &Gui::GetStyle(),
+				*Settings.Appearance.ColorThemeAccent, *Settings.Appearance.ColorThemeAccentColor);
 			const b8 videoExportActive = ChartEditor.GetIsVideoExportActive();
 			const b8 enteredTestPlay = !videoExportActive && WindowLayouts.Update(ChartEditor.GetIsTestPlayActive()) && WindowLayouts.IsTestPlayActive;
 			if (enteredTestPlay) Gui::SetWindowCollapsed(UI_WindowName("TAB_TEST_PLAY"), false);
@@ -276,6 +280,10 @@ namespace PeepoDrumKit
 		ChartContext context;
 		UserSettingsData preferences;
 		ChartSettingsWindow settings;
+		EditorColorThemeState themeState;
+		const ImGuiStyle previousStyle = Gui::GetStyle();
+		defer { ApplyEditorColorTheme(*Settings.Appearance.ColorTheme, &Gui::GetStyle(), *Settings.Appearance.ColorThemeAccent,
+			*Settings.Appearance.ColorThemeAccentColor); Gui::GetStyle() = previousStyle; };
 		if (settings.showDeveloperSettings) return fail("Developer settings are visible before the activation shortcut");
 		ImGuiWindow* sidebar = nullptr;
 		ImGuiWindow* content = nullptr;
@@ -283,6 +291,8 @@ namespace PeepoDrumKit
 		b8 preferencesChanged = false;
 		const auto drawFrame = [&](vec2 mouse = vec2(-F32Max), i32 mouseDown = -1)
 		{
+			themeState.Update(*preferences.Appearance.ColorTheme, GuiScaleFactorTarget, &Gui::GetStyle(),
+				*preferences.Appearance.ColorThemeAccent, *preferences.Appearance.ColorThemeAccentColor);
 			ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
 			io.DisplaySize = vec2(620, 300); io.DeltaTime = 0.1f;
 			io.AddMousePosEvent(mouse.x, mouse.y);
@@ -383,6 +393,38 @@ namespace PeepoDrumKit
 		settings.SelectCategory(ChartSettingsCategory::About);
 		for (i32 frame = 0; frame < 3; ++frame) drawFrame();
 		if (preferencesChanged || !saveView()) return fail("The About page changed preferences or could not be captured");
+		settings.SelectCategory(ChartSettingsCategory::Appearance);
+		for (i32 theme : { 0, 1, 2, 0 })
+		{
+			preferences.Appearance.ColorTheme.Value = theme;
+			preferences.Appearance.ColorTheme.SetHasValueIfNotDefault();
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+			settings.SelectSection(UI_Str("SETTINGS_SECTION_THEME"));
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+			if (settings.sectionNavigation.Sections.empty() || settings.sectionNavigation.Sections.front() != UI_Str("SETTINGS_SECTION_THEME")
+				|| themeState.AppliedTheme != theme || !error.empty()) return fail("Theme selection was not available or did not apply");
+			auto textEditor = CreateImGuiColorTextEditWithNiceTheme();
+			const auto originalPalette = textEditor.GetPalette();
+			ApplyTextEditorColorTheme(textEditor, theme);
+			if (theme == 2 && textEditor.GetPalette() != ::TextEditor::GetLightPalette()) return fail("The TJA editor did not follow Light");
+			ApplyTextEditorColorTheme(textEditor, 0);
+			if (textEditor.GetPalette() != originalPalette) return fail("The TJA editor did not restore its original palette");
+			if (!saveView()) return fail("Cannot capture a color theme");
+		}
+		const std::pair<i32, i32> accentSamples[] = { { 0, 2 }, { 1, 5 }, { 0, 4 }, { 1, 7 } };
+		for (const auto& sample : accentSamples)
+		{
+			preferences.Appearance.ColorTheme.Value = sample.first;
+			preferences.Appearance.ColorThemeAccent.Value = sample.second;
+			preferences.Appearance.ColorThemeAccent.SetHasValueIfNotDefault();
+			preferences.Appearance.ColorThemeAccentColor.Value = 0xFFB060E0;
+			preferences.Appearance.ColorThemeAccentColor.SetHasValueIfNotDefault();
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+			Gui::SetScrollY(content, GuiScale(140.0f));
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame();
+			if (themeState.AppliedAccent != sample.second || !error.empty()) return fail("Accent selection did not apply");
+			if (!saveView()) return fail("Cannot capture an accent color");
+		}
 		return error.empty();
 	}
 

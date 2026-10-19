@@ -336,7 +336,7 @@ namespace PeepoDrumKit
 
 	static void DrawGamePreviewNoteSEText(ChartGraphicsResources& gfx, const GameCamera& camera, ImDrawList* drawList, vec2 centerHead, vec2 centerTail, Tempo tempo, Complex scrollSpeed, NoteSEType seType, b8 hasHead, b8 hasEnd, b8 hasBody)
 	{
-		static constexpr f32 contentToFooterOffsetY = (GameLaneSlice.FooterCenterY() - GameLaneSlice.ContentCenterY());
+		const f32 contentToFooterOffsetY = camera.LaneSlice.FooterCenterY() - camera.LaneSlice.ContentCenterY();
 		centerHead.y += contentToFooterOffsetY;
 		centerTail.y += contentToFooterOffsetY;
 
@@ -1805,14 +1805,21 @@ namespace PeepoDrumKit
 					comparedLanes.emplace_back(course.get(), branch);
 		}
 		const i32 nLanes = static_cast<i32>(comparedLanes.size());
-		const VideoLayout layout = isVideoExport ? VideoExportLayout : static_cast<VideoLayout>(Clamp(*Settings.General.GamePreviewLayout, 0, 1));
+		const VideoLayout layout = isVideoExport ? VideoExportLayout : static_cast<VideoLayout>(Clamp(*Settings.General.GamePreviewLayout, 0, 2));
 		const b8 isTaikoLayout = layout == VideoLayout::Taiko && nLanes > 0 && nLanes <= 2;
+		const b8 isJiroLayout = layout == VideoLayout::Jiro && nLanes > 0 && nLanes <= 2;
+		const b8 isPanelLayout = isTaikoLayout || isJiroLayout;
+		const b8 maximizePanelPreview = !isVideoExport && isPanelLayout
+			&& (isJiroLayout ? *Settings.General.GamePreviewJiroSizeMode : *Settings.General.GamePreviewArcadeSizeMode) == 1;
+		const auto& laneSlice = isJiroLayout ? GameJiroLayout.LaneSlice : GameLaneSlice;
+		const f32 standardLaneWidth = isJiroLayout ? GameJiroLayout.LaneWidth : GameLaneStandardWidth;
+		Camera.LaneSlice = laneSlice;
 		const b8 hasCommentLane = !isVideoExport && *Settings.General.GamePreviewShowComments && std::any_of(comparedLanes.begin(), comparedLanes.end(), [](const auto& lane) { return !lane.first->Comments.empty(); });
 		f32 commentLaneHeight = 0.0f;
 		if (hasCommentLane)
 		{
 			const f32 commentFontSize = static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128));
-			const f32 wrapWidth = GameLaneStandardWidth - 40.0f - commentFontSize * 0.45f;
+			const f32 wrapWidth = standardLaneWidth - 40.0f - commentFontSize * 0.45f;
 			commentLaneHeight = 112.0f;
 			for (size_t laneIndex = 0; laneIndex < comparedLanes.size(); laneIndex++)
 			{
@@ -1831,16 +1838,25 @@ namespace PeepoDrumKit
 		Camera.ScreenSpaceViewportRect = Gui::GetItemRect();
 		Camera.ScreenSpaceViewportRect.TL = Camera.ScreenSpaceViewportRect.TL + buttonMargin;
 		Camera.ScreenSpaceViewportRect.BR = ClampBot(Camera.ScreenSpaceViewportRect.BR - buttonMargin, Camera.ScreenSpaceViewportRect.TL + (minContentRectSize - vec2(buttonMargin.x, 0.0f)));
-		if (!isVideoExport && isTaikoLayout)
+		Rect videoCaptureViewport = Camera.ScreenSpaceViewportRect;
+		if (isVideoExport && isJiroLayout)
 		{
 			const vec2 referenceSize = vec2(1920.0f, 1080.0f);
+			const vec2 availableSize = videoCaptureViewport.GetSize();
+			const f32 scale = std::min(availableSize.x / referenceSize.x, availableSize.y / referenceSize.y);
+			videoCaptureViewport = Rect::FromCenterSize(videoCaptureViewport.GetCenter(), referenceSize * scale);
+			Camera.ScreenSpaceViewportRect = videoCaptureViewport;
+		}
+		if (isPanelLayout && !maximizePanelPreview && (!isVideoExport || isJiroLayout))
+		{
+			const vec2 referenceSize = isJiroLayout ? GameJiroLayout.WorldSize : vec2(1920.0f, 1080.0f);
 			const vec2 availableSize = Camera.ScreenSpaceViewportRect.GetSize();
 			const f32 scale = std::min(availableSize.x / referenceSize.x, availableSize.y / referenceSize.y);
 			Camera.ScreenSpaceViewportRect = Rect::FromCenterSize(Camera.ScreenSpaceViewportRect.GetCenter(), referenceSize * scale);
 		}
 		else if (isVideoExport)
 			Camera.ScreenSpaceViewportRect = FitInside(Camera.ScreenSpaceViewportRect, 16.0f / 9.0f, EFitInside::Contain);
-		else
+		else if (!isPanelLayout)
 		{
 			f32 newAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
 			if (const f32 min = GetAspectRatio(*Settings.General.GameViewportAspectRatioMin); min != 0.0f) newAspectRatio = ClampBot(newAspectRatio, min);
@@ -1854,13 +1870,25 @@ namespace PeepoDrumKit
 		const vec2 standardSize = vec2(GameLaneStandardWidth + GameLanePaddingL + GameLanePaddingR, nLanes * (GameLaneSlice.TotalHeight() + commentLaneHeight) + GameLanePaddingTop + GameLanePaddingBot);
 		const f32 standardAspectRatio = GetAspectRatio(standardSize);
 		const f32 viewportAspectRatio = GetAspectRatio(Camera.ScreenSpaceViewportRect);
-		if (isTaikoLayout)
+		if (isPanelLayout)
 		{
-			// 1280x720 reference, shifted 25 pixels up at 1920x1080.
-			Camera.WorldSpaceSize = vec2(1920.0f, 1080.0f);
-			Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / Camera.WorldSpaceSize.x;
-			laneRectBase = Rect::FromTLSize(vec2(498.0f, nLanes == 2 ? (1080.0f - 2.0f * GameLaneSlice.TotalHeight()) * 0.5f : 251.0f),
-				vec2(GameLaneStandardWidth, GameLaneSlice.TotalHeight()));
+			const vec2 referenceSize = isJiroLayout ? GameJiroLayout.WorldSize : vec2(1920.0f, 1080.0f);
+			if (maximizePanelPreview)
+			{
+				const f32 minimumWorldHeight = nLanes * laneSlice.TotalHeight() + GameLanePaddingTop + GameLanePaddingBot;
+				const vec2 viewportSize = Camera.ScreenSpaceViewportRect.GetSize();
+				Camera.WorldToScreenScaleFactor = std::min(viewportSize.x / referenceSize.x, viewportSize.y / minimumWorldHeight);
+				Camera.WorldSpaceSize = viewportSize / Camera.WorldToScreenScaleFactor;
+			}
+			else
+			{
+				Camera.WorldSpaceSize = referenceSize;
+				Camera.WorldToScreenScaleFactor = Camera.ScreenSpaceViewportRect.GetWidth() / Camera.WorldSpaceSize.x;
+			}
+			const f32 laneLeft = isJiroLayout ? GameJiroLayout.LaneLeft : 498.0f;
+			const f32 laneTop = maximizePanelPreview || nLanes == 2 ? (Camera.WorldSpaceSize.y - nLanes * laneSlice.TotalHeight()) * 0.5f
+				: isJiroLayout ? GameJiroLayout.LaneTop : 251.0f;
+			laneRectBase = Rect::FromTLSize(vec2(laneLeft, laneTop), vec2(Camera.WorldSpaceSize.x - laneLeft, laneSlice.TotalHeight()));
 		}
 		else if (viewportAspectRatio <= standardAspectRatio) // NOTE: Standard case of (<= 16:9) with a fixed sized lane being centered
 		{
@@ -1883,9 +1911,11 @@ namespace PeepoDrumKit
 		}
 		// Set to false to disable the 1 px upward correction at 1080p.
 		static constexpr b8 EnableVideoExportVerticalOffset = true;
-		Camera.LaneContentOffset = EnableVideoExportVerticalOffset && VideoExportPixelAligned
-			? vec2(0.0f, -1.0f * (Camera.WorldSpaceSize.x / 1920.0f))
+		Camera.LaneContentOffset = isJiroLayout
+			? vec2(GameJiroLayout.HitCircleOffsetX - GameHitCircle.Center.x, laneSlice.ContentCenterY() - GameHitCircle.Center.y)
 			: vec2(0.0f);
+		if (EnableVideoExportVerticalOffset && VideoExportPixelAligned)
+			Camera.LaneContentOffset.y -= isJiroLayout ? Camera.WorldSpaceSize.y / 1080.0f : Camera.WorldSpaceSize.x / 1920.0f;
 
 #if 0 // DEBUG: ...
 		{
@@ -1906,7 +1936,7 @@ namespace PeepoDrumKit
 			context.Gfx.Rasterize(SprGroup::Game, rasterScale);
 		ImDrawList* drawList = isVideoExport && VideoExportDrawListTarget ? VideoExportDrawListTarget : Gui::GetWindowDrawList();
 		const f32 videoCaptureScale = isVideoExport && VideoExportResolutionWidth > 0
-			? static_cast<f32>(VideoExportResolutionWidth) / Camera.ScreenSpaceViewportRect.GetWidth() : 1.0f;
+			? static_cast<f32>(VideoExportResolutionWidth) / videoCaptureViewport.GetWidth() : 1.0f;
 		const f32 previousFontDensity = FontMain->CurrentRasterizerDensity;
 		const f32 previousFringeScale = drawList->_FringeScale;
 		if (isVideoExport)
@@ -1920,7 +1950,7 @@ namespace PeepoDrumKit
 		};
 
 		VideoExportDrawList = isVideoExport ? drawList : nullptr;
-		if (isVideoExport) VideoExportViewport = Camera.ScreenSpaceViewportRect;
+		if (isVideoExport) VideoExportViewport = videoCaptureViewport;
 		drawList->ChannelsSplit(5); // 0: lane, 1: judgement mark, 2: bar lines, 3: notes & frame, 4: overlay texts
 		drawList->ChannelsSetCurrent(0);
 
@@ -1988,16 +2018,19 @@ namespace PeepoDrumKit
 			const Rect jacketUV = { jacketDrawRect.TL / jacketSize, jacketDrawRect.BR / jacketSize };
 			drawList->AddImage(context.JacketTexture.GetTexID(), jacketBoundRect.TL, jacketBoundRect.BR, jacketUV.TL, jacketUV.BR, Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, context.SongJacketFadeAnimationCurrent));
 		}
-		if (isTaikoLayout)
+		if (isPanelLayout)
 		{
 			drawList->ChannelsSetCurrent(4);
 			drawList->AddRectFilled(Camera.WorldToScreenSpace(vec2(0.0f, laneRectBase.TL.y)),
-				Camera.WorldToScreenSpace(vec2(498.0f, laneRectBase.TL.y + nLanes * GameLaneSlice.TotalHeight())), 0xE0282525);
+				Camera.WorldToScreenSpace(vec2(laneRectBase.TL.x, laneRectBase.TL.y + nLanes * laneSlice.TotalHeight())), 0xE0282525);
 			for (i32 lane = 0; lane < nLanes; ++lane)
 			{
-				const f32 laneTop = laneRectBase.TL.y + lane * GameLaneSlice.TotalHeight();
-				const SprID preferredBackground = lane == 0 ? SprID::Game_Combo_Background_1P : SprID::Game_Combo_Background_2P;
-				const SprID fallbackBackground = lane == 0 ? SprID::Game_Combo_Background_2P : SprID::Game_Combo_Background_1P;
+				const f32 laneTop = laneRectBase.TL.y + lane * laneSlice.TotalHeight();
+				const SprID preferredBackground = isJiroLayout
+					? (lane == 0 ? SprID::Game_ComboJiro_Background_1P : SprID::Game_ComboJiro_Background_2P)
+					: (lane == 0 ? SprID::Game_Combo_Background_1P : SprID::Game_Combo_Background_2P);
+				const SprID fallbackBackground = isJiroLayout ? SprID::Count
+					: lane == 0 ? SprID::Game_Combo_Background_2P : SprID::Game_Combo_Background_1P;
 				for (SprID background : { preferredBackground, fallbackBackground })
 				{
 					const SprInfo backgroundInfo = context.Gfx.GetInfo(background);
@@ -2005,7 +2038,7 @@ namespace PeepoDrumKit
 					ImImageQuad backgroundQuad;
 					if (context.Gfx.GetImageQuad(backgroundQuad, background,
 						Camera.WorldToScreenSpace(vec2(0.0f, laneTop)),
-						Camera.WorldToScreenSpace(vec2(498.0f, laneTop + GameLaneSlice.TotalHeight())), vec2(0.0f), vec2(1.0f)) && backgroundQuad.TexID != 0)
+						Camera.WorldToScreenSpace(vec2(laneRectBase.TL.x, laneTop + laneSlice.TotalHeight())), vec2(0.0f), vec2(1.0f)) && backgroundQuad.TexID != 0)
 					{
 						context.Gfx.DrawSprite(drawList, backgroundQuad);
 						break;
@@ -2089,7 +2122,7 @@ namespace PeepoDrumKit
 			const b8 isFocusedLane = (!isVideoExport && context.CompareMode && course == context.ChartSelectedCourse && branch == context.ChartSelectedBranch);
 			VideoExportLaneState* videoLane = isVideoExport && VideoExportLaneCount > 0 ? VideoExportLanes[iLane] : nullptr;
 
-			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (GameLaneSlice.TotalHeight() + (isTaikoLayout ? 0.0f : commentLaneHeight)) };
+			Camera.LaneRect = laneRectBase + vec2{ 0, iLane * (laneSlice.TotalHeight() + (isPanelLayout ? 0.0f : commentLaneHeight)) };
 
 			const TempoMapAccelerationStructure& tempoChanges = course->GetPlaybackTiming(branch);
 			const SortedJPOSScrollChangesList& jposScrollChanges = course->JPOSScrollChanges;
@@ -2148,40 +2181,40 @@ namespace PeepoDrumKit
 			}
 
 			auto laneBorderColor = isFocusedLane ? GameLaneBorderFocusedColor : GameLaneBorderColor;
-			const f32 laneBackgroundOpacity = isVideoExport ? VideoLaneBackgroundOpacity : 1.0f;
+			const f32 laneBackgroundOpacity = isVideoExport ? VideoLaneBackgroundOpacity : 1.0f - *Settings.Appearance.PreviewLaneBackgroundTransparency / 100.0f;
 
-			Rect stdLaneRectBR = { Camera.LaneRect.TL, vec2{ Camera.LaneRect.TL.x + GameLaneStandardWidth, Camera.LaneRect.BR.y } };
+			Rect stdLaneRectBR = { Camera.LaneRect.TL, vec2{ Camera.LaneRect.TL.x + (isPanelLayout ? Camera.LaneWidth() : standardLaneWidth), Camera.LaneRect.BR.y } };
 			Rect stdLaneLeftRect = { Camera.WorldToScreenSpace(stdLaneRectBR.GetTL() - vec2(GameLanePaddingL, 0.0f)), Camera.WorldToScreenSpace(stdLaneRectBR.GetBL()) };
 			// NOTE: Lane background and borders
 			drawList->ChannelsSetCurrent(0);
 			{
 				drawList->AddRectFilled( // NOTE: Top border, truncated at standard lane width
 					Camera.WorldToScreenSpace(stdLaneRectBR.TL),
-					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.BR.x, stdLaneRectBR.TL.y + GameLaneSlice.TopBorder)),
+					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.BR.x, stdLaneRectBR.TL.y + laneSlice.TopBorder)),
 					laneBorderColor);
 				drawList->AddRectFilled( // NOTE: Bottom border
-					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.TL.x, stdLaneRectBR.TL.y + GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
+					Camera.WorldToScreenSpace(vec2(stdLaneRectBR.TL.x, stdLaneRectBR.TL.y + laneSlice.TopBorder + laneSlice.Content + laneSlice.MidBorder + laneSlice.Footer)),
 					Camera.WorldToScreenSpace(stdLaneRectBR.BR), laneBorderColor);
 				drawList->AddRectFilled( // NOTE: Keep middle border color unfocused and untruncated
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + GameLaneSlice.Content)),
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder)),
+					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder + laneSlice.Content)),
+					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content + laneSlice.MidBorder)),
 					GameLaneBorderColor);
 					if (!branchSliding)
 					drawList->AddRectFilled( // NOTE: Content
-						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
-						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder)),
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content)),
 						Gui::ColorU32WithAlpha(GameLaneContentBackgroundColor, laneBackgroundOpacity));
 					const BranchType laneBranch = autoBranchLane ? visualBranch : branch;
 					if (branchSliding)
 					{
-						const vec2 contentTop = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder));
-						const vec2 contentBottom = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content));
+						const vec2 contentTop = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder));
+						const vec2 contentBottom = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content));
 						drawList->PushClipRect(contentTop, contentBottom, true);
 						for (BranchType layer = BranchType::Normal; layer < BranchType::Count; IncrementEnum(layer))
 						{
-							const f32 offset = (branchSlidePosition - static_cast<f32>(EnumToIndex(layer))) * GameLaneSlice.Content;
-							const vec2 top = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + offset));
-							const vec2 bottom = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + offset));
+							const f32 offset = (branchSlidePosition - static_cast<f32>(EnumToIndex(layer))) * laneSlice.Content;
+							const vec2 top = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder + offset));
+							const vec2 bottom = Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content + offset));
 							drawList->AddRectFilled(top, bottom, Gui::ColorU32WithAlpha(GameLaneContentBackgroundColor, laneBackgroundOpacity));
 							const u32 color = layer == BranchType::Expert ? *Settings.Appearance.PreviewBranchExpertLaneBackgroundColor
 								: layer == BranchType::Master ? *Settings.Appearance.PreviewBranchMasterLaneBackgroundColor : 0;
@@ -2195,20 +2228,20 @@ namespace PeepoDrumKit
 							: laneBranch == BranchType::Master ? *Settings.Appearance.PreviewBranchMasterLaneBackgroundColor : 0;
 						if (color != 0)
 							drawList->AddRectFilled(
-								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder)),
-								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content)),
+								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder)),
+								Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content)),
 								Gui::ColorU32WithAlpha(color, laneBackgroundOpacity));
 					}
 					if (gogoLaneAlpha > 0) {
-					f32 worldHeightZoomOffset = GameLaneSlice.Content / 2 * (1 - gogoLaneZoom);
+					f32 worldHeightZoomOffset = laneSlice.Content / 2 * (1 - gogoLaneZoom);
 					drawList->AddRectFilled( // NOTE: Gogo layer
-						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + worldHeightZoomOffset)),
-						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content - worldHeightZoomOffset)),
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder + worldHeightZoomOffset)),
+						Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content - worldHeightZoomOffset)),
 						Gui::ColorU32WithAlpha(GameLaneContentBackgroundColorGogo, gogoLaneAlpha * laneBackgroundOpacity));
 				}
 				drawList->AddRectFilled( // NOTE: Footer
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder)),
-					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), GameLaneSlice.TopBorder + GameLaneSlice.Content + GameLaneSlice.MidBorder + GameLaneSlice.Footer)),
+					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(0.0f, laneSlice.TopBorder + laneSlice.Content + laneSlice.MidBorder)),
+					Camera.WorldToScreenSpace(Camera.LaneRect.TL + vec2(Camera.LaneWidth(), laneSlice.TopBorder + laneSlice.Content + laneSlice.MidBorder + laneSlice.Footer)),
 					Gui::ColorU32WithAlpha(GameLaneFooterBackgroundColor, laneBackgroundOpacity));
 			}
 
@@ -2301,22 +2334,23 @@ namespace PeepoDrumKit
 			}
 
 			const auto scrollSpeedToView = GetScrollSpeedToView(static_cast<EScrollSpeedViewType>(*Settings.General.ScrollSpeedViewType));
-			const auto pxWorldPer4Beats = GetPx720pScrollDistanceView4Beats(context.Chart.ScrollDistance4BeatsType) * GameCamera::ScaleFrom720p;
+			const auto pxWorldPer4Beats = GetPx720pScrollDistanceView4Beats(context.Chart.ScrollDistance4BeatsType) * GameCamera::ScaleFrom720p
+				* (isJiroLayout ? GameJiroLayout.ScrollDistanceScale : 1.0f);
 			drawList->ChannelsSetCurrent(2);
 			if (hasCommentLane && !course->Comments.empty())
 			{
-				const b8 commentsAbove = isTaikoLayout && nLanes == 2 && iLane == 0;
+				const b8 commentsAbove = isPanelLayout && nLanes == 2 && iLane == 0;
 				const vec2 commentClipTL = Camera.WorldToScreenSpace(commentsAbove
 					? vec2(Camera.LaneRect.TL.x, 6.0f) : Camera.LaneRect.GetBL() + vec2(0.0f, 6.0f));
 				const vec2 commentClipBR = Camera.WorldToScreenSpace(commentsAbove
 					? Camera.LaneRect.GetTR() - vec2(0.0f, 6.0f)
-					: isTaikoLayout ? vec2(Camera.LaneRect.BR.x, Camera.WorldSpaceSize.y - 6.0f)
+					: isPanelLayout ? vec2(Camera.LaneRect.BR.x, Camera.WorldSpaceSize.y - 6.0f)
 					: Camera.LaneRect.GetBR() + vec2(0.0f, commentLaneHeight - 6.0f));
 				const f32 fontSize = Camera.WorldToScreenScale(static_cast<f32>(Clamp(*Settings.General.GamePreviewCommentFontSize, 12, 128)));
 				const i32 holdMeasures = Clamp(*Settings.General.GamePreviewCommentHoldMeasures, 0, 128);
 				const f32 outline = std::max(1.0f, Camera.WorldToScreenScale(1.5f));
 				ImFont* font = Gui::GetFont();
-				const f32 wrapWidth = Camera.WorldToScreenScale(GameLaneStandardWidth - 40.0f) - fontSize * 0.45f;
+				const f32 wrapWidth = Camera.WorldToScreenScale((isPanelLayout ? Camera.LaneWidth() : standardLaneWidth) - 40.0f) - fontSize * 0.45f;
 				const Time fadeDuration = Time::FromMS(100.0);
 				drawList->PushClipRect(commentClipTL, commentClipBR, true);
 				for (size_t commentIndex = 0; commentIndex < course->Comments.size(); commentIndex++)
@@ -2343,7 +2377,7 @@ namespace PeepoDrumKit
 						const f32 nextLaneX = Camera.TimeToLaneSpace(cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated,
 							nextTime, nextComment.BeatTime, TJA::DefaultTempo, 1.0f, ScrollMethod::HBSCROLL,
 							pxWorldPer4Beats, tempoChanges);
-						const f32 nextScreenX = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + nextLaneX, 0.0f)).x;
+						const f32 nextScreenX = Camera.WorldToScreenSpace(Camera.LaneRect.GetBL() + vec2(GameHitCircle.Center.x + Camera.LaneContentOffset.x + nextLaneX, 0.0f)).x;
 						const Time laterTime = cursorTimeOrAnimated + fadeDuration;
 						const Beat laterBeat = tempoChanges.ConvertTimeToBeatWithHint(laterTime, comment.BeatTime);
 						const f64 laterHBBeat = Camera.GetCursorHBScrollBeatTick(laterBeat, laterTime, tempoChanges);
@@ -2356,7 +2390,7 @@ namespace PeepoDrumKit
 					if (alpha <= 0.0f) continue;
 					const vec2 textSize = font->CalcTextSizeA(fontSize, F32Max, wrapWidth, comment.Text.c_str());
 					vec2 screenPosition = Camera.WorldToScreenSpace((commentsAbove ? Camera.LaneRect.TL : Camera.LaneRect.GetBL())
-						+ vec2(GameHitCircle.Center.x + laneX, commentsAbove ? -10.0f : 10.0f));
+						+ vec2(GameHitCircle.Center.x + Camera.LaneContentOffset.x + laneX, commentsAbove ? -10.0f : 10.0f));
 					if (commentsAbove) screenPosition.y -= textSize.y;
 					const f32 markerSize = fontSize * 0.45f;
 					const vec2 textPosition = screenPosition + vec2(markerSize + Camera.WorldToScreenScale(5.0f), 0.0f);
@@ -2387,7 +2421,6 @@ namespace PeepoDrumKit
 			};
 			const b8 barLinesBehindNotes = *Settings.General.GamePreviewBarLinesBehindNotes;
 			const i32 measureNumberDisplay = Clamp(*Settings.General.GamePreviewShowMeasureNumbers, 0, 2);
-			const b8 jiroBarLines = *Settings.General.GamePreviewBarLineMode == 1;
 			std::vector<DeferredBarLineDrawData> reverseBarLineDrawBuffer;
 			auto drawBarLine = [&](const DeferredBarLineDrawData& bar)
 			{
@@ -2413,7 +2446,7 @@ namespace PeepoDrumKit
 
 				if (Camera.IsPointVisibleOnLane(laneX))
 				{
-					const f32 barLineHalfLength = GameLaneSlice.Content * 0.5f;
+					const f32 barLineHalfLength = laneSlice.Content * 0.5f;
 					const vec2 tl = Camera.LaneToWorldSpace(laneX, laneY) - Rotate(vec2(0.0f, barLineHalfLength), GetNoteFaceRotationMirror(it.Tempo, it.ScrollSpeed, NoteType::Count).first);
 					const vec2 br = Camera.LaneToWorldSpace(laneX, laneY) + Rotate(vec2(0.0f, barLineHalfLength), GetNoteFaceRotationMirror(it.Tempo, it.ScrollSpeed, NoteType::Count).first);
 					const b8 isBranchStart = std::any_of(course->Branches.begin(), course->Branches.end(), [&](const BranchRange& branchRange)
@@ -2429,7 +2462,7 @@ namespace PeepoDrumKit
 				}
 			};
 			auto& barCache = GetCachedBarLaneData(context, *course, branch, chartBeatDuration);
-			const auto& visibleBars = jiroBarLines ? FindJiroPreviewBars(barCache, cursorTimeOrAnimated)
+			const auto& visibleBars = isJiroLayout ? FindJiroPreviewBars(barCache, cursorTimeOrAnimated)
 				: FindVisiblePreviewBars(barCache, Camera, cursorTimeOrAnimated, cursorHBScrollBeatOrAnimated, hitCirclePosLane.x, pxWorldPer4Beats, playbackScrolls != nullptr);
 			for (size_t index : visibleBars)
 				drawPreviewBar(barCache.Bars[index]);
@@ -2483,7 +2516,7 @@ namespace PeepoDrumKit
 					it.Tail.ScrollSpeedView = scrollSpeedToView(it.Tail.ScrollSpeed);
 				}
 				const auto& it = playbackScrolls ? scrollOverride : cachedNote;
-				const f32 slideYOffset = slidingNote ? (branchSlidePosition - static_cast<f32>(EnumToIndex(noteBranch))) * GameLaneSlice.Content : 0.0f;
+				const f32 slideYOffset = slidingNote ? (branchSlidePosition - static_cast<f32>(EnumToIndex(noteBranch))) * laneSlice.Content : 0.0f;
 				if (IsTestPlaying && !testPlayNoteInterval.Contains(it.Time)) return;
 				const b8 canCullRegularNote = !IsTestPlaying && !doBoxSelectThisFrame && !it.OriginalNote->IsSelected
 					&& IsRegularNote(it.OriginalNote->Type) && cursorTimeOrAnimated < it.Time;
@@ -2933,7 +2966,15 @@ namespace PeepoDrumKit
 						constexpr vec2 taikoComboDigitSize = vec2(66.0f, 75.0f);
 						const f32 taikoComboReferenceWidth = taikoComboDigitSize.x * taikoComboReferenceDigits + display.PaddingX * (taikoComboReferenceDigits - 1);
 						vec2 padding = vec2{ display.PaddingX, display.PaddingY } * digitScale;
-						if (isTaikoLayout && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
+						if (isJiroLayout && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
+						{
+							const f32 referenceWidth = Camera.LaneRect.TL.x - 16.0f;
+							const f32 sourcePaddingX = display.PaddingX * digitSrcSize.x / taikoComboDigitSize.x;
+							const f32 fitScale = referenceWidth / (digitSrcSize.x * taikoComboReferenceDigits + sourcePaddingX * (taikoComboReferenceDigits - 1));
+							digitSize = digitSrcSize * (fitScale * Camera.WorldToScreenScaleFactor);
+							padding.x = sourcePaddingX * fitScale * Camera.WorldToScreenScaleFactor;
+						}
+						else if (isTaikoLayout && digitSrcSize.x > 0.0f && digitSrcSize.y > 0.0f)
 						{
 							const f32 fitScale = std::min(taikoComboDigitSize.x / digitSrcSize.x, taikoComboDigitSize.y / digitSrcSize.y);
 							digitSize = digitSrcSize * (fitScale * Camera.WorldToScreenScaleFactor);
@@ -2941,12 +2982,13 @@ namespace PeepoDrumKit
 						}
 						vec2 digitStep = digitSize + padding;
 						const vec2 comboWorldOffset = (nLanes > 2) ? vec2{ 0, 0 }
-							: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + GameLaneSlice.Footer + display.PaddingY }
+							: (iLane == 1) ? vec2{ 0.0f, GameHitCircle.OuterOutlineRadius + laneSlice.Footer + display.PaddingY }
 							: vec2{ 0.0f, -GameHitCircle.OuterOutlineRadius - display.PaddingY - (IsTestPlaying ? 110.0f : 0.0f) };
-						const vec2 comboWorldPos = isTaikoLayout ? vec2(Camera.LaneRect.TL.x - 8.0f - taikoComboReferenceWidth * 0.5f, Camera.LaneRect.TL.y + 107.0f)
+						const vec2 comboWorldPos = isJiroLayout ? GameJiroLayout.ComboCenter + vec2(0.0f, Camera.LaneRect.TL.y - GameJiroLayout.LaneTop)
+							: isTaikoLayout ? vec2(Camera.LaneRect.TL.x - 8.0f - taikoComboReferenceWidth * 0.5f, Camera.LaneRect.TL.y + 107.0f)
 							: Camera.LaneToWorldSpace(hitCirclePosLane.x, hitCirclePosLane.y) + comboWorldOffset;
 						vec2 totalSize = vec2{ digitStep.x * comboLen, digitStep.y } - padding;
-						if (isTaikoLayout && comboLen > taikoComboReferenceDigits && totalSize.x > 0.0f)
+						if (isPanelLayout && comboLen > taikoComboReferenceDigits && totalSize.x > 0.0f)
 						{
 							const f32 referenceWidth = digitStep.x * taikoComboReferenceDigits - padding.x;
 							const f32 horizontalScale = referenceWidth / totalSize.x;
@@ -2962,7 +3004,7 @@ namespace PeepoDrumKit
 						{
 							if (sheetW <= 0.0f) return;
 							Rect comboBounds = viewport;
-							if (isVideoExport && !isTaikoLayout && nLanes == 2)
+							if (isVideoExport && !isPanelLayout && nLanes == 2)
 							{
 								comboBounds.TL.y = iLane == 0 ? viewport.TL.y + (VideoTitleVerticalPosition == 0 ? titleBandHeight : 0.0f) : laneRectScreen.BR.y;
 								comboBounds.BR.y = iLane == 0 ? laneRectScreen.TL.y : viewport.BR.y - (VideoTitleVerticalPosition == 1 ? titleBandHeight : 0.0f);
@@ -2990,13 +3032,13 @@ namespace PeepoDrumKit
 								const vec2 p1 = p0 + vec2(digitSize.x, digitSize.y);
 
 								const float foreOpacity = 63.0f / 255;
-								drawList->ChannelsSetCurrent(isTaikoLayout ? 4 : 2);
+								drawList->ChannelsSetCurrent(isPanelLayout ? 4 : 2);
 								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, 1 - std::pow(foreOpacity, 2))); // due to pre-multiplied alpha
 								drawList->ChannelsSetCurrent(4);
 								context.Gfx.DrawSprite(drawList, SprID::Game_Font_Combo, p0, p1, vec2(u0, 0.0f), vec2(u1, 1.0f), Gui::ColorU32WithNewAlpha(IM_COL32_WHITE, foreOpacity));
 							}
 						};
-						if (isVideoExport && !isTaikoLayout && nLanes == 2) videoComboDrawCalls.push_back(drawCombo);
+						if (isVideoExport && !isPanelLayout && nLanes == 2) videoComboDrawCalls.push_back(drawCombo);
 						else drawCombo(0.0f);
 				}
 			}

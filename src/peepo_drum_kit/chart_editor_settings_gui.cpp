@@ -174,7 +174,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, F32_SENoteOffset, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewBarLineMode,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode, I32_ColorTheme, I32_ThemeAccent,
 		};
 
 		struct SettingsEntry
@@ -360,15 +360,29 @@ namespace PeepoDrumKit
 						if (changesWereMade)
 							inOutI32->Value = std::clamp(inOutI32->Value, 0, i32{ Audio::Engine.MaxBufferFrameCount });
 					}
+					else if (in.Widget == WidgetType::I32_ThemeAccent)
+					{
+						const cstr accents[] = { UI_Str("SETTINGS_ACCENT_STANDARD"), UI_Str("SETTINGS_ACCENT_GREEN"), UI_Str("SETTINGS_ACCENT_BLUE"),
+							UI_Str("SETTINGS_ACCENT_CYAN"), UI_Str("SETTINGS_ACCENT_PURPLE"), UI_Str("SETTINGS_ACCENT_ORANGE"),
+							UI_Str("SETTINGS_ACCENT_PINK"), UI_Str("SETTINGS_ACCENT_CUSTOM") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 7);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, accents, ArrayCountI32(accents));
+					}
+					else if (in.Widget == WidgetType::I32_ColorTheme)
+					{
+						const cstr themes[] = { UI_Str("SETTINGS_THEME_DEFAULT"), UI_Str("SETTINGS_THEME_DARK"), UI_Str("SETTINGS_THEME_LIGHT") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, themes, ArrayCountI32(themes));
+					}
 					else if (in.Widget == WidgetType::I32_GamePreviewLayout)
 					{
-						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO") };
-						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
+						const cstr layouts[] = { UI_Str("VIDEO_EXPORT_LAYOUT_ORIGINAL"), UI_Str("VIDEO_EXPORT_LAYOUT_TAIKO"), UI_Str("VIDEO_EXPORT_LAYOUT_JIRO") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
 						changesWereMade |= Gui::Combo("##", &inOutI32->Value, layouts, ArrayCountI32(layouts));
 					}
-					else if (in.Widget == WidgetType::I32_GamePreviewBarLineMode)
+					else if (in.Widget == WidgetType::I32_GamePreviewSizeMode)
 					{
-						const cstr modes[] = { "Normal", "Jiro" };
+						const cstr modes[] = { UI_Str("SETTINGS_PREVIEW_SIZE_KEEP_ASPECT"), UI_Str("SETTINGS_PREVIEW_SIZE_MAXIMIZE") };
 						inOutI32->Value = Clamp(inOutI32->Value, 0, 1);
 						changesWereMade |= Gui::Combo("##", &inOutI32->Value, modes, ArrayCountI32(modes));
 					}
@@ -1140,6 +1154,39 @@ namespace PeepoDrumKit
 				{
 					constexpr size_t SizeOfUserSettingsData = sizeof(UserSettingsData);
 					//static_assert(PEEPO_RELEASE || SizeOfUserSettingsData == 6120, "TODO: Add missing settings entries for newly added UserSettingsData fields");
+					if (selectedCategory == ChartSettingsCategory::Appearance)
+					{
+						SettingsGui::SettingsEntry themeEntries[] =
+						{
+							SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_THEME"), settings.Appearance.ColorTheme,
+								UI_Str("SETTINGS_APPEARANCE_COLOR_THEME"), UI_Str("SETTINGS_APPEARANCE_COLOR_THEME_DESC"), SettingsGui::WidgetType::I32_ColorTheme),
+							SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_THEME"), settings.Appearance.ColorThemeAccent,
+								UI_Str("SETTINGS_APPEARANCE_ACCENT_COLOR"), UI_Str("SETTINGS_APPEARANCE_ACCENT_COLOR_DESC"), SettingsGui::WidgetType::I32_ThemeAccent),
+						};
+						Gui::PushID("ThemeSettings");
+						changesWereMade |= SettingsGui::DrawEntriesListTableGui(themeEntries, ArrayCount(themeEntries), nullptr, lastActiveThemeGroup, sectionNavigation, selectedCategory);
+						if (*settings.Appearance.ColorThemeAccent == 7)
+						{
+							auto& color = settings.Appearance.ColorThemeAccentColor;
+							Gui::PushID("CustomAccentColor");
+							Gui::AlignTextToFramePadding();
+							Gui::TextUnformatted(UI_Str("SETTINGS_APPEARANCE_CUSTOM_ACCENT_COLOR"));
+							if (color.HasValue)
+							{
+								Gui::SameLine();
+								if (Gui::SmallButton(UI_Str("SETTINGS_RESET_DEFAULT")))
+								{
+									color.ResetToDefault();
+									changesWereMade = true;
+								}
+							}
+							Gui::SetNextItemWidth(-1.0f);
+							changesWereMade |= Gui::ColorEdit3_U32("##Color", &color.Value);
+							color.SetHasValueIfNotDefault();
+							Gui::PopID();
+						}
+						Gui::PopID();
+					}
 
 					SettingsGui::SettingsEntry settingsEntriesMain[] =
 					{
@@ -1321,6 +1368,18 @@ namespace PeepoDrumKit
 							SettingsGui::WidgetType::I32_GamePreviewLayout),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewArcadeSizeMode,
+							UI_Str("SETTINGS_PREVIEW_ARCADE_SIZE_MODE"),
+							UI_Str("SETTINGS_PREVIEW_SIZE_MODE_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewSizeMode),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
+							settings.General.GamePreviewJiroSizeMode,
+							UI_Str("SETTINGS_PREVIEW_JIRO_SIZE_MODE"),
+							UI_Str("SETTINGS_PREVIEW_SIZE_MODE_DESC"),
+							SettingsGui::WidgetType::I32_GamePreviewSizeMode),
+
+						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.ScrollSpeedViewType,
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE"),
 							UI_Str("SETTINGS_SCROLL_SPEED_VIEW_TYPE_DESC"),
@@ -1331,12 +1390,6 @@ namespace PeepoDrumKit
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS"),
 							UI_Str("SETTINGS_PREVIEW_SHOW_MEASURE_NUMBERS_DESC"),
 							SettingsGui::WidgetType::I32_GamePreviewMeasureNumbers),
-
-						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
-							settings.General.GamePreviewBarLineMode,
-							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE"),
-							UI_Str("SETTINGS_PREVIEW_BAR_LINE_MODE_DESC"),
-							SettingsGui::WidgetType::I32_GamePreviewBarLineMode),
 
 						SettingsGui::SettingsEntry(ChartSettingsCategory::Editor, UI_Str("SETTINGS_SECTION_PREVIEW"),
 							settings.General.GamePreviewBarLinesBehindNotes,
@@ -1629,6 +1682,24 @@ namespace PeepoDrumKit
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_MARKER_LINE_COLOR"), settings.Appearance.MarkerLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_START_LINE_COLOR"), settings.Appearance.BranchStartLineColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_BRANCH_AREA_COLOR"), settings.Appearance.BranchAreaBackgroundColor);
+					auto& laneTransparency = settings.Appearance.PreviewLaneBackgroundTransparency;
+					Gui::AlignTextToFramePadding();
+					Gui::TextUnformatted(UI_Str("SETTINGS_APPEARANCE_PREVIEW_LANE_TRANSPARENCY"));
+					if (laneTransparency.HasValue)
+					{
+						Gui::SameLine();
+						Gui::PushID("PreviewLaneBackgroundTransparency");
+						if (Gui::SmallButton(UI_Str("SETTINGS_RESET_DEFAULT")))
+						{
+							laneTransparency.ResetToDefault();
+							changesWereMade = true;
+						}
+						Gui::PopID();
+					}
+					Gui::SetNextItemWidth(-1.0f);
+					changesWereMade |= Gui::SliderFloat("##PreviewLaneBackgroundTransparency", &laneTransparency.Value,
+						0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp);
+					laneTransparency.SetHasValueIfNotDefault();
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_EXPERT_LANE_COLOR"), settings.Appearance.PreviewBranchExpertLaneBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_BRANCH_MASTER_LANE_COLOR"), settings.Appearance.PreviewBranchMasterLaneBackgroundColor);
 					drawColorSetting(UI_Str("SETTINGS_APPEARANCE_PREVIEW_COMMENT_TEXT_COLOR"), settings.Appearance.PreviewCommentTextColor);
