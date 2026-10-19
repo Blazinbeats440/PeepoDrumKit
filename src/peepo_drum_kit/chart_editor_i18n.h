@@ -512,6 +512,23 @@ X("SETTINGS_SECTION_PROPERTIES", "Chart Properties") \
 X("SETTINGS_SECTION_EVENTS", "Events & Branches") \
 X("SETTINGS_SECTION_PREVIEW", "Chart Preview") \
 X("SETTINGS_SECTION_ANIMATION", "Animation") \
+X("SETTINGS_SECTION_THEME", "Theme") \
+X("SETTINGS_APPEARANCE_COLOR_THEME", "Color Theme") \
+X("SETTINGS_APPEARANCE_COLOR_THEME_DESC", "Choose the colors of windows, menus, and the timeline. Default preserves the original colors. Changes apply without restarting.") \
+X("SETTINGS_THEME_DEFAULT", "Default") \
+X("SETTINGS_THEME_DARK", "Dark") \
+X("SETTINGS_THEME_LIGHT", "Light") \
+X("SETTINGS_APPEARANCE_ACCENT_COLOR", "Accent Color") \
+X("SETTINGS_APPEARANCE_ACCENT_COLOR_DESC", "Change selection highlights, controls, and the timeline cursor. Standard keeps the theme's original accent. Custom lets you choose a color; shades and transparency are adjusted for each element.") \
+X("SETTINGS_APPEARANCE_CUSTOM_ACCENT_COLOR", "Custom Accent Color") \
+X("SETTINGS_ACCENT_STANDARD", "Standard") \
+X("SETTINGS_ACCENT_GREEN", "Green") \
+X("SETTINGS_ACCENT_BLUE", "Blue") \
+X("SETTINGS_ACCENT_CYAN", "Cyan") \
+X("SETTINGS_ACCENT_PURPLE", "Purple") \
+X("SETTINGS_ACCENT_ORANGE", "Orange") \
+X("SETTINGS_ACCENT_PINK", "Pink") \
+X("SETTINGS_ACCENT_CUSTOM", "Custom") \
 X("SETTINGS_SECTION_PERFORMANCE", "Performance") \
 X("SETTINGS_SECTION_VOLUME", "Volume & Sound Effects") \
 X("SETTINGS_SECTION_DEVICE", "Audio Device") \

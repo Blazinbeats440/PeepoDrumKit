@@ -283,6 +283,9 @@ namespace PeepoDrumKit
 
 		struct AppearanceData
 		{
+			WithDefault<i32> ColorTheme = 0; // 0: Default, 1: Dark, 2: Light
+			WithDefault<i32> ColorThemeAccent = 0; // 0: theme default, 1-6: presets, 7: custom
+			WithDefault<u32> ColorThemeAccentColor = 0xFFFA963F;
 			WithDefault<u32> MarkerLineColor = 0xFF00FF00;
 			WithDefault<u32> BranchStartLineColor = 0xFF00FFFF;
 			WithDefault<u32> BranchAreaBackgroundColor = 0x2800FFFF;

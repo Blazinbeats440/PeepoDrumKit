@@ -1,5 +1,7 @@
 #include "peepo_drum_kit/chart_editor_settings.h"
+#include "peepo_drum_kit/chart_editor_theme.h"
 #include "core_io.h"
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <chrono>
@@ -74,7 +76,117 @@ int main()
 	Check(!ParseSettingsIni(legacyIni, truncatedApp).HasError && truncatedApp.RecentFiles.SortedPaths.size() == 30
 		&& truncatedApp.RecentFiles.SortedPaths.back() == "C:/Legacy/29.tja", "oversized stored history retains the newest thirty");
 
+	ImGuiStyle originalStyle;
+	GuiStyleColorPeepoDrumKit(&originalStyle);
+	const u32 originalTimelineColors[] = { TimelineBackgroundColor, TimelineCursorColor, TimelineItemTextColor, TimelineGridBarLineColor };
+	const u32 originalLaneColor = GameLaneContentBackgroundColor;
+	ImGuiStyle themedStyle;
+	EditorColorThemeState themeState;
+	Check(themeState.Update(2, 1.0f, &themedStyle) && themedStyle.Colors[ImGuiCol_WindowBg].x > 0.8f
+		&& themedStyle.Colors[ImGuiCol_Text].x < 0.3f, "Light has a light background and readable dark text");
+	Check(!themeState.Update(2, 1.0f, &themedStyle), "unchanged themes do not reapply every frame");
+	themedStyle = originalStyle;
+	themedStyle.ScaleAllSizes(1.5f);
+	const ImVec2 scaledPadding = themedStyle.FramePadding;
+	Check(themeState.Update(2, 1.5f, &themedStyle) && themedStyle.Colors[ImGuiCol_WindowBg].x > 0.8f
+		&& themedStyle.FramePadding.x == scaledPadding.x && themedStyle.FramePadding.y == scaledPadding.y,
+		"GUI scaling restores the selected theme without resetting scaled dimensions");
+	Check(themeState.Update(1, 1.5f, &themedStyle) && themedStyle.Colors[ImGuiCol_WindowBg].x < 0.2f,
+		"Dark can replace Light immediately");
+	Check(themeState.Update(0, 1.5f, &themedStyle)
+		&& std::memcmp(themedStyle.Colors, originalStyle.Colors, sizeof(originalStyle.Colors)) == 0,
+		"Default restores the exact original GUI colors after theme changes");
+	Check(TimelineBackgroundColor == originalTimelineColors[0] && TimelineCursorColor == originalTimelineColors[1]
+		&& TimelineItemTextColor == originalTimelineColors[2] && TimelineGridBarLineColor == originalTimelineColors[3],
+		"Default restores the original timeline colors");
+	Check(GameLaneContentBackgroundColor == originalLaneColor, "editor themes preserve the common game lane colors");
+	for (i32 theme : { 0, 1, 2 })
+	{
+		ImGuiStyle standard;
+		ApplyEditorColorTheme(theme, &standard);
+		const u32 standardTimeline = TimelineBackgroundColor, standardCursor = TimelineCursorColor;
+		EditorColorThemeState accentState;
+		for (i32 accent : { 1, 2, 3, 4, 5, 6, 7 })
+		{
+			Check(accentState.Update(theme, 1.0f, &themedStyle, accent, 0xFFB060E0), "accent changes apply without changing the base theme");
+			Check(std::memcmp(&themedStyle.Colors[ImGuiCol_WindowBg], &standard.Colors[ImGuiCol_WindowBg], sizeof(ImVec4)) == 0
+				&& std::memcmp(&themedStyle.Colors[ImGuiCol_Text], &standard.Colors[ImGuiCol_Text], sizeof(ImVec4)) == 0
+				&& TimelineBackgroundColor == standardTimeline && GameLaneContentBackgroundColor == originalLaneColor,
+				"accents preserve the theme background, normal text, and game lane colors");
+			for (i32 index = 0; index < ImGuiCol_COUNT; ++index)
+				Check(themedStyle.Colors[index].w == standard.Colors[index].w, "accents preserve every GUI color's alpha");
+			const ImVec4 chosen = Gui::ColorConvertU32ToFloat4(GetEditorThemeAccentColor(accent, 0xFFB060E0));
+			const ImVec4 slider = themedStyle.Colors[ImGuiCol_SliderGrab];
+			Check(std::abs(slider.x - chosen.x) < 0.001f && std::abs(slider.y - chosen.y) < 0.001f && std::abs(slider.z - chosen.z) < 0.001f,
+				"the base control uses the selected preset or custom accent color");
+			if (theme == 0)
+				Check(themedStyle.Colors[ImGuiCol_Header].x != themedStyle.Colors[ImGuiCol_Header].y
+					|| themedStyle.Colors[ImGuiCol_Header].y != themedStyle.Colors[ImGuiCol_Header].z,
+					"Default selection headers show the chosen accent");
+			if (theme == 1)
+			{
+				f32 chosenHue, chosenSaturation, chosenValue;
+				Gui::ColorConvertRGBtoHSV(chosen.x, chosen.y, chosen.z, chosenHue, chosenSaturation, chosenValue);
+				for (ImGuiCol slot : { ImGuiCol_FrameBg, ImGuiCol_TitleBgActive, ImGuiCol_Tab, ImGuiCol_TabDimmedSelected })
+				{
+					const ImVec4 color = themedStyle.Colors[slot];
+					f32 hue, saturation, value;
+					Gui::ColorConvertRGBtoHSV(color.x, color.y, color.z, hue, saturation, value);
+					Check(std::abs(hue - chosenHue) < 0.001f, "Dark inputs and tab backgrounds share the chosen accent hue");
+				}
+			}
+			Check(!accentState.Update(theme, 1.0f, &themedStyle, accent, 0xFFB060E0), "unchanged accents do not reapply each frame");
+			Check(accentState.Update(theme, 1.5f, &themedStyle, accent, 0xFFB060E0), "GUI scaling reapplies the selected accent");
+		}
+		Check(accentState.Update(theme, 1.5f, &themedStyle, 7, 0xFF55CC22), "editing a custom accent applies immediately");
+		for (u32 color : { 0xFF000000u, 0xFFFFFFFFu, 0xFF808080u })
+		{
+			accentState.Update(theme, 1.5f, &themedStyle, 7, color);
+			for (const ImVec4& element : themedStyle.Colors)
+				Check(std::isfinite(element.x) && std::isfinite(element.y) && std::isfinite(element.z), "achromatic custom colors produce valid GUI colors");
+		}
+		Check(accentState.Update(theme, 1.5f, &themedStyle, 0)
+			&& std::memcmp(themedStyle.Colors, standard.Colors, sizeof(standard.Colors)) == 0 && TimelineCursorColor == standardCursor,
+			"Standard restores the exact original accent for each theme without accumulating tint");
+	}
+	ApplyEditorColorTheme(0, &themedStyle);
 	UserSettingsData defaults;
+	Check(*defaults.Appearance.ColorTheme == 0, "existing settings use the original Default theme");
+	Check(*defaults.Appearance.ColorThemeAccent == 0, "existing settings retain each theme's standard accent");
+	for (i32 theme : { 0, 1, 2 })
+	for (i32 accent : { 0, 1, 2, 3, 4, 5, 6, 7 })
+	{
+		UserSettingsData themeSettings;
+		themeSettings.Appearance.ColorTheme.Value = theme;
+		themeSettings.Appearance.ColorTheme.SetHasValueIfNotDefault();
+		themeSettings.Appearance.ColorThemeAccent.Value = accent;
+		themeSettings.Appearance.ColorThemeAccent.SetHasValueIfNotDefault();
+		themeSettings.Appearance.ColorThemeAccentColor.Value = 0xFFB060E0;
+		themeSettings.Appearance.ColorThemeAccentColor.SetHasValueIfNotDefault();
+		themeSettings.Appearance.MarkerLineColor.Value = 0xFF123456;
+		themeSettings.Appearance.MarkerLineColor.SetHasValueIfNotDefault();
+		std::string themeIni;
+		SettingsToIni(themeSettings, themeIni);
+		UserSettingsData restoredTheme;
+		Check(!ParseSettingsIni(themeIni, restoredTheme).HasError && *restoredTheme.Appearance.ColorTheme == theme
+			&& *restoredTheme.Appearance.ColorThemeAccent == accent && *restoredTheme.Appearance.ColorThemeAccentColor == 0xFFB060E0
+			&& *restoredTheme.Appearance.MarkerLineColor == 0xFF123456,
+			"each theme, preset, custom accent, and independent custom color survive saving and reloading");
+		restoredTheme.Appearance.ColorTheme.ResetToDefault();
+		Check(*restoredTheme.Appearance.ColorTheme == 0, "reset returns the theme to Default");
+		restoredTheme.Appearance.ColorThemeAccent.ResetToDefault();
+		Check(*restoredTheme.Appearance.ColorThemeAccent == 0 && *restoredTheme.Appearance.ColorThemeAccentColor == 0xFFB060E0,
+			"reset restores the standard accent while retaining the saved custom color");
+	}
+	UserSettingsData invalidTheme;
+	Check(!ParseSettingsIni("[appearance]\ncolor_theme = -1\n", invalidTheme).HasError && *invalidTheme.Appearance.ColorTheme == 0,
+		"negative theme values clamp to Default");
+	Check(!ParseSettingsIni("[appearance]\ncolor_theme = 99\n", invalidTheme).HasError && *invalidTheme.Appearance.ColorTheme == 2,
+		"high theme values clamp to the final preset");
+	Check(!ParseSettingsIni("[appearance]\ncolor_theme_accent = -1\n", invalidTheme).HasError && *invalidTheme.Appearance.ColorThemeAccent == 0,
+		"negative accent values clamp to Standard");
+	Check(!ParseSettingsIni("[appearance]\ncolor_theme_accent = 99\n", invalidTheme).HasError && *invalidTheme.Appearance.ColorThemeAccent == 7,
+		"high accent values clamp to Custom");
 	Check(defaults.General.ChartOpenDirectory->empty() && *defaults.General.RecentFilesShowFullPath, "defaults preserve full path and use exe folder");
 	Check(defaults.General.TaikojiroExecutablePath->empty(), "Taikojiro executable is initially unconfigured");
 	Check(!*defaults.General.AutoPrefixChartSubtitle, "subtitle prefix completion is off by default");

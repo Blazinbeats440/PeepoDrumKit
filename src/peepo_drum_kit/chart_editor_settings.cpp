@@ -584,6 +584,8 @@ namespace PeepoDrumKit
 		out.Audio.MasterVolume.Value = Clamp(out.Audio.MasterVolume.Value, 0.0f, 1.0f);
 		out.Audio.BalloonVolume.Value = Clamp(out.Audio.BalloonVolume.Value, 0.0f, 1.0f);
 		out.Audio.MetronomeVolume.Value = Clamp(out.Audio.MetronomeVolume.Value, 0.0f, 1.0f);
+		out.Appearance.ColorTheme.Value = Clamp(out.Appearance.ColorTheme.Value, 0, 2);
+		out.Appearance.ColorThemeAccent.Value = Clamp(out.Appearance.ColorThemeAccent.Value, 0, 7);
 		if (!std::isfinite(out.Appearance.PreviewLaneBackgroundTransparency.Value))
 			out.Appearance.PreviewLaneBackgroundTransparency.ResetToDefault();
 		else
@@ -751,6 +753,9 @@ namespace PeepoDrumKit
 			X(Audio.BufferFrameSize, "buffer_frame_size");
 
 			SECTION("appearance");
+			X(Appearance.ColorTheme, "color_theme");
+			X(Appearance.ColorThemeAccent, "color_theme_accent");
+			X(Appearance.ColorThemeAccentColor, "color_theme_accent_color");
 			X(Appearance.MarkerLineColor, "marker_line_color");
 			X(Appearance.BranchStartLineColor, "branch_start_line_color");
 			X(Appearance.BranchAreaBackgroundColor, "branch_area_background_color");

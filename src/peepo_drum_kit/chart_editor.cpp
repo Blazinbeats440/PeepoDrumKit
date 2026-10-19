@@ -342,6 +342,7 @@ namespace PeepoDrumKit
 		const f32 editorHeight = ClampBot(1.0f, Gui::GetContentRegionAvail().y - buttonHeight - Gui::GetStyle().ItemSpacing.y - statusHeight);
 
 		textEditorWindow.Editor.SetReadOnly(false);
+		ApplyTextEditorColorTheme(textEditorWindow.Editor, *Settings.Appearance.ColorTheme);
 		textEditorWindow.Editor.Render("SelectedChartTextEditor", vec2(Gui::GetContentRegionAvail().x, editorHeight), false);
 
 		const auto buttons = Gui::SameLineMultiWidget(2, [&](const Gui::MultiWidgetIt& item)
@@ -874,7 +875,8 @@ namespace PeepoDrumKit
 				Gui::MenuItem(UI_Str("ACT_TEST_SHOW_IMGUI_STYLE_EDITOR"), " ", &PersistentApp.LastSession.ShowWindow_ImGuiStyleEditor);
 				Gui::Separator();
 				if (Gui::MenuItem(UI_Str("ACT_TEST_RESET_STYLE_COLORS"), " "))
-					GuiStyleColorPeepoDrumKit();
+					ApplyEditorColorTheme(*Settings.Appearance.ColorTheme, &Gui::GetStyle(),
+						*Settings.Appearance.ColorThemeAccent, *Settings.Appearance.ColorThemeAccentColor);
 #endif
 
 #if PEEPO_DEBUG
@@ -1894,6 +1896,7 @@ namespace PeepoDrumKit
 					}
 					const f32 buttonHeight = Gui::GetFrameHeight();
 					exportDebugViewData.Editor.SetReadOnly(true);
+					ApplyTextEditorColorTheme(exportDebugViewData.Editor, *Settings.Appearance.ColorTheme);
 					exportDebugViewData.Editor.Render("TJAExportTextEditor", vec2(Gui::GetContentRegionAvail().x, ClampBot(buttonHeight * 2.0f, Gui::GetContentRegionAvail().y - buttonHeight)), true);
 					exportDebugViewData.Update |= Gui::Button("Force Update", vec2(Gui::GetContentRegionAvail().x, buttonHeight));
 				}

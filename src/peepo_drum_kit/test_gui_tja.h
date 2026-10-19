@@ -12,6 +12,7 @@
 namespace PeepoDrumKit
 {
 	::TextEditor CreateImGuiColorTextEditWithNiceTheme();
+	void ApplyTextEditorColorTheme(::TextEditor& editor, i32 theme);
 
 	struct ParsedAndConvertedTJAFile
 	{

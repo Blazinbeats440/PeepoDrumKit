@@ -174,7 +174,7 @@ namespace PeepoDrumKit
 			Default,
 			B8_ChartSongSpaceComboBox, B8_ExclusiveAudioComboBox, B8_RecentFilesDisplay, StdString_ChartOpenDirectory, StdString_TaikojiroExecutable, I32_BarDivisionComboBox, F32_DrumrollRollsPerSecond, F32_BalloonExpectedHitsPerSecond, F32_AudioMasterVolume,
 			F32_TimelineScrollSensitivity, F32_ExponentialSpeed, F32_SENoteOffset, I32_TJAFileSaveFormat, I32_VSyncOffFPSLimit,
-			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode,
+			I32_AudioBufferFrameSize, I32_ScrollSpeedViewType, I32_TestPlayJudgementDisplayMode, I32_TestPlayPausedJudgementFilter, I32_GamePreviewMeasureNumbers, I32_GamePreviewLayout, I32_GamePreviewSizeMode, I32_ColorTheme, I32_ThemeAccent,
 		};
 
 		struct SettingsEntry
@@ -359,6 +359,20 @@ namespace PeepoDrumKit
 						changesWereMade |= Gui::InputScalar("##NewBufferSize", ImGuiDataType_U32, &inOutI32->Value, PtrArg<u32>(8), PtrArg<u32>(64), "%u Frames (Request)");
 						if (changesWereMade)
 							inOutI32->Value = std::clamp(inOutI32->Value, 0, i32{ Audio::Engine.MaxBufferFrameCount });
+					}
+					else if (in.Widget == WidgetType::I32_ThemeAccent)
+					{
+						const cstr accents[] = { UI_Str("SETTINGS_ACCENT_STANDARD"), UI_Str("SETTINGS_ACCENT_GREEN"), UI_Str("SETTINGS_ACCENT_BLUE"),
+							UI_Str("SETTINGS_ACCENT_CYAN"), UI_Str("SETTINGS_ACCENT_PURPLE"), UI_Str("SETTINGS_ACCENT_ORANGE"),
+							UI_Str("SETTINGS_ACCENT_PINK"), UI_Str("SETTINGS_ACCENT_CUSTOM") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 7);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, accents, ArrayCountI32(accents));
+					}
+					else if (in.Widget == WidgetType::I32_ColorTheme)
+					{
+						const cstr themes[] = { UI_Str("SETTINGS_THEME_DEFAULT"), UI_Str("SETTINGS_THEME_DARK"), UI_Str("SETTINGS_THEME_LIGHT") };
+						inOutI32->Value = Clamp(inOutI32->Value, 0, 2);
+						changesWereMade |= Gui::Combo("##", &inOutI32->Value, themes, ArrayCountI32(themes));
 					}
 					else if (in.Widget == WidgetType::I32_GamePreviewLayout)
 					{
@@ -1140,6 +1154,39 @@ namespace PeepoDrumKit
 				{
 					constexpr size_t SizeOfUserSettingsData = sizeof(UserSettingsData);
 					//static_assert(PEEPO_RELEASE || SizeOfUserSettingsData == 6120, "TODO: Add missing settings entries for newly added UserSettingsData fields");
+					if (selectedCategory == ChartSettingsCategory::Appearance)
+					{
+						SettingsGui::SettingsEntry themeEntries[] =
+						{
+							SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_THEME"), settings.Appearance.ColorTheme,
+								UI_Str("SETTINGS_APPEARANCE_COLOR_THEME"), UI_Str("SETTINGS_APPEARANCE_COLOR_THEME_DESC"), SettingsGui::WidgetType::I32_ColorTheme),
+							SettingsGui::SettingsEntry(ChartSettingsCategory::Appearance, UI_Str("SETTINGS_SECTION_THEME"), settings.Appearance.ColorThemeAccent,
+								UI_Str("SETTINGS_APPEARANCE_ACCENT_COLOR"), UI_Str("SETTINGS_APPEARANCE_ACCENT_COLOR_DESC"), SettingsGui::WidgetType::I32_ThemeAccent),
+						};
+						Gui::PushID("ThemeSettings");
+						changesWereMade |= SettingsGui::DrawEntriesListTableGui(themeEntries, ArrayCount(themeEntries), nullptr, lastActiveThemeGroup, sectionNavigation, selectedCategory);
+						if (*settings.Appearance.ColorThemeAccent == 7)
+						{
+							auto& color = settings.Appearance.ColorThemeAccentColor;
+							Gui::PushID("CustomAccentColor");
+							Gui::AlignTextToFramePadding();
+							Gui::TextUnformatted(UI_Str("SETTINGS_APPEARANCE_CUSTOM_ACCENT_COLOR"));
+							if (color.HasValue)
+							{
+								Gui::SameLine();
+								if (Gui::SmallButton(UI_Str("SETTINGS_RESET_DEFAULT")))
+								{
+									color.ResetToDefault();
+									changesWereMade = true;
+								}
+							}
+							Gui::SetNextItemWidth(-1.0f);
+							changesWereMade |= Gui::ColorEdit3_U32("##Color", &color.Value);
+							color.SetHasValueIfNotDefault();
+							Gui::PopID();
+						}
+						Gui::PopID();
+					}
 
 					SettingsGui::SettingsEntry settingsEntriesMain[] =
 					{

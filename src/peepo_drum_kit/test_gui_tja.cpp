@@ -1,4 +1,5 @@
 #include "test_gui_tja.h"
+#include "chart_editor_settings.h"
 
 namespace PeepoDrumKit
 {
@@ -105,6 +106,13 @@ namespace PeepoDrumKit
 		0x40303030, // Current line edge
 	} };
 
+	void ApplyTextEditorColorTheme(::TextEditor& editor, i32 theme)
+	{
+		const auto& palette = theme == 2 ? ::TextEditor::GetLightPalette()
+			: theme == 1 ? ::TextEditor::GetDarkPalette() : NiceImImGuiColorTextEditColorPalette;
+		if (editor.GetPalette() != palette) editor.SetPalette(palette);
+	}
+
 	::TextEditor CreateImGuiColorTextEditWithNiceTheme()
 	{
 		// https://github.com/BalazsJako/ColorTextEditorDemo/blob/master/main.cpp
@@ -130,6 +138,7 @@ namespace PeepoDrumKit
 
 	void TJATestWindow::DrawGui()
 	{
+		ApplyTextEditorColorTheme(TJATextEditor, *Settings.Appearance.ColorTheme);
 		WasTJAEditedThisFrame = false;
 
 		if (IsFirstFrame)
@@ -205,6 +214,7 @@ namespace PeepoDrumKit
 
 	void TJATestWindow::DrawGuiTokensTabContent()
 	{
+		const auto& palette = TJATextEditor.GetPalette();
 		if (Gui::BeginTable("TokenTable", 3, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY, Gui::GetContentRegionAvail()))
 		{
 			Gui::TableSetupScrollFreeze(0, 1);
@@ -223,11 +233,11 @@ namespace PeepoDrumKit
 				Gui::TableNextColumn();
 				{
 					if (token.Key >= TJA::Key::KeyColonValue_First && token.Key <= TJA::Key::KeyColonValue_Last)
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Identifier)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Identifier)]);
 					else if (token.Key >= TJA::Key::HashCommand_First && token.Key <= TJA::Key::HashCommand_Last)
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Preprocessor)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Preprocessor)]);
 					else
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Default)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Default)]);
 
 					Gui::TextUnformatted(token.KeyString);
 
@@ -237,11 +247,11 @@ namespace PeepoDrumKit
 				Gui::TableNextColumn();
 				{
 					if (token.Type == TJA::TokenType::Comment)
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Comment)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Comment)]);
 					else if (token.Type == TJA::TokenType::ChartData)
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Number)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Number)]);
 					else
-						Gui::PushStyleColor(ImGuiCol_Text, NiceImImGuiColorTextEditColorPalette[EnumToIndex(::TextEditor::PaletteIndex::Default)]);
+						Gui::PushStyleColor(ImGuiCol_Text, palette[EnumToIndex(::TextEditor::PaletteIndex::Default)]);
 
 					Gui::TextUnformatted(token.ValueString);
 
