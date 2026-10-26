@@ -55,6 +55,7 @@ namespace PeepoDrumKit
 		ChartEditor ChartEditor = {};
 		EditorWindowLayouts WindowLayouts = {};
 		EditorColorThemeState ColorTheme = {};
+		b8 EnteredTestPlay = false;
 
 		ImGuiApplication()
 		{
@@ -73,12 +74,18 @@ namespace PeepoDrumKit
 				*Settings.Appearance.ColorThemeAccent, *Settings.Appearance.ColorThemeAccentColor);
 		}
 
+		void OnBeforeUpdate()
+		{
+			EnteredTestPlay = !ChartEditor.GetIsVideoExportActive() && WindowLayouts.Update(ChartEditor.GetIsTestPlayActive()) && WindowLayouts.IsTestPlayActive;
+		}
+
 		void OnUpdate()
 		{
 			ColorTheme.Update(*Settings.Appearance.ColorTheme, GuiScaleFactorTarget, &Gui::GetStyle(),
 				*Settings.Appearance.ColorThemeAccent, *Settings.Appearance.ColorThemeAccentColor);
 			const b8 videoExportActive = ChartEditor.GetIsVideoExportActive();
-			const b8 enteredTestPlay = !videoExportActive && WindowLayouts.Update(ChartEditor.GetIsTestPlayActive()) && WindowLayouts.IsTestPlayActive;
+			const b8 enteredTestPlay = EnteredTestPlay;
+			EnteredTestPlay = false;
 			if (enteredTestPlay) Gui::SetWindowCollapsed(UI_WindowName("TAB_TEST_PLAY"), false);
 
 			static constexpr ImGuiWindowFlags fullscreenWindowFlags =
@@ -154,13 +161,18 @@ namespace PeepoDrumKit
 		EditorWindowLayouts layouts;
 		layouts.EditingIniFileName = editingFile.c_str();
 		layouts.TestPlayIniFileName = testPlayFile.c_str();
-		const auto drawFrame = [&](b8 testPlayActive, b8 rearrange = false, b8 exportActive = false)
+		const auto drawFrame = [&](b8 testPlayActive, b8 rearrange = false, b8 exportActive = false, b8 dockControls = false)
 		{
-			Gui::NewFrame();
+			if (!error.empty()) return false;
 			const b8 changed = layouts.Update(testPlayActive);
+			for (const auto& entry : Gui::GetCurrentContext()->DockContext.Nodes.Data)
+				if (const auto* node = static_cast<ImGuiDockNode*>(entry.val_p); node != nullptr && node->IsSplitNode()
+					&& (node->TabBar != nullptr || node->Windows.Size != 0))
+					return fail("A split dock node retained window tabs while switching layouts");
+			Gui::NewFrame();
 			Gui::SetNextWindowPos(vec2(0.0f));
 			Gui::SetNextWindowSize(Gui::GetIO().DisplaySize);
-			Gui::Begin("Window layout self-test host", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings);
+			Gui::Begin("Window layout self-test host", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking);
 			const ImGuiID dockSpaceID = Gui::GetID("WindowLayoutSelfTestDockSpace");
 			if (Gui::DockBuilderGetNode(dockSpaceID) == nullptr)
 			{
@@ -168,8 +180,13 @@ namespace PeepoDrumKit
 				Gui::DockBuilderSetNodeSize(dockSpaceID, Gui::GetContentRegionAvail());
 				ImGuiID previewDock, timelineDock;
 				Gui::DockBuilderSplitNode(dockSpaceID, ImGuiDir_Down, 0.4f, &timelineDock, &previewDock);
+				ImGuiID propertiesDock;
+				Gui::DockBuilderSplitNode(previewDock, ImGuiDir_Right, 0.3f, &propertiesDock, &previewDock);
 				Gui::DockBuilderDockWindow(UI_WindowName("TAB_GAME_PREVIEW"), previewDock);
+				Gui::DockBuilderDockWindow(UI_WindowName("TAB_SETTINGS"), previewDock);
 				Gui::DockBuilderDockWindow(UI_WindowName("TAB_TIMELINE"), timelineDock);
+				Gui::DockBuilderDockWindow(UI_WindowName("TAB_UNDO_HISTORY"), timelineDock);
+				Gui::DockBuilderDockWindow(UI_WindowName("TAB_CHART_PROPERTIES"), propertiesDock);
 				Gui::DockBuilderFinish(dockSpaceID);
 			}
 			Gui::DockSpace(dockSpaceID, vec2(0.0f), exportActive ? ImGuiDockNodeFlags_KeepAliveOnly : 0);
@@ -182,11 +199,15 @@ namespace PeepoDrumKit
 				Gui::SetNextWindowSize(vec2(640.0f, 360.0f));
 			}
 			Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW")); Gui::End();
+			Gui::Begin(UI_WindowName("TAB_SETTINGS")); Gui::End();
 			Gui::Begin(UI_WindowName("TAB_TIMELINE")); Gui::End();
+			Gui::Begin(UI_WindowName("TAB_UNDO_HISTORY")); Gui::End();
+			Gui::Begin(UI_WindowName("TAB_CHART_PROPERTIES")); Gui::End();
 			if (testPlayActive)
 			{
 				Gui::SetNextWindowPos(vec2(820.0f, 80.0f), rearrange ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
 				Gui::SetNextWindowSize(vec2(400.0f, 200.0f), rearrange ? ImGuiCond_Always : ImGuiCond_FirstUseEver);
+				if (dockControls) Gui::SetNextWindowDockID(Gui::FindWindowByName(UI_WindowName("TAB_TIMELINE"))->DockId);
 				Gui::Begin(UI_WindowName("TAB_TEST_PLAY")); Gui::End();
 			}
 			Gui::Render();
@@ -219,7 +240,7 @@ namespace PeepoDrumKit
 		drawFrame(true, true);
 		drawFrame(true);
 		const auto testPlayPreview = placement(UI_WindowName("TAB_GAME_PREVIEW"));
-		const auto testPlayControls = placement(UI_WindowName("TAB_TEST_PLAY"));
+		auto testPlayControls = placement(UI_WindowName("TAB_TEST_PLAY"));
 		if (testPlayPreview.DockID != 0 || samePlacement(editingPreview, testPlayPreview))
 			return fail("The test play window layout fixture did not change");
 		for (i32 frame = 0; frame < 3; ++frame)
@@ -236,6 +257,43 @@ namespace PeepoDrumKit
 		if (!samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
 			!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
 			return fail("The next test play did not restore its window layout");
+		for (i32 cycle = 0; cycle < 20; ++cycle)
+		{
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame(false);
+			if (!samePlacement(editingPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+				!samePlacement(editingTimeline, placement(UI_WindowName("TAB_TIMELINE"))))
+				return fail("Repeated switching changed the editing window layout");
+			for (i32 frame = 0; frame < 3; ++frame) drawFrame(true);
+			if (!samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+				!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
+				return fail("Repeated switching changed the test play window layout");
+			if (!error.empty()) return false;
+		}
+		const auto testPlayTimeline = placement(UI_WindowName("TAB_TIMELINE"));
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(false);
+		auto* previewSettings = Gui::FindWindowSettingsByWindow(Gui::FindWindowByName(UI_WindowName("TAB_GAME_PREVIEW")));
+		const size_t previewSection = layouts.TestPlayLayout.find(std::string("[Window][") + previewSettings->GetName() + "]");
+		const size_t previewSectionHeaderEnd = layouts.TestPlayLayout.find('\n', previewSection);
+		if (previewSection == std::string::npos || previewSectionHeaderEnd == std::string::npos)
+			return fail("Unable to create an invalid split-node reference fixture");
+		const ImGuiID rootDock = Gui::FindWindowByName("Window layout self-test host")->GetID("WindowLayoutSelfTestDockSpace");
+		char invalidDockLine[32];
+		sprintf_s(invalidDockLine, "DockId=0x%08X\n", rootDock);
+		layouts.TestPlayLayout.insert(previewSectionHeaderEnd + 1, invalidDockLine);
+		if (!drawFrame(true) || !error.empty()) return false;
+		for (i32 frame = 0; frame < 2; ++frame) drawFrame(true);
+		if (!samePlacement(testPlayPreview, placement(UI_WindowName("TAB_GAME_PREVIEW"))) ||
+			!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))) ||
+			!samePlacement(testPlayTimeline, placement(UI_WindowName("TAB_TIMELINE"))))
+			return fail("Recovering a split-node reference changed unrelated window placements");
+		drawFrame(true, false, false, true);
+		for (i32 frame = 0; frame < 2; ++frame) drawFrame(true);
+		testPlayControls = placement(UI_WindowName("TAB_TEST_PLAY"));
+		if (testPlayControls.DockID == 0) return fail("Unable to dock the test play controls in the layout fixture");
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(false);
+		for (i32 frame = 0; frame < 3; ++frame) drawFrame(true);
+		if (!samePlacement(testPlayControls, placement(UI_WindowName("TAB_TEST_PLAY"))))
+			return fail("Switching layouts did not restore the docked test play controls");
 		Gui::SaveIniSettingsToDisk(Gui::GetIO().IniFilename);
 		if (!File::Exists(editingFile) || !File::Exists(testPlayFile)) return fail("Both window layout files were not saved");
 		if (!error.empty()) return false;
@@ -847,7 +905,7 @@ namespace PeepoDrumKit
 		};
 		callbacks.OnBeforeUpdate = []
 		{
-			app->OnUpdate();
+			app->OnBeforeUpdate();
 		};
 		callbacks.OnUpdate = []
 		{

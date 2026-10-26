@@ -1274,6 +1274,7 @@ namespace PeepoDrumKit
 			return;
 
 		const Time futureOffset = (playbackSoundFutureOffset * Min(context.SongVoice.GetPlaybackSpeed(), 1.0f));
+		const Time soundTimeStart = context.ConsumePlaybackSoundStartTime(futureOffset);
 
 		if (playbackSoundsEnabled)
 		{
@@ -1284,10 +1285,9 @@ namespace PeepoDrumKit
 			}
 			auto checkNoteSound = [&](Time noteTime)
 			{
-				const Time offsetNoteTime = noteTime - futureOffset;
-				if (offsetNoteTime < nonSmoothCursorLastFrame)
+				if (noteTime < soundTimeStart)
 					return -1; // too early
-				if (offsetNoteTime >= nonSmoothCursorThisFrame)
+				if (noteTime >= nonSmoothCursorThisFrame + futureOffset)
 					return 1; // too late
 				return 0;
 			};
@@ -1375,7 +1375,7 @@ namespace PeepoDrumKit
 					if (cache.Key != key) { cache.Index.Build(*course, branch, true); cache.Key = key; }
 					const f32 rollsPerSecond = *Settings.General.DrumrollPreviewRollsPerSecond;
 					const Time rollPadding = rollsPerSecond > 0.0f ? Time::FromSec(1.0 / rollsPerSecond) : Time::Zero();
-					const auto [first, last] = cache.Index.FindRange(nonSmoothCursorLastFrame + futureOffset - rollPadding, nonSmoothCursorThisFrame + futureOffset);
+					const auto [first, last] = cache.Index.FindRange(soundTimeStart - rollPadding, nonSmoothCursorThisFrame + futureOffset);
 					cache.VisibleNotes.clear();
 					for (auto note = first; note != last; ++note) cache.VisibleNotes.push_back(&*note);
 					std::sort(cache.VisibleNotes.begin(), cache.VisibleNotes.end(), [](const auto* first, const auto* second) { return first->OriginalNote < second->OriginalNote; });
@@ -4894,6 +4894,7 @@ namespace PeepoDrumKit
 		// NOTE: Playback preview sounds / metronome
 		if (context.GetIsPlayback() && (PlaybackSoundsEnabled || Metronome.IsEnabled))
 			UpdateTimelinePlaybackAndMetronomneSounds(*this, context, PlaybackSoundsEnabled && !context.TestPlayActive, Metronome);
+		context.PlaybackSoundStartPending = false;
 
 		// NOTE: Mouse selection box
 		{

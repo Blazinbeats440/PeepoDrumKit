@@ -592,8 +592,6 @@ namespace PeepoDrumKit
 						for (auto command : delay.SourceCommands)
 						{
 							command.TimeWithinMeasure = delay.BeatTime - measure->StartTime;
-							// Keep intermediate BPMs that the editor's one-event-per-beat tempo list cannot represent.
-							measure->TempoChanges.push_back({ command.TimeWithinMeasure, command.TempoAtCommand, command.CommandOrder * 2 });
 							command.CommandOrder = command.CommandOrder * 2 + 1;
 							measure->DelayChanges.push_back(command);
 						}
@@ -680,7 +678,7 @@ namespace PeepoDrumKit
 
 			if (inCourse.Branches.empty())
 			{
-				TJA::ConvertConvertedMeasuresToParsedCommands(outConvertedMeasures, outCourse.ChartCommands);
+				TJA::ConvertConvertedMeasuresToParsedCommands(outConvertedMeasures, outCourse.ChartCommands, out.Metadata.BPM);
 				continue;
 			}
 
@@ -707,7 +705,7 @@ namespace PeepoDrumKit
 
 			std::array<std::vector<TJA::ParsedChartCommand>, 3> commandsByBranch;
 			for (size_t branchIndex = 0; branchIndex < commandsByBranch.size(); branchIndex++)
-				TJA::ConvertConvertedMeasuresToParsedCommands(measuresByBranch[branchIndex], commandsByBranch[branchIndex]);
+				TJA::ConvertConvertedMeasuresToParsedCommands(measuresByBranch[branchIndex], commandsByBranch[branchIndex], out.Metadata.BPM);
 
 			auto groupCommandsByMeasure = [](std::vector<TJA::ParsedChartCommand>& commands)
 			{

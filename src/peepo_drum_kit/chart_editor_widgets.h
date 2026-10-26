@@ -405,6 +405,26 @@ namespace PeepoDrumKit
 		enum class VideoBackgroundFit { Stretch, Contain, ContainWithWidth, Width, Height };
 		enum class VideoLayout { Original, Taiko, Jiro };
 		GameCamera Camera = {};
+		struct CursorState
+		{
+			Time CurrentTime = {};
+			b8 Initialized = false, WasPlayback = false;
+
+			Time Update(Time targetTime, b8 isPlayback, b8 animateCursor, f32 animationSpeed, f32 deltaTime)
+			{
+				if (!Initialized || isPlayback || WasPlayback || !animateCursor)
+					CurrentTime = targetTime;
+				else if (deltaTime > 0.0f)
+				{
+					const f64 amount = animationSpeed <= 0.0f ? 1.0 : Min(1.0, static_cast<f64>(animationSpeed) * deltaTime);
+					CurrentTime += (targetTime - CurrentTime) * amount;
+					if (Absolute((targetTime - CurrentTime).Seconds) < 0.0000001) CurrentTime = targetTime;
+				}
+				Initialized = true;
+				WasPlayback = isPlayback;
+				return CurrentTime;
+			}
+		} PreviewCursor;
 		std::optional<Time> VideoExportTime;
 		Time VideoFadeContentStart = Time::Zero(), VideoFadeContentEnd = Time::Zero();
 		f32 VideoFadeInSeconds = 0.0f, VideoFadeOutSeconds = 0.0f, VideoFadeFrameSeconds = 0.0f;
@@ -562,7 +582,7 @@ namespace PeepoDrumKit
 	public:
 		b8 HasKeyboardFocus() const { return IsAnyChildWindowFocused || IsTestPlayControlsFocused; }
 		void DrawTestPlayControls(ChartContext& context);
-		void DrawGui(ChartContext& context, Time animatedCursorTime);
+		void DrawGui(ChartContext& context);
 	};
 
 	// Other GUI helpers

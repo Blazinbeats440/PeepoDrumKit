@@ -149,7 +149,9 @@
     <ClCompile Include="src\peepo_drum_kit\chart_editor_background_movie.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_sound.cpp" />
     <ClCompile Include="src\peepo_drum_kit\chart_editor_main.cpp" />
-    <ClCompile Include="src\peepo_drum_kit\chart_editor_timeline.cpp" />
+    <ClCompile Include="src\peepo_drum_kit\chart_editor_timeline.cpp">
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="src\peepo_drum_kit\chart_editor_settings.cpp" />
     <ClCompile Include="src\peepo_drum_kit\test_gui_audio.cpp" />
     <ClCompile Include="src\peepo_drum_kit\test_gui_tja.cpp" />

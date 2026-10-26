@@ -19,6 +19,7 @@ namespace PeepoDrumKit
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap() { return {}; }
 	void ChartCourse::RecalculateSENotes(BranchType) {}
 	void ChartCourse::RecalculateComboCounts(BranchType) {}
+	void SoundEffectsVoicePool::PauseAllFutureVoices() {}
 	struct ChartGraphicsResources::OpaqueData {};
 	ChartGraphicsResources::ChartGraphicsResources() = default;
 	ChartGraphicsResources::~ChartGraphicsResources() = default;

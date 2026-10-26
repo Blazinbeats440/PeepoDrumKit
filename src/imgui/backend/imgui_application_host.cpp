@@ -121,6 +121,7 @@ namespace ApplicationHost
 		}
 	};
 	static AsyncDrawListCaptureResources GlobalAsyncDrawListCapture;
+	static BeforeUpdateFunc			GlobalOnUserBeforeUpdate = nullptr;
 	static UpdateFunc				GlobalOnUserUpdate = nullptr;
 	static AfterRenderFunc			GlobalOnUserAfterRender = nullptr;
 	static WindowCloseRequestFunc	GlobalOnUserWindowCloseRequest = nullptr;
@@ -632,6 +633,7 @@ namespace ApplicationHost
 			lastDisplaySize = ImGui::GetIO().DisplaySize;
 		else if (GlobalState.UnthrottledRendering)
 			ImGui::GetIO().DisplaySize = lastDisplaySize;
+		if (GlobalOnUserBeforeUpdate != nullptr) GlobalOnUserBeforeUpdate();
 		ImGui::NewFrame();
 		ImGui_UpdateInternalInputExtraDataAtStartOfFrame();
 
@@ -1027,6 +1029,7 @@ namespace ApplicationHost
 				GlobalState.SetBorderlessFullscreenNextFrame = std::nullopt;
 			}
 
+			GlobalOnUserBeforeUpdate = userCallbacks.OnBeforeUpdate;
 			GlobalOnUserUpdate = userCallbacks.OnUpdate;
 			GlobalOnUserAfterRender = userCallbacks.OnAfterRender;
 			GlobalOnUserWindowCloseRequest = userCallbacks.OnWindowCloseRequest;
@@ -1285,6 +1288,7 @@ namespace ApplicationHost
 		error.clear();
 		const auto fail = [&](cstr message) { error = message; return false; };
 		const State previousState = GlobalState;
+		const auto previousBeforeUpdate = GlobalOnUserBeforeUpdate;
 		const auto previousUpdate = GlobalOnUserUpdate;
 		const auto previousAfterRender = GlobalOnUserAfterRender;
 		const auto previousCloseRequest = GlobalOnUserWindowCloseRequest;
@@ -1294,6 +1298,7 @@ namespace ApplicationHost
 		const ImGuiConfigFlags previousConfigFlags = ImGui::GetIO().ConfigFlags;
 		defer {
 			GlobalState = previousState;
+			GlobalOnUserBeforeUpdate = previousBeforeUpdate;
 			GlobalOnUserUpdate = previousUpdate;
 			GlobalOnUserAfterRender = previousAfterRender;
 			GlobalOnUserWindowCloseRequest = previousCloseRequest;
@@ -1310,6 +1315,9 @@ namespace ApplicationHost
 		GlobalState.AllowIdleThrottling = true;
 		FontMain = ImGui::GetIO().Fonts->Fonts[0];
 		FontMainFileNameCurrent = FontMainFileNameTarget;
+		static i32 preparedFrame = -1;
+		preparedFrame = -1;
+		GlobalOnUserBeforeUpdate = [] { preparedFrame = GImGui->WithinFrameScope ? -1 : GImGui->FrameCount; };
 		GlobalOnUserUpdate = [] { ImGui::GetForegroundDrawList()->AddText(ImVec2(10, 10), IM_COL32_WHITE, "Window lifecycle test"); };
 		static i32 renderedFrames = 0;
 		renderedFrames = 0;
@@ -1326,6 +1334,8 @@ namespace ApplicationHost
 			GlobalIsWindowMinimized = minimized;
 			const i32 previousFrame = GImGui->FrameCount;
 			ImGuiAndUserUpdateThenRenderAndPresentFrame();
+			if (preparedFrame != previousFrame)
+				return fail("The before-update callback did not run before starting the ImGui frame");
 			if (GImGui->FrameCount != previousFrame + 1 || GImGui->FrameCountPlatformEnded != GImGui->FrameCount)
 				return fail("Platform windows were not updated after a minimized or restored frame");
 			if (ImGui::GetPlatformIO().Viewports.Size != 1)

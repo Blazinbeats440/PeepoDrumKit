@@ -1767,7 +1767,7 @@ namespace PeepoDrumKit
 		Gui::End();
 	}
 
-	void ChartGamePreview::DrawGui(ChartContext& context, Time animatedCursorTime)
+	void ChartGamePreview::DrawGui(ChartContext& context)
 	{
 		if (NoteLaneCacheRevision != context.Undo.Revision)
 		{
@@ -1776,7 +1776,12 @@ namespace PeepoDrumKit
 			NoteLaneCacheRevision = context.Undo.Revision;
 		}
 		const b8 isVideoExport = VideoExportTime.has_value();
-		if (isVideoExport) animatedCursorTime = *VideoExportTime;
+		const b8 isPlayback = isVideoExport || context.GetIsPlayback();
+		const BeatAndTime cursorBeatAndTime = isVideoExport
+			? BeatAndTime { context.PlaybackBeatHint, *VideoExportTime } : context.GetCursorBeatAndTime(true);
+		const Time previewTime = isVideoExport ? *VideoExportTime : PreviewCursor.Update(cursorBeatAndTime.Time, isPlayback,
+			!Gui::IsWindowAppearing() && (!IsTestPlaying || context.TestPlaySmoothCursor),
+			*Settings.Animation.TimelineWorldSpaceCursorXSpeed, Gui::DeltaTime());
 		IsAnyChildWindowFocused = Gui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 		const b8 IsAnyChildWindowHovered = !isVideoExport && Gui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
 		const auto findNoteState = [&](const Note* note) -> const TestPlayNoteState*
@@ -1959,9 +1964,7 @@ namespace PeepoDrumKit
 		// jacket or video background
 		const b8 useBackgroundMovie = isVideoExport ? VideoUseBackgroundMovie
 			: IsTestPlaying ? *Settings.TestPlay.UseBackgroundMovie : *Settings.General.GamePreviewUseBackgroundMovie;
-		const Time movieChartTime = isVideoExport ? *VideoExportTime
-			: context.GetIsPlayback() || (IsTestPlaying && !context.TestPlaySmoothCursor) ? context.GetCursorTime() : animatedCursorTime;
-		UpdateBackgroundMovie(context, movieChartTime, useBackgroundMovie);
+		UpdateBackgroundMovie(context, previewTime, useBackgroundMovie);
 		if (!isVideoExport && !MovieError.empty())
 		{
 			const vec2 errorPosition = Camera.ScreenSpaceViewportRect.TL + vec2(8.0f);
@@ -2129,13 +2132,8 @@ namespace PeepoDrumKit
 			const std::vector<TempoChange>& tempos = course->TempoMap.Tempo.Sorted;
 			const SortedGoGoRangesList& gogoRanges = course->GoGoRanges;
 
-			const b8 isPlayback = isVideoExport || context.GetIsPlayback();
-			const BeatAndTime exactCursorBeatAndTime = isVideoExport
-				? BeatAndTime { tempoChanges.ConvertTimeToBeatWithHint(*VideoExportTime, context.PlaybackBeatHint, true), *VideoExportTime }
-				: context.GetCursorBeatAndTime(course, true, branch);
-			const b8 useExactCursor = isPlayback || (IsTestPlaying && !context.TestPlaySmoothCursor);
-			const Time cursorTimeOrAnimated = useExactCursor ? exactCursorBeatAndTime.Time : animatedCursorTime;
-			const Beat cursorBeatOrAnimatedTrunc = useExactCursor ? exactCursorBeatAndTime.Beat : tempoChanges.ConvertTimeToBeatWithHint(animatedCursorTime, context.PlaybackBeatHint, true);
+			const Time cursorTimeOrAnimated = previewTime;
+			const Beat cursorBeatOrAnimatedTrunc = tempoChanges.ConvertTimeToBeatWithHint(previewTime, cursorBeatAndTime.Beat, true);
 			const f64 cursorHBScrollBeatOrAnimated = Camera.GetCursorHBScrollBeatTick(cursorBeatOrAnimatedTrunc, cursorTimeOrAnimated, tempoChanges);
 			const Beat chartBeatDuration = context.GetUsedBeatDurationFast(*course);
 

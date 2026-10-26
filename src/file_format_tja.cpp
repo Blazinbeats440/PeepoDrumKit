@@ -1592,15 +1592,16 @@ namespace TJA
 			out = ShiftJIS::FromUTF8(out);
 	}
 
-	void ConvertConvertedMeasuresToParsedCommands(const std::vector<ConvertedMeasure>& inMeasures, std::vector<ParsedChartCommand>& outCommands)
+	void ConvertConvertedMeasuresToParsedCommands(const std::vector<ConvertedMeasure>& inMeasures, std::vector<ParsedChartCommand>& outCommands, Tempo initialTempo)
 	{
-		struct TempCommand { Beat TimeWithinMeasure; ParsedChartCommand ParsedCommand; i32 CommandOrder = -1; };
+		struct TempCommand { Beat TimeWithinMeasure; ParsedChartCommand ParsedCommand; i32 CommandOrder = -1; Tempo TempoAtDelay = DefaultTempo; };
 		std::vector<TempCommand> tempBuffer;
 		tempBuffer.reserve(64);
 
 		outCommands.reserve(inMeasures.size() * 4);
 
 		TimeSignature lastSignature = DefaultTimeSignature;
+		Tempo currentTempo = initialTempo;
 		for (const ConvertedMeasure& inMeasure : inMeasures)
 		{
 			if (inMeasure.TimeSignature != lastSignature)
@@ -1694,6 +1695,7 @@ namespace TJA
 			{
 				auto& entry = tempBuffer.emplace_back(TempCommand { delayChange.TimeWithinMeasure });
 				entry.CommandOrder = delayChange.CommandOrder;
+				entry.TempoAtDelay = delayChange.TempoAtCommand;
 				ParsedChartCommand& tempCommand = entry.ParsedCommand;
 				tempCommand.Type = ParsedChartCommandType::ChangeDelay;
 				tempCommand.Param.ChangeDelay.Value = delayChange.Delay;
@@ -1786,6 +1788,16 @@ namespace TJA
 				for (size_t i = 0; i < tempBuffer.size(); i++)
 				{
 					TempCommand& thisCommand = tempBuffer[i];
+					if (thisCommand.ParsedCommand.Type == ParsedChartCommandType::ChangeTempo)
+						currentTempo = thisCommand.ParsedCommand.Param.ChangeTempo.Value;
+					else if (thisCommand.ParsedCommand.Type == ParsedChartCommandType::ChangeDelay && thisCommand.CommandOrder >= 0
+						&& thisCommand.TempoAtDelay.BPM != currentTempo.BPM)
+					{
+						// Restore intermediate source BPMs only when the DELAY needs a different tempo.
+						auto& tempoCommand = outCommands.emplace_back(ParsedChartCommand { ParsedChartCommandType::ChangeTempo });
+						tempoCommand.Param.ChangeTempo.Value = currentTempo = thisCommand.TempoAtDelay;
+						lastNoteCommand = nullptr;
+					}
 					// NOTE: Merge adjacent single-note MeasureNotes commands
 					if (lastNoteCommand != nullptr && (thisCommand.ParsedCommand.Type == ParsedChartCommandType::MeasureNotes))
 					{

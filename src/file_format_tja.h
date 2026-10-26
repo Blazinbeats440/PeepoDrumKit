@@ -651,7 +651,7 @@ namespace TJA
 		std::vector<ConvertedBranchLevelHold> BranchLevelHolds;
 	};
 
-	void ConvertConvertedMeasuresToParsedCommands(const std::vector<TJA::ConvertedMeasure>& inMeasures, std::vector<TJA::ParsedChartCommand>& outCommands);
+	void ConvertConvertedMeasuresToParsedCommands(const std::vector<TJA::ConvertedMeasure>& inMeasures, std::vector<TJA::ParsedChartCommand>& outCommands, Tempo initialTempo = DefaultTempo);
 
 	ConvertedCourse ConvertParsedToConvertedCourse(const ParsedTJA& inContent, const ParsedCourse& inCourse);
 }

@@ -17700,6 +17700,12 @@ void ImGui::DockContextBuildAddWindowsToNodes(ImGuiContext* ctx, ImGuiID root_id
 
         ImGuiDockNode* node = DockContextFindNodeByID(ctx, window->DockId);
         IM_ASSERT(node != NULL);   // This should have been called after DockContextBuildNodesFromSettings()
+        // Match DockContextBindNodeToWindow() when a saved reference points to a split node.
+        if (node->IsSplitNode())
+        {
+            DockContextProcessUndockWindow(ctx, window);
+            continue;
+        }
         if (root_id == 0 || DockNodeGetRootNode(node)->ID == root_id)
             DockNodeAddWindow(node, window, true);
     }

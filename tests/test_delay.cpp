@@ -14,8 +14,10 @@ namespace Audio
 	b8 TestVoicePlaying = false;
 	Time TestVoicePosition = {};
 	b8 Voice::GetIsPlaying() const { return TestVoicePlaying; }
+	Time Voice::GetPosition() const { return TestVoicePosition; }
 	Time Voice::GetPositionSmooth() const { return TestVoicePosition; }
 	void Voice::SetPosition(Time value) { TestVoicePosition = value; }
+	void Voice::SetIsPlaying(b8 value) { TestVoicePlaying = value; }
 }
 namespace PeepoDrumKit
 {
@@ -23,6 +25,7 @@ namespace PeepoDrumKit
 	SettingsReflectionMap StaticallyInitializeAppSettingsReflectionMap() { return {}; }
 	void ChartCourse::RecalculateSENotes(BranchType) {}
 	void ChartCourse::RecalculateComboCounts(BranchType) {}
+	void SoundEffectsVoicePool::PauseAllFutureVoices() {}
 	struct ChartGraphicsResources::OpaqueData {};
 	ChartGraphicsResources::ChartGraphicsResources() = default;
 	ChartGraphicsResources::~ChartGraphicsResources() = default;
@@ -36,6 +39,12 @@ int main()
 		if (!condition) { std::cerr << "FAILED: " << name << '\n'; ++failures; }
 	};
 	const auto close = [](double first, double second) { return std::abs(first - second) < 0.00001; };
+	const auto countBpmChanges = [](const std::string& text)
+	{
+		i32 count = 0;
+		for (size_t position = 0; (position = text.find("#BPMCHANGE ", position)) != std::string::npos; ++position) ++count;
+		return count;
+	};
 	const auto parse = [&](const std::string& body, ChartProject& chart)
 	{
 		TJA::ErrorList errors;
@@ -68,8 +77,29 @@ int main()
 	check(course.Notes_Normal[1].TimeOffset == Time::Zero(), "DELAY does not become a per-note offset");
 	check(close(course.TempoMap.BeatToTime(Beat::FromBars(1)).ToSec(), 2.0), "Editing coordinates exclude delay");
 	ChartProject accumulatedRestored;
-	roundTrip(accumulated, accumulatedRestored);
+	check(countBpmChanges(roundTrip(accumulated, accumulatedRestored)) == 0, "Saving constant-BPM delays does not add BPM changes");
 	check(close(accumulatedRestored.Courses[0]->BeatToPlaybackTime(Beat::FromBars(2)).ToSec(), 4.75), "Cumulative timing survives a text round trip");
+	for (i32 save = 0; save < 3; ++save)
+	{
+		ChartProject savedAgain;
+		check(countBpmChanges(roundTrip(accumulatedRestored, savedAgain)) == 0, "Repeated saves do not accumulate BPM changes at delays");
+		accumulatedRestored = std::move(savedAgain);
+	}
+	for (const std::string& body : { "#DELAY 0.5\n1000,", "1000,\n#DELAY -0.5\n2000,", "#DELAY 0\n1000," })
+	{
+		ChartProject source, restored;
+		parse(body, source);
+		check(countBpmChanges(roundTrip(source, restored)) == 0, "Initial, negative, and zero delays do not add redundant BPM changes");
+	}
+	ChartProject explicitBpm, explicitBpmRestored;
+	parse("1000,\n#BPMCHANGE 120\n#DELAY 0.5\n2000,", explicitBpm);
+	check(countBpmChanges(roundTrip(explicitBpm, explicitBpmRestored)) == 1, "An explicit same-value BPM change is retained without a duplicate supplement");
+	TJA::ErrorList nonDefaultBpmErrors;
+	const auto nonDefaultBpmTja = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+		"TITLE:Initial BPM\nBPM:180\nCOURSE:Oni\n#START\n#DELAY 0.5\n1000,\n#END\n")), nonDefaultBpmErrors);
+	ChartProject nonDefaultBpm, nonDefaultBpmRestored;
+	check(nonDefaultBpmErrors.Errors.empty() && CreateChartProjectFromTJA(nonDefaultBpmTja, nonDefaultBpm), "A non-default initial BPM fixture imports");
+	check(countBpmChanges(roundTrip(nonDefaultBpm, nonDefaultBpmRestored)) == 0, "DELAY supplementation starts from the chart metadata BPM");
 	ChartProject precise, preciseRestored;
 	parse("#DELAY 0.123456789012345\n1000,", precise);
 	roundTrip(precise, preciseRestored);
@@ -119,12 +149,16 @@ int main()
 		&& close(bpmTiming.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat::FromBars(1), Time::FromSec(2.625)) / Beat::TicksPerBeat, 4.0), "Scroll stays fixed across a BPM change inside a stop");
 	check(close(bpmTiming.ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat::FromTicks(Beat::TicksPerBeat * 9 / 2), Time::FromSec(2.875)) / Beat::TicksPerBeat, 4.5), "Scroll resumes at the new BPM after a stop");
 	ChartProject bpmRestored;
-	roundTrip(bpmOrder, bpmRestored);
+	const std::string bpmOrderText = roundTrip(bpmOrder, bpmRestored);
+	check(countBpmChanges(bpmOrderText) == 1 && bpmOrderText.find("#DELAY 0.5\n#BPMCHANGE 240\n#DELAY 0.25") != std::string::npos,
+		"A BPM change between positive delays retains its order without supplements");
 	const auto& restoredCourse = *bpmRestored.Courses[0];
 	check(close(restoredCourse.GetPlaybackTiming().ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat::FromBars(1), restoredCourse.BeatToPlaybackTime(Beat::FromBars(1))) / Beat::TicksPerBeat, 4.0), "Positive stops and BPM ordering survive export");
 	ChartProject negativeBpmOrder, negativeBpmRestored;
 	parse("1000,\n#DELAY -0.5\n#BPMCHANGE 240\n#DELAY -0.25\n2000,", negativeBpmOrder);
-	roundTrip(negativeBpmOrder, negativeBpmRestored);
+	const std::string negativeBpmText = roundTrip(negativeBpmOrder, negativeBpmRestored);
+	check(countBpmChanges(negativeBpmText) == 1 && negativeBpmText.find("#DELAY -0.5\n#BPMCHANGE 240\n#DELAY -0.25") != std::string::npos,
+		"A BPM change between negative delays retains its order without supplements");
 	const auto& negativeBpmCourse = *negativeBpmRestored.Courses[0];
 	check(close(negativeBpmCourse.BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 1.25)
 		&& close(negativeBpmCourse.GetPlaybackTiming().ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(Beat::FromBars(1), Time::FromSec(1.25)) / Beat::TicksPerBeat, 2.0), "Negative rewind uses each source command's BPM after export");
@@ -132,6 +166,39 @@ int main()
 	parse("#BPMCHANGE 240\n#DELAY 0.25\n#BPMCHANGE 120\n1000,\n2000,", initialBpmReset);
 	roundTrip(initialBpmReset, initialBpmRestored);
 	check(close(initialBpmRestored.Courses[0]->BeatToPlaybackTime(Beat::FromBars(1)).ToSec(), 2.25), "An initial BPM reset after a delay survives export");
+	ChartProject intermediateBpm, intermediateBpmRestored;
+	parse("1000,\n#BPMCHANGE 240\n#DELAY -0.5\n#BPMCHANGE 120\n#DELAY 0.25\n2000,", intermediateBpm);
+	const std::string intermediateBpmText = roundTrip(intermediateBpm, intermediateBpmRestored);
+	check(countBpmChanges(intermediateBpmText) == 2
+		&& intermediateBpmText.find("#BPMCHANGE 240\n#DELAY -0.5\n#BPMCHANGE 120\n#DELAY 0.25") != std::string::npos,
+		"A necessary intermediate BPM is restored before a rewind and reset afterwards");
+	check(close(intermediateBpmRestored.Courses[0]->GetPlaybackTiming().ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(
+		Beat::FromBars(1), intermediateBpmRestored.Courses[0]->BeatToPlaybackTime(Beat::FromBars(1))) / Beat::TicksPerBeat, 2.0),
+		"Removing redundant supplements preserves the intermediate BPM's rewind distance");
+	const std::array<std::pair<std::string, i32>, 2> branchDelayFixtures = {{
+		{ "1000,\n#BRANCHSTART p,50,80\n#N\n#DELAY -0.25\n1000,\n#E\n#DELAY -0.5\n2000,\n#M\n#DELAY -0.75\n3000,\n#BRANCHEND\n1000,", 0 },
+		{ "1000,\n#BRANCHSTART p,50,80\n#N\n#BPMCHANGE 240\n#DELAY -0.25\n#BPMCHANGE 120\n1000,\n"
+			"#E\n#BPMCHANGE 180\n#DELAY -0.5\n#BPMCHANGE 120\n2000,\n#M\n#BPMCHANGE 60\n#DELAY -0.75\n#BPMCHANGE 120\n3000,\n#BRANCHEND\n1000,", 6 },
+	}};
+	for (const auto& [body, expectedBpmChanges] : branchDelayFixtures)
+	{
+		ChartProject branchedDelays, branchedDelaysRestored;
+		parse(body, branchedDelays);
+		check(countBpmChanges(roundTrip(branchedDelays, branchedDelaysRestored)) == expectedBpmChanges, "Each branch exports only its necessary DELAY BPM supplements");
+		for (BranchType branch = BranchType::Normal; branch < BranchType::Count; IncrementEnum(branch))
+		{
+			const auto& before = *branchedDelays.Courses[0]; const auto& after = *branchedDelaysRestored.Courses[0];
+			check(before.GetNotes(branch).size() == after.GetNotes(branch).size(), "Branch notes survive DELAY export");
+			for (const Note& note : before.GetNotes(branch))
+			{
+				const Time beforeTime = before.BeatToPlaybackTime(note.BeatTime, branch), afterTime = after.BeatToPlaybackTime(note.BeatTime, branch);
+				check(close(beforeTime.ToSec(), afterTime.ToSec()), "Branch-specific DELAY timing survives removal of redundant BPM supplements");
+				check(close(before.GetPlaybackTiming(branch).ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(note.BeatTime, beforeTime),
+					after.GetPlaybackTiming(branch).ConvertBeatAndTimeToHBScrollBeatTickUsingLookupTableIndexing(note.BeatTime, afterTime)),
+					"Branch-specific intermediate BPM rewind distances survive export");
+			}
+		}
+	}
 	ChartProject removedBpm, removedBpmRestored;
 	parse("1000,\n#BPMCHANGE 240\n#DELAY 0.25\n2000,", removedBpm);
 	removedBpm.Courses[0]->TempoMap.Tempo.RemoveAtBeat(Beat::FromBars(1));
@@ -391,7 +458,7 @@ int main()
 			Tempo(120.0), Complex(1.0f, 0.0f), ScrollMethod::HBSCROLL, 400.0, rollTiming, noJpos);
 		check(close(head.x, -200.0) && close(tail.x, 150.0), "Both ends of a BM/HB roll remain fixed during a mid-roll stop");
 	}
-	const auto verifyConversion = [&](const std::string& body, Beat start, Beat end, bool merge, double duration, const std::vector<TimeSignatureChange>& signatures)
+	const auto verifyConversion = [&](const std::string& body, Beat start, Beat end, bool merge, double duration, const std::vector<TimeSignatureChange>& signatures, i32 expectedBpmChanges = -1)
 	{
 		ChartContext editor;
 		parse(body, editor.Chart);
@@ -444,7 +511,9 @@ int main()
 		};
 		verifyBars(edited);
 		ChartProject convertedRestored;
-		roundTrip(editor.Chart, convertedRestored);
+		const std::string convertedText = roundTrip(editor.Chart, convertedRestored);
+		if (expectedBpmChanges >= 0)
+			check(countBpmChanges(convertedText) == expectedBpmChanges, "Range conversion exports only the necessary BPM changes");
 		verifyNotes(*convertedRestored.Courses[0]); verifyBars(*convertedRestored.Courses[0]);
 		for (const auto& delay : original.DelayChanges_Normal)
 			if (delay.BeatTime > end)
@@ -469,7 +538,8 @@ int main()
 		editor.Undo.Redo(); verifyNotes(edited); verifyBars(edited);
 	};
 	const std::string emptyBar = "1000,\n0000,\n2000,\n3000,";
-	verifyConversion(emptyBar, Beat::FromBeats(5), Beat::FromBeats(6), false, 0.5, { { Beat::FromBeats(4), { 3, 4 } }, { Beat::FromBeats(7), { 4, 4 } } });
+	verifyConversion(emptyBar, Beat::FromBeats(5), Beat::FromBeats(6), false, 0.5, { { Beat::FromBeats(4), { 3, 4 } }, { Beat::FromBeats(7), { 4, 4 } } }, 0);
+	verifyConversion("1000,\n0000,\n2000,\n#DELAY 0.5\n3000,", Beat::FromBeats(4), Beat::FromBeats(8), false, 2.0, {}, 0);
 	verifyConversion(emptyBar, Beat::FromBeats(5), Beat::FromBeatsFraction(5.5), false, 0.25, { { Beat::FromBeats(4), { 7, 8 } }, { Beat::FromBeatsFraction(7.5), { 4, 4 } } });
 	verifyConversion(emptyBar, Beat::FromBeats(5), Beat::FromBeatsFraction(5.25), false, 0.125, { { Beat::FromBeats(4), { 15, 16 } }, { Beat::FromBeatsFraction(7.75), { 4, 4 } } });
 	verifyConversion(emptyBar, Beat::FromBeats(4), Beat::FromBeats(8), false, 2.0, {});
@@ -491,7 +561,7 @@ int main()
 	const std::string crossingBars = "1000,\n0000,\n0000,\n2000,";
 	verifyConversion(crossingBars, Beat::FromBeats(7), Beat::FromBeats(9), false, 1.0, { { Beat::FromBeats(4), { 3, 4 } }, { Beat::FromBeats(10), { 4, 4 } } });
 	verifyConversion(crossingBars, Beat::FromBeats(7), Beat::FromBeats(9), true, 1.0, { { Beat::FromBeats(4), { 6, 4 } }, { Beat::FromBeats(10), { 4, 4 } } });
-	verifyConversion("1000,\n00\n#BPMCHANGE 240\n00,\n2000,\n#BPMCHANGE 180\n3000,", Beat::FromBeats(5), Beat::FromBeats(7), false, 0.75, { { Beat::FromBeats(4), { 2, 4 } }, { Beat::FromBeats(6), { 4, 4 } } });
+	verifyConversion("1000,\n00\n#BPMCHANGE 240\n00,\n2000,\n#BPMCHANGE 180\n3000,", Beat::FromBeats(5), Beat::FromBeats(7), false, 0.75, { { Beat::FromBeats(4), { 2, 4 } }, { Beat::FromBeats(6), { 4, 4 } } }, 2);
 	verifyConversion("1000,\n0\n#DELAY 0.25\n0\n#DELAY 0.5\n0\n#DELAY 0.125\n0,\n2000,", Beat::FromBeats(4), Beat::FromBeats(7), false, 2.375, { { Beat::FromBeats(4), { 1, 4 } }, { Beat::FromBeats(5), { 4, 4 } } });
 	verifyConversion("1000,\n0000,\n#DELAY -0.25\n#BPMCHANGE 240\n#DELAY -0.125\n#BPMCHANGE 180\n2000,", Beat::FromBeats(5), Beat::FromBeats(6), false, 0.5, { { Beat::FromBeats(4), { 3, 4 } }, { Beat::FromBeats(7), { 4, 4 } } });
 	verifyConversion("1000,\n0000,\n#MEASURE 3/4\n000,\n200,\n#MEASURE 4/4\n3000,", Beat::FromBeats(5), Beat::FromBeats(11), false, 3.0, { { Beat::FromBeats(4), { 1, 4 } }, { Beat::FromBeats(5), { 3, 4 } } });
@@ -702,6 +772,73 @@ int main()
 	i32 hitLookups = 0;
 	FindRollHitIndex(1000000, 12345.0, [&](i32 index) { ++hitLookups; return index / 30.0; }, true);
 	check(hitLookups <= 21, "Long roll counting uses logarithmic work");
+	for (f64 seconds : { -1.0, 2.5, 3600.125 })
+	{
+		ChartGamePreview::CursorState cursor;
+		const Time firstTime = Time::FromSec(seconds), frameTime = Time::FromSec(1.0 / 60.0);
+		check(cursor.Update(firstTime, false, true, 35.0f, frameTime.ToSec_F32()) == firstTime,
+			"A newly opened preview starts at the exact playback time");
+		const Time playingTime = firstTime + Time::FromSec(1.0);
+		check(cursor.Update(playingTime, true, true, 35.0f, frameTime.ToSec_F32()) == playingTime,
+			"A playing preview follows the exact playback time");
+		const Time pausedTime = playingTime + Time::FromMS(12.5);
+		check(cursor.Update(pausedTime, false, true, 35.0f, frameTime.ToSec_F32()) == pausedTime,
+			"Pausing preserves the exact time within a DELAY stop");
+		const Time animatedTime = cursor.Update(firstTime, false, true, 35.0f, frameTime.ToSec_F32());
+		check(animatedTime > firstTime && animatedTime < pausedTime, "A paused preview smoothly follows cursor movement in playback time");
+		for (i32 frame = 0; frame < 60; ++frame) cursor.Update(firstTime, false, true, 35.0f, frameTime.ToSec_F32());
+		check(cursor.CurrentTime == firstTime, "The preview animation settles at the exact playback time");
+		check(cursor.Update(playingTime, false, true, 35.0f, 1.0f) == playingTime, "A slow frame does not overshoot the preview target");
+		check(cursor.Update(firstTime, false, true, 0.0f, frameTime.ToSec_F32()) == firstTime,
+			"Disabling cursor animation uses the exact preview time");
+		check(cursor.Update(pausedTime, false, false, 35.0f, frameTime.ToSec_F32()) == pausedTime,
+			"Test play can synchronize its paused preview without smoothing");
+		check(cursor.Update(firstTime, false, true, 35.0f, frameTime.ToSec_F32()) < pausedTime,
+			"Test play can begin smoothing immediately after an exact paused cursor");
+	}
+	ChartContext soundContext;
+	parse("7008,", soundContext.Chart);
+	soundContext.SetSelectedChart(soundContext.Chart.Courses[0].get(), BranchType::Normal);
+	auto& soundCourse = *soundContext.ChartSelectedCourse;
+	const Time soundLookahead = Time::FromMS(40.0);
+	for (f32 rollsPerSecond : { 0.1f, 1.0f, 8.0f })
+	for (f64 noteOffset : { 0.0, 0.025, -0.125 })
+	for (f64 songOffset : { 0.0, 0.1, -0.3 })
+	{
+		Audio::TestVoicePlaying = false;
+		soundContext.Chart.SongOffset = Time::FromSec(songOffset);
+		auto& balloon = soundCourse.Notes_Normal[0];
+		balloon.TimeOffset = Time::FromSec(noteOffset);
+		balloon.BeatDuration = Beat::FromBars(32);
+		balloon.BalloonPopCount = 5;
+		const Time head = soundCourse.BeatToPlaybackTime(balloon.BeatTime) + balloon.TimeOffset;
+		const auto hitTime = [&](i32 index) { return head + Time::FromSec(1.0 / rollsPerSecond) * index; };
+		const auto scheduledHits = [&](Time current)
+		{
+			const Time minimum = soundContext.ConsumePlaybackSoundStartTime(soundLookahead);
+			return FindRollHitIndex(5, current + soundLookahead, hitTime) - FindRollHitIndex(5, minimum, hitTime);
+		};
+		soundContext.SetCursorTime(head);
+		soundContext.SetIsPlayback(true);
+		check(scheduledHits(head) == 1, "A slow balloon schedules its first hit immediately at playback start");
+		check(scheduledHits(head) == 0, "An unchanged audio cursor does not schedule the first balloon hit twice");
+		soundContext.CursorNonSmoothTimeLastFrame = head;
+		check(scheduledHits(head + Time::FromMS(16.0)) == 0, "Later frames preserve the configured interval after the first balloon hit");
+		soundContext.CursorNonSmoothTimeLastFrame = hitTime(1) - Time::FromMS(50.0);
+		check(scheduledHits(hitTime(1) - Time::FromMS(30.0)) == 1, "The next balloon hit retains the configured interval");
+		soundContext.SetIsPlayback(false);
+		soundContext.SetCursorTime(head);
+		soundContext.PlaybackSoundStartPending = false;
+		soundContext.SetIsPlayback(true);
+		check(scheduledHits(head) == 1, "Resuming at a balloon head schedules the first hit again");
+		soundContext.SetCursorTime(hitTime(1));
+		check(scheduledHits(hitTime(1)) == 1, "Seeking to a balloon hit includes that hit immediately");
+		soundContext.SetCursorTime(hitTime(1) + Time::FromMS(10.0));
+		check(scheduledHits(hitTime(1) + Time::FromMS(10.0)) == 0, "Starting after a balloon hit does not replay earlier hits");
+		soundContext.SetCursorTime(head - Time::FromMS(25.0));
+		check(scheduledHits(head - Time::FromMS(25.0)) == 1, "Starting just before a balloon schedules its first hit within the lookahead");
+	}
+	Audio::TestVoicePlaying = false;
 	std::cout << (failures ? "DELAY tests failed" : "DELAY tests passed") << '\n';
 	return failures ? 1 : 0;
 }

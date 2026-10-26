@@ -642,7 +642,7 @@ namespace PeepoDrumKit
 				Gui::SetNextWindowPos(vec2(0.0f));
 				Gui::SetNextWindowSize(resolution);
 				Gui::Begin("Video layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
-				preview.DrawGui(context, *preview.VideoExportTime);
+				preview.DrawGui(context);
 				Gui::End();
 				Gui::Render();
 				if (!error.empty()) return false;
@@ -700,7 +700,7 @@ namespace PeepoDrumKit
 				Gui::SetNextWindowPos(vec2(0.0f));
 				Gui::SetNextWindowSize(resolution);
 				Gui::Begin("Video layout self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
-				preview.DrawGui(context, *preview.VideoExportTime);
+				preview.DrawGui(context);
 				Gui::End();
 				Gui::Render();
 				if (!error.empty()) return false;
@@ -752,7 +752,7 @@ namespace PeepoDrumKit
 			ImDrawList* drawList = Gui::GetWindowDrawList();
 			drawList->Flags &= ~ImDrawListFlags_AntiAliasedFill;
 			availablePreviewViewport = Rect::FromTLSize(vec2(Gui::GetCursorScreenPos()) + vec2(8.0f), vec2(Gui::GetContentRegionAvail()) - vec2(16.0f));
-			preview.DrawGui(context, context.GetCursorTime());
+			preview.DrawGui(context);
 			Gui::End();
 			Gui::Render();
 			return drawList;
@@ -971,6 +971,88 @@ namespace PeepoDrumKit
 					for (size_t index : bars.VisibleBars)
 						if (bars.Bars[index].Time + Time::FromSec(1.0) <= Time::FromSec(1.0))
 							{ error = "Jiro layout retained an expired bar line"; return false; }
+				}
+			}
+		}
+		ChartContext delayContext;
+		TJA::ErrorList delayErrors;
+		const auto delayChart = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+			"TITLE:Paused DELAY preview\nBPM:120\nCOURSE:Oni\n#START\n1111,\n#DELAY 1\n#BPMCHANGE 180\n1010,\n"
+			"#DELAY -1.5\n5008,\n1111,\n#END\n")), delayErrors);
+		if (!delayErrors.Errors.empty() || !CreateChartProjectFromTJA(delayChart, delayContext.Chart))
+			{ error = "Unable to import paused preview fixture"; return false; }
+		auto& delayCourse = *delayContext.Chart.Courses[0];
+		delayCourse.Notes_Expert.Sorted = delayCourse.Notes_Normal.Sorted;
+		delayCourse.DelayChanges_Expert = delayCourse.DelayChanges_Normal;
+		delayCourse.DelayChanges_Expert.InsertOrUpdate({ Beat::Zero(), Time::FromSec(0.5) });
+		delayCourse.JPOSScrollChanges.InsertOrUpdate({ Beat::FromBeats(2), Complex(100.0f, 20.0f), 3.0f });
+		delayCourse.Comments.InsertOrUpdate({ Beat::FromBars(1), "DELAY", false });
+		auto& comparisonCourse = *delayContext.Chart.Courses.emplace_back(std::make_unique<ChartCourse>(delayCourse));
+		comparisonCourse.DelayChanges_Normal.InsertOrUpdate({ Beat::Zero(), Time::FromSec(0.25) });
+		delayContext.SongVoice = Audio::Engine.AddVoice(Audio::SourceHandle::Invalid, "Paused preview test", false, 1.0f, 0.0f, true);
+		defer { Audio::Engine.RemoveVoice(delayContext.SongVoice); };
+		delayContext.SetSelectedChart(&delayCourse, BranchType::Normal);
+		delayContext.Gfx.StartAsyncLoading();
+		while (delayContext.Gfx.IsAsyncLoading()) delayContext.Gfx.UpdateAsyncLoading();
+		std::vector<BeatAndTime> delaySamples;
+		for (i32 beat : { 0, 3, 4, 5, 7, 8, 9, 12 })
+			delaySamples.push_back({ Beat::FromBeats(beat), delayCourse.BeatToPlaybackTime(Beat::FromBeats(beat)) });
+		for (f64 seconds : { 1.999, 2.0, 2.5, 2.999, 3.0 })
+			delaySamples.push_back({ Beat::FromBars(1), Time::FromSec(seconds) });
+		const auto drawDelayPreview = [&](ChartGamePreview& preview)
+		{
+			io.DisplaySize = vec2(1280.0f, 720.0f);
+			Gui::NewFrame();
+			Gui::SetNextWindowPos(vec2(0.0f)); Gui::SetNextWindowSize(io.DisplaySize);
+			Gui::Begin("Paused DELAY preview self-test", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+			ImDrawList* drawList = Gui::GetWindowDrawList();
+			preview.DrawGui(delayContext);
+			Gui::End(); Gui::Render();
+			return drawList;
+		};
+		for (ScrollMethod method : { ScrollMethod::NMSCROLL, ScrollMethod::HBSCROLL, ScrollMethod::BMSCROLL })
+		for (i32 layout : { 0, 1, 2 })
+		for (i32 laneCount : { 1, 2, 3 })
+		{
+			delayCourse.ScrollTypes.InsertOrUpdate({ Beat::Zero(), method });
+			comparisonCourse.ScrollTypes.InsertOrUpdate({ Beat::Zero(), method });
+			delayContext.ResetChartsCompared();
+			delayContext.CompareMode = laneCount > 1;
+			if (laneCount >= 2) delayContext.ChartsCompared[&delayCourse].insert(BranchType::Expert);
+			if (laneCount >= 3) delayContext.ChartsCompared[&comparisonCourse].insert(BranchType::Normal);
+			Settings_Mutable.General.GamePreviewLayout.Value = layout;
+			for (const auto& sample : delaySamples)
+			{
+				ChartGamePreview preview;
+				delayContext.SetCursorTimeAtBeat(sample.Time, sample.Beat);
+				drawDelayPreview(preview); drawDelayPreview(preview);
+				delayContext.SetIsPlayback(true);
+				const ImVector<ImDrawVert> playingVertices = drawDelayPreview(preview)->VtxBuffer;
+				const Time playingTime = preview.PreviewCursor.CurrentTime;
+				const Beat playingBeat = delayContext.PlaybackBeatHint;
+				delayContext.SetIsPlayback(false);
+				delayContext.SetCursorTimeAtBeat(playingTime, playingBeat);
+				for (i32 frame = 0; frame < 2; ++frame)
+				{
+					const auto& pausedVertices = drawDelayPreview(preview)->VtxBuffer;
+					if (!error.empty()) return false;
+					if (preview.PreviewCursor.CurrentTime != playingTime || playingVertices.Size != pausedVertices.Size)
+					{
+						error = "Pausing changed the DELAY preview time or vertex count: layout=" + std::to_string(layout)
+							+ ", lanes=" + std::to_string(laneCount) + ", time=" + std::to_string(playingTime.Seconds)
+							+ ", playing=" + std::to_string(playingVertices.Size) + ", paused=" + std::to_string(pausedVertices.Size);
+						return false;
+					}
+					for (i32 vertex = 0; vertex < playingVertices.Size; ++vertex)
+						if (!(Absolute(playingVertices[vertex].pos.x - pausedVertices[vertex].pos.x) < 0.001f)
+							|| !(Absolute(playingVertices[vertex].pos.y - pausedVertices[vertex].pos.y) < 0.001f)
+							|| playingVertices[vertex].col != pausedVertices[vertex].col)
+						{
+							error = "Playing and paused DELAY previews differ: layout=" + std::to_string(layout)
+								+ ", lanes=" + std::to_string(laneCount) + ", time=" + std::to_string(playingTime.Seconds)
+								+ ", vertex=" + std::to_string(vertex);
+							return false;
+						}
 				}
 			}
 		}

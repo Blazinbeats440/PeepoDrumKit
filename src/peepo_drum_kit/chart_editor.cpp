@@ -1769,7 +1769,7 @@ namespace PeepoDrumKit
 		const b8 gamePreviewVisible = Gui::Begin(UI_WindowName("TAB_GAME_PREVIEW"), nullptr, ImGuiWindowFlags_None);
 		if (gamePreviewVisible)
 		{
-			gamePreview.DrawGui(context, timeline.Camera.WorldSpaceXToTime(timeline.WorldSpaceCursorXAnimationCurrent));
+			gamePreview.DrawGui(context);
 		}
 		else gamePreview.IsAnyChildWindowFocused = false;
 		Gui::End();

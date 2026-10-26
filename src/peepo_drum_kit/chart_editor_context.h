@@ -37,6 +37,7 @@ namespace PeepoDrumKit
 
 		// NOTE: Specifically for accurate playback preview sound future-offset calculations
 		Time CursorNonSmoothTimeThisFrame, CursorNonSmoothTimeLastFrame;
+		b8 PlaybackSoundStartPending = false;
 		// NOTE: Store cursor time as Beat while paused to avoid any floating point precision issues and make sure "SetCursorBeat(x); assert(GetCursorBeat() == x)"
 		Beat CursorBeatWhilePaused = Beat::Zero();
 		Time CursorBeatPlaybackTimeWhilePaused = {};
@@ -260,19 +261,30 @@ namespace PeepoDrumKit
 
 			if (newIsPlaying)
 			{
-				SongVoice.SetPosition(GetCursorTime() - Chart.SongOffset);
+				const Time cursorTime = GetCursorTime();
+				SongVoice.SetPosition(cursorTime - Chart.SongOffset);
+				CursorNonSmoothTimeThisFrame = CursorNonSmoothTimeLastFrame = cursorTime;
+				PlaybackSoundStartPending = true;
 				CursorTimeOnPlaybackStart = (SongVoice.GetPosition() + Chart.SongOffset);
 				SongVoice.SetIsPlaying(true);
 			}
 			else
 			{
 				SongVoice.SetIsPlaying(false);
+				PlaybackSoundStartPending = false;
 				CursorTimeWhilePaused = SongVoice.GetPosition() + Chart.SongOffset;
 				CursorBeatWhilePaused = PlaybackTimeToBeat(*CursorTimeWhilePaused);
 				CursorBeatPlaybackTimeWhilePaused = BeatToPlaybackTime(CursorBeatWhilePaused);
 				PlaybackBeatHint = CursorBeatWhilePaused;
 				SfxVoicePool.PauseAllFutureVoices();
 			}
+		}
+
+		inline Time ConsumePlaybackSoundStartTime(Time futureOffset)
+		{
+			const Time startTime = CursorNonSmoothTimeLastFrame + (PlaybackSoundStartPending ? Time::Zero() : futureOffset);
+			PlaybackSoundStartPending = false;
+			return startTime;
 		}
 
 		inline Time GetCursorTime() const
@@ -329,8 +341,10 @@ namespace PeepoDrumKit
 
 		inline void SetCursorTime(Time newTime)
 		{
+			if (GetIsPlayback()) SfxVoicePool.PauseAllFutureVoices();
 			SongVoice.SetPosition(newTime - Chart.SongOffset);
 			CursorNonSmoothTimeThisFrame = CursorNonSmoothTimeLastFrame = newTime;
+			PlaybackSoundStartPending = true;
 			CursorBeatWhilePaused = PlaybackTimeToBeat(newTime);
 			CursorBeatPlaybackTimeWhilePaused = BeatToPlaybackTime(CursorBeatWhilePaused);
 			CursorTimeWhilePaused = newTime;
@@ -349,8 +363,10 @@ namespace PeepoDrumKit
 		inline void SetCursorBeat(Beat newBeat)
 		{
 			const Time newTime = BeatToPlaybackTime(newBeat);
+			if (GetIsPlayback()) SfxVoicePool.PauseAllFutureVoices();
 			SongVoice.SetPosition(newTime - Chart.SongOffset);
 			CursorNonSmoothTimeThisFrame = CursorNonSmoothTimeLastFrame = newTime;
+			PlaybackSoundStartPending = true;
 			CursorBeatWhilePaused = newBeat;
 			CursorBeatPlaybackTimeWhilePaused = newTime;
 			CursorTimeWhilePaused.reset();

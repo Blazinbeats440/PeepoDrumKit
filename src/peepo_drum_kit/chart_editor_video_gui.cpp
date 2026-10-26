@@ -98,7 +98,7 @@ namespace PeepoDrumKit
 			screenshotDrawList->PushTexture(originalDrawList->_CmdHeader.TexRef);
 			screenshotDrawList->PushClipRect(originalDrawList->GetClipRectMin(), originalDrawList->GetClipRectMax());
 			window->DrawList = screenshotDrawList;
-			screenshotPreview.DrawGui(context, *screenshotPreview.VideoExportTime);
+			screenshotPreview.DrawGui(context);
 			screenshotDrawList->ChannelsMerge();
 			window->DrawList = originalDrawList;
 			if (screenshotPreview.VideoUseBackgroundMovie && screenshotPreview.MovieStatus == BackgroundMovieStatus::Pending)
@@ -725,7 +725,7 @@ namespace PeepoDrumKit
 		Gui::SetCursorPosX(Gui::GetCursorPosX() + (availablePreviewSize.x - previewWidth) * 0.5f);
 		if (Gui::BeginChild("##VideoExportPreview", vec2(previewWidth, previewHeight), false,
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
-			preview.DrawGui(context, *preview.VideoExportTime);
+			preview.DrawGui(context);
 		Gui::EndChild();
 		Gui::Text("%s / %d fps / %u kbps", VideoResolutionPresets[exportData.Resolution].Name,
 			exportData.FramesPerSecond, exportData.AudioBitRate / 1000);
@@ -898,7 +898,7 @@ namespace PeepoDrumKit
 					data.RenderDrawList->PushTexture(Gui::GetWindowDrawList()->_CmdHeader.TexRef);
 					data.RenderDrawList->PushClipRect(Gui::GetCurrentWindow()->ClipRect.Min, Gui::GetCurrentWindow()->ClipRect.Max);
 					preview.VideoExportDrawListTarget = data.RenderDrawList;
-					preview.DrawGui(context, *preview.VideoExportTime);
+					preview.DrawGui(context);
 					preview.VideoExportDrawListTarget = nullptr;
 					data.RenderDrawList->ChannelsMerge();
 					data.RenderDrawList->PopClipRect(); data.RenderDrawList->PopTexture(); data.RenderDrawList->_PopUnusedDrawCmd();
@@ -1294,7 +1294,7 @@ namespace PeepoDrumKit
 			Gui::SetNextWindowPos(vec2(0)); Gui::SetNextWindowSize(vec2(640, 360));
 			Gui::Begin("Game preview verification", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
 			ImDrawList* previewDrawList = Gui::GetWindowDrawList();
-			preview.DrawGui(context, Time::Zero());
+			preview.DrawGui(context);
 			Gui::End(); Gui::PopFont(); Gui::Render();
 			const u32 width = static_cast<u32>(Round(preview.Camera.ScreenSpaceViewportRect.GetWidth()));
 			const u32 height = static_cast<u32>(Round(preview.Camera.ScreenSpaceViewportRect.GetHeight()));
