@@ -8,6 +8,7 @@
 #include "chart_editor_undo.h"
 #include "chart_editor_delay_conversion.h"
 #include "imgui/imgui_include.h"
+#include <array>
 
 namespace PeepoDrumKit
 {
@@ -260,6 +261,18 @@ namespace PeepoDrumKit
 
 		// NOTE: All in screen space
 		TimelineRegions Regions = {};
+		std::array<TimelineRowType, EnumCount<TimelineRowType>> RowOrder = []()
+		{
+			std::array<TimelineRowType, EnumCount<TimelineRowType>> order {};
+			for (size_t index = 0; index < order.size(); ++index) order[index] = static_cast<TimelineRowType>(index);
+			return order;
+		}();
+		struct RowDragData
+		{
+			TimelineRowType Source = TimelineRowType::Count, Target = TimelineRowType::Count;
+			const ChartCourse* Course = nullptr;
+			b8 IsDragging = false, InsertAfter = false;
+		} RowDrag;
 
 		// TODO: Add splitter behavior to allow resizing (?)
 		f32 CurrentSidebarWidth = 240.0f;
@@ -457,6 +470,7 @@ namespace PeepoDrumKit
 		template <GenericList List> void ExecuteConvertSelectionToEvents(ChartContext& context);
 
 	private:
+		void DrawSidebarRows(ChartContext& context, ImDrawList* drawList);
 		void DrawDelayConversionPopup(ChartContext& context);
 		struct TimelineRegionDrawers {
 			std::function<void(std::function<void(ImDrawList* drawList)> drawRemaining)>

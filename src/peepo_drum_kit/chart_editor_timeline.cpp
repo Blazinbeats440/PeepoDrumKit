@@ -313,11 +313,30 @@ namespace PeepoDrumKit
 		std::string_view Label;
 	};
 
+	static TimelineRowType GetTimelineRowGroup(TimelineRowType row)
+	{
+		return IsBranchNoteRow(row) ? TimelineRowType::Notes_Normal : row;
+	}
+
+	static void MoveTimelineRowGroup(ChartTimeline& timeline, TimelineRowType source, TimelineRowType target, b8 insertAfter)
+	{
+		source = GetTimelineRowGroup(source); target = GetTimelineRowGroup(target);
+		if (source == target || source == TimelineRowType::Count || target == TimelineRowType::Count) return;
+		auto& order = timeline.RowOrder;
+		const auto first = std::find(order.begin(), order.end(), source);
+		auto destination = std::find(order.begin(), order.end(), target);
+		if (first == order.end() || destination == order.end()) return;
+		const auto last = first + (IsBranchNoteRow(source) ? 3 : 1);
+		if (insertAfter) destination += IsBranchNoteRow(target) ? 3 : 1;
+		if (destination < first) std::rotate(destination, first, last);
+		else if (destination > last) std::rotate(first, last, destination);
+	}
+
 	template <typename Func>
 	static void ForEachTimelineRow(ChartTimeline& timeline, const ChartCourse& course, BranchType selectedBranch, Func perRowFunc)
 	{
 		f32 localY = -timeline.Camera.PositionCurrent.y;
-		for (TimelineRowType rowType = {}; rowType < TimelineRowType::Count; IncrementEnum(rowType))
+		for (TimelineRowType rowType : timeline.RowOrder)
 		{
 			const b8 hasBranches = !course.Branches.empty();
 			if ((rowType == TimelineRowType::BranchCommands && !hasBranches && course.BranchSections.empty()) ||
@@ -353,6 +372,107 @@ namespace PeepoDrumKit
 		f32 totalHeight = 0.0f;
 		ForEachTimelineRow(*const_cast<ChartTimeline*>(&timeline), course, BranchType::Normal, [&](const ForEachRowData& it) { totalHeight += it.LocalHeight; });
 		return totalHeight;
+	}
+
+	void ChartTimeline::DrawSidebarRows(ChartContext& context, ImDrawList* drawList)
+	{
+		std::optional<f32> insertionY;
+		if (RowDrag.Source != TimelineRowType::Count)
+		{
+			if (context.TestPlayActive || DelayConversionPopup.IsOpen || RowDrag.Course != context.ChartSelectedCourse
+				|| Gui::IsKeyPressed(ImGuiKey_Escape) || (!Gui::IsMouseDown(ImGuiMouseButton_Right) && !Gui::IsMouseReleased(ImGuiMouseButton_Right)))
+				RowDrag = {};
+			else
+			{
+				RowDrag.IsDragging |= Gui::IsMouseDragging(ImGuiMouseButton_Right);
+				RowDrag.Target = TimelineRowType::Count;
+				struct RowGroup { TimelineRowType Type; f32 Top, Bottom; };
+				std::vector<RowGroup> groups;
+				ForEachTimelineRow(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+				{
+					const TimelineRowType group = GetTimelineRowGroup(row.RowType);
+					if (!groups.empty() && groups.back().Type == group) groups.back().Bottom = row.LocalY + row.LocalHeight;
+					else groups.push_back({ group, row.LocalY, row.LocalY + row.LocalHeight });
+				});
+				const b8 sourceVisible = std::any_of(groups.begin(), groups.end(), [&](const RowGroup& group) { return group.Type == RowDrag.Source; });
+				if (!sourceVisible) RowDrag = {};
+				else if (RowDrag.IsDragging)
+				{
+					Gui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+					const vec2 mouse = Gui::GetMousePos();
+					if (Regions.Sidebar.IsHovered && Regions.Sidebar.Contains(mouse))
+					{
+						const f32 localY = ScreenToLocalSpace_Sidebar(mouse).y;
+						const auto target = std::find_if(groups.begin(), groups.end(), [&](const RowGroup& group) { return localY < group.Bottom; });
+						const auto& group = target != groups.end() ? *target : groups.back();
+						RowDrag.Target = group.Type;
+						RowDrag.InsertAfter = localY >= (group.Top + group.Bottom) * 0.5f;
+						if (RowDrag.Target != RowDrag.Source) insertionY = RowDrag.InsertAfter ? group.Bottom : group.Top;
+						if (Gui::IsMouseDown(ImGuiMouseButton_Right))
+						{
+							const f32 edge = GuiScale(20.0f);
+							const f32 direction = mouse.y < Regions.Sidebar.TL.y + edge ? -1.0f : mouse.y > Regions.Sidebar.BR.y - edge ? 1.0f : 0.0f;
+							Camera.PositionTarget.y = Clamp(Camera.PositionTarget.y + direction * GuiScale(400.0f) * Gui::DeltaTime(),
+								0.0f, Max(0.0f, GetTotalTimelineRowsHeight(*this, *context.ChartSelectedCourse) - Regions.Sidebar.GetHeight()));
+						}
+					}
+				}
+				if (Gui::IsMouseReleased(ImGuiMouseButton_Right))
+				{
+					if (RowDrag.IsDragging) MoveTimelineRowGroup(*this, RowDrag.Source, RowDrag.Target, RowDrag.InsertAfter);
+					RowDrag = {};
+					insertionY.reset();
+				}
+			}
+		}
+		ForEachTimelineRow(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachRowData& row)
+		{
+			const Rect rowRect = Rect::FromTLSize(LocalToScreenSpace_Sidebar(vec2(0.0f, row.LocalY)), vec2(Regions.Sidebar.GetWidth(), row.LocalHeight));
+			const f32 labelWidth = Min(rowRect.GetWidth(), Gui::CalcTextSize(Gui::StringViewStart(row.Label), Gui::StringViewEnd(row.Label)).x + Gui::GetStyle().FramePadding.x * 4.0f);
+			const BranchType branch = TimelineRowToBranchType(row.RowType);
+			Gui::PushID(static_cast<i32>(EnumToIndex(row.RowType)));
+			Gui::SetCursorScreenPos(rowRect.TL);
+			const b8 clicked = Gui::InvisibleButton("##TimelineRow", vec2(branch != BranchType::Count ? rowRect.GetWidth() : labelWidth, row.LocalHeight),
+				ImGuiButtonFlags_MouseButtonRight | (branch != BranchType::Count ? ImGuiButtonFlags_MouseButtonLeft : 0));
+			const b8 hovered = Gui::IsItemHovered();
+			if (!context.TestPlayActive && !BoxSelection.IsActive && Gui::IsItemClicked(ImGuiMouseButton_Right)
+				&& Gui::GetMousePos().x < rowRect.TL.x + labelWidth)
+			{
+				RowDrag.Source = GetTimelineRowGroup(row.RowType);
+				RowDrag.Course = context.ChartSelectedCourse;
+			}
+			Gui::PopID();
+			drawList->AddLine(rowRect.GetBL(), rowRect.BR, Gui::GetColorU32(ImGuiCol_Separator, 0.35f));
+			if (RowDrag.IsDragging && GetTimelineRowGroup(row.RowType) == RowDrag.Source)
+				drawList->AddRectFilled(rowRect.TL, rowRect.BR, Gui::GetColorU32(ImGuiCol_HeaderHovered, 0.45f));
+			if (branch != BranchType::Count)
+			{
+				if (branch == context.ChartSelectedBranch)
+					drawList->AddRectFilled(rowRect.TL, rowRect.BR, Gui::GetColorU32(ImGuiCol_HeaderActive, 0.65f));
+				else if (hovered)
+					drawList->AddRectFilled(rowRect.TL, rowRect.BR, Gui::GetColorU32(ImGuiCol_HeaderHovered, 0.45f));
+				if (clicked && Gui::IsMouseReleased(ImGuiMouseButton_Left)) context.SetSelectedChart(context.ChartSelectedCourse, branch);
+			}
+			const vec2 textPosition = rowRect.TL + vec2(Gui::GetStyle().FramePadding.x * 2.0f, Floor((row.LocalHeight - Gui::GetFontSize()) * 0.5f));
+			Gui::DisableFontPixelSnap(true);
+			Gui::SetCursorScreenPos(textPosition);
+			Gui::TextEx(Gui::StringViewStart(row.Label), Gui::StringViewEnd(row.Label));
+			if (row.RowType == TimelineRowType::JPOSScroll)
+			{
+				Gui::SameLine();
+				const vec2 padding = Gui::GetStyle().FramePadding;
+				Gui::SetCursorScreenPos(vec2(Gui::GetCursorScreenPos().x, rowRect.TL.y + padding.y));
+				Gui::SetNextItemWidth(Gui::GetContentRegionAvail().x - padding.x);
+				Gui::ComboEnum("##ScrollDistance4BeatsType", &context.Chart.ScrollDistance4BeatsType, strScrollDistanceViewType);
+				Gui::SetItemTooltip(UI_Str("EVENT_SCROLL_DISTANCE_4_BEATS_TOOLTIP"));
+			}
+			Gui::DisableFontPixelSnap(false);
+		});
+		if (insertionY)
+		{
+			const vec2 start = LocalToScreenSpace_Sidebar(vec2(0.0f, *insertionY));
+			drawList->AddLine(start, start + vec2(Regions.Sidebar.GetWidth(), 0.0f), Gui::GetColorU32(ImGuiCol_DragDropTarget), GuiScale(3.0f));
+		}
 	}
 
 	struct ForEachGridLineData
@@ -1893,6 +2013,108 @@ namespace PeepoDrumKit
 		i32 atlasWidth, atlasHeight;
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &atlasWidth, &atlasHeight);
 		{
+			ChartContext rowContext;
+			TJA::ErrorList errors;
+			const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines(
+				"TITLE:Row order\nBPM:120\nCOURSE:Oni\n#START\n#BRANCHSTART p,50,80\n#N\n1000,\n#E\n2000,\n#M\n3000,\n#BRANCHEND\n#END\n")), errors);
+			if (!errors.Errors.empty() || !CreateChartProjectFromTJA(parsed, rowContext.Chart)) { outError = "Cannot import timeline row fixture"; return false; }
+			rowContext.SetSelectedChart(rowContext.Chart.Courses[0].get(), BranchType::Normal);
+			ChartTimeline timeline;
+			const auto defaultOrder = timeline.RowOrder;
+			const b8 settingsDirty = Settings.IsDirty;
+			const u64 undoRevision = rowContext.Undo.Revision;
+			const auto drawRows = [&]
+			{
+				Gui::NewFrame();
+				Gui::SetNextWindowPos(vec2(0.0f)); Gui::SetNextWindowSize(vec2(1000.0f, 700.0f));
+				Gui::Begin("Timeline row self-test", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+				timeline.Regions.Sidebar.Rect() = Rect::FromTLSize(Gui::GetCursorScreenPos(), vec2(240.0f, 640.0f));
+				timeline.Regions.Content.Rect() = Rect::FromTLSize(timeline.Regions.Sidebar.GetTR(), vec2(700.0f, 640.0f));
+				const b8 hovered = Gui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+				timeline.Regions.Sidebar.IsHovered = hovered && timeline.Regions.Sidebar.Contains(Gui::GetMousePos());
+				timeline.Regions.Content.IsHovered = hovered && timeline.Regions.Content.Contains(Gui::GetMousePos());
+				timeline.UpdateInputAtStartOfFrame(rowContext);
+				Gui::PushFont(io.Fonts->Fonts[0], GuiScaleI32_AtTarget(FontBaseSizes::Medium));
+				timeline.DrawSidebarRows(rowContext, Gui::GetWindowDrawList());
+				Gui::PopFont();
+				Gui::End(); Gui::Render();
+			};
+			const auto rowPoint = [&](TimelineRowType type, f32 fraction = 0.5f)
+			{
+				vec2 point(-F32Max);
+				ForEachTimelineRow(timeline, *rowContext.ChartSelectedCourse, rowContext.ChartSelectedBranch, [&](const ForEachRowData& row)
+				{
+					if (row.RowType == type) point = timeline.LocalToScreenSpace_Sidebar(vec2(12.0f, row.LocalY + row.LocalHeight * fraction));
+				});
+				return point;
+			};
+			const auto drag = [&](vec2 from, vec2 to, ImGuiMouseButton button = ImGuiMouseButton_Right)
+			{
+				io.AddMousePosEvent(from.x, from.y); drawRows();
+				io.AddMouseButtonEvent(button, true); drawRows();
+				io.AddMousePosEvent(to.x, to.y); drawRows();
+				io.AddMouseButtonEvent(button, false); drawRows();
+			};
+			const auto rowIndex = [&](TimelineRowType type) { return std::find(timeline.RowOrder.begin(), timeline.RowOrder.end(), type) - timeline.RowOrder.begin(); };
+			const auto branchesTogether = [&]
+			{
+				return rowIndex(TimelineRowType::Notes_Expert) == rowIndex(TimelineRowType::Notes_Normal) + 1
+					&& rowIndex(TimelineRowType::Notes_Master) == rowIndex(TimelineRowType::Notes_Normal) + 2;
+			};
+			io.AddMousePosEvent(-F32Max, -F32Max); drawRows(); drawRows();
+			drag(rowPoint(TimelineRowType::Tempo), rowPoint(TimelineRowType::ScrollSpeed, 0.75f));
+			if (rowIndex(TimelineRowType::Tempo) != rowIndex(TimelineRowType::ScrollSpeed) + 1 || timeline.BoxSelection.IsActive)
+				{ outError = "Right-dragging a row label did not move its timeline row"; return false; }
+			drag(rowPoint(TimelineRowType::Notes_Expert), rowPoint(TimelineRowType::GoGoTime, 0.75f));
+			if (!branchesTogether() || rowIndex(TimelineRowType::Notes_Normal) != rowIndex(TimelineRowType::GoGoTime) + 1 || rowContext.ChartSelectedBranch != BranchType::Normal)
+				{ outError = "Right-dragging a branch row did not move all three branches together"; return false; }
+			drag(rowPoint(TimelineRowType::TimeSignature), rowPoint(TimelineRowType::Notes_Expert, 0.75f));
+			if (!branchesTogether() || rowIndex(TimelineRowType::TimeSignature) != rowIndex(TimelineRowType::Notes_Master) + 1)
+				{ outError = "A row was inserted between the three branch rows"; return false; }
+			const auto reordered = timeline.RowOrder;
+			drag(rowPoint(TimelineRowType::Notes_Expert), rowPoint(TimelineRowType::Notes_Expert));
+			if (timeline.RowOrder != reordered || rowContext.ChartSelectedBranch != BranchType::Normal)
+				{ outError = "A plain right click changed the row order or selected branch"; return false; }
+			drag(rowPoint(TimelineRowType::Notes_Expert), rowPoint(TimelineRowType::Notes_Expert), ImGuiMouseButton_Left);
+			if (timeline.RowOrder != reordered || rowContext.ChartSelectedBranch != BranchType::Expert)
+				{ outError = "Left-click branch selection changed while adding row reordering"; return false; }
+			const vec2 blankLabelPoint(timeline.Regions.Sidebar.BR.x - 4.0f, rowPoint(TimelineRowType::Notes_Expert).y);
+			drag(blankLabelPoint, rowPoint(TimelineRowType::Tempo));
+			if (timeline.RowOrder != reordered || timeline.RowDrag.Source != TimelineRowType::Count)
+				{ outError = "A right drag outside the item name started row reordering"; return false; }
+			drag(rowPoint(TimelineRowType::Tempo), timeline.Regions.Content.GetCenter());
+			if (timeline.RowOrder != reordered || timeline.RowDrag.Source != TimelineRowType::Count || timeline.BoxSelection.IsActive)
+				{ outError = "Releasing a row drag outside the sidebar changed the layout or selected notes"; return false; }
+			const vec2 contentPoint = timeline.Regions.Content.GetCenter();
+			io.AddMousePosEvent(contentPoint.x, contentPoint.y); drawRows();
+			io.AddMouseButtonEvent(ImGuiMouseButton_Right, true); drawRows();
+			if (!timeline.BoxSelection.IsActive || timeline.RowDrag.Source != TimelineRowType::Count)
+				{ outError = "A right drag in the chart stopped starting a box selection"; return false; }
+			const vec2 labelPoint = rowPoint(TimelineRowType::Tempo);
+			io.AddMousePosEvent(labelPoint.x, labelPoint.y); drawRows();
+			io.AddMouseButtonEvent(ImGuiMouseButton_Right, false); drawRows();
+			if (timeline.RowOrder != reordered || timeline.RowDrag.Source != TimelineRowType::Count)
+				{ outError = "A box selection entering the sidebar reordered a row"; return false; }
+			rowContext.ChartSelectedCourse->Comments.InsertOrUpdate({ Beat::Zero(), "Comment", false }); drawRows();
+			drag(rowPoint(TimelineRowType::Comments), rowPoint(TimelineRowType::Notes, 0.25f));
+			if (rowIndex(TimelineRowType::Comments) + 1 != rowIndex(TimelineRowType::Notes))
+				{ outError = "A newly visible optional row could not be reordered"; return false; }
+			const auto orderWithComment = timeline.RowOrder;
+			rowContext.ChartSelectedCourse->Comments.Sorted.clear(); drawRows();
+			rowContext.ChartSelectedCourse->Comments.InsertOrUpdate({ Beat::Zero(), "Comment", false }); drawRows();
+			if (timeline.RowOrder != orderWithComment)
+				{ outError = "Hiding and showing an optional row reset its order"; return false; }
+			auto& otherCourse = *rowContext.Chart.Courses.emplace_back(std::make_unique<ChartCourse>(*rowContext.ChartSelectedCourse));
+			rowContext.SetSelectedChart(&otherCourse, BranchType::Normal); drawRows();
+			if (timeline.RowOrder != orderWithComment || Settings.IsDirty != settingsDirty || rowContext.Undo.Revision != undoRevision || !rowContext.Undo.UndoStack.empty())
+				{ outError = "Row reordering did not stay in session-only display state"; return false; }
+			ChartTimeline restartedTimeline;
+			if (restartedTimeline.RowOrder != defaultOrder)
+				{ outError = "A new timeline inherited the previous session's row order"; return false; }
+			io.AddMousePosEvent(-F32Max, -F32Max); drawRows();
+			if (!outError.empty()) return false;
+		}
+		{
 			ChartContext animationContext;
 			TJA::ErrorList errors;
 			const auto parsed = TJA::ParseTokens(TJA::TokenizeLines(TJA::SplitLines("TITLE:Animation test\nBPM:120\nCOURSE:Oni\n#START\n1111,\n#END\n")), errors);
@@ -2278,7 +2500,8 @@ namespace PeepoDrumKit
 			Regions.Content.Rect() = Rect::FromTLSize(Regions.ContentHeader.GetBL(), Max(vec2(0.0f), vec2(Regions.Window.GetWidth() - sidebarWidth - scrollbarYWidth, Regions.Window.GetHeight() - sidebarHeight - scrollbarXHeight - reservedPlaybackHeight)));
 			Regions.ContentScrollbarY.Rect() = Rect::FromTLSize(Regions.Content.GetTR(), vec2(scrollbarYWidth, Regions.Content.GetHeight()));
 			Regions.ContentScrollbarX.Rect() = Rect::FromTLSize(Regions.Content.GetBL(), vec2(Regions.ContentHeader.GetWidth(), scrollbarXHeight));
-			const ImGuiHoveredFlags hoveredFlags = BoxSelection.IsActive ? ImGuiHoveredFlags_AllowWhenBlockedByActiveItem : ImGuiHoveredFlags_None;
+			const ImGuiHoveredFlags hoveredFlags = BoxSelection.IsActive || RowDrag.Source != TimelineRowType::Count
+				? ImGuiHoveredFlags_AllowWhenBlockedByActiveItem : ImGuiHoveredFlags_None;
 
 			TimelineRegionDrawers drawers = {};
 			const auto makeDrawer = [&](TimelineRegion& region, cstr label, auto&& preupdate)
@@ -4898,7 +5121,7 @@ namespace PeepoDrumKit
 
 		// NOTE: Mouse selection box
 		{
-			if (Regions.Content.IsHovered && Gui::IsMouseClicked(ImGuiMouseButton_Right))
+			if (Regions.Content.IsHovered && Regions.Content.Contains(MousePosThisFrame) && RowDrag.Source == TimelineRowType::Count && Gui::IsMouseClicked(ImGuiMouseButton_Right))
 			{
 				BoxSelection.IsActive = true;
 				BoxSelection.Action = GetBoxSelectionAction(Gui::GetIO());
@@ -5347,59 +5570,7 @@ namespace PeepoDrumKit
 				DrawListSidebar->ChannelsSplit(2); // 0: background, 1: interactable objects and forground
 				DrawListSidebar->ChannelsSetCurrent(1);
 				// NOTE: Row label text
-				ForEachTimelineRow(*this, *context.ChartSelectedCourse, context.ChartSelectedBranch, [&](const ForEachRowData& rowIt)
-				{
-					const Rect sidebarScreenSpace = {
-						LocalToScreenSpace_Sidebar(vec2(0.0f, rowIt.LocalY)),
-						LocalToScreenSpace_Sidebar(vec2(Regions.Sidebar.GetWidth(), rowIt.LocalY + rowIt.LocalHeight)),
-					};
-
-					DrawListSidebar->AddLine(sidebarScreenSpace.GetBL(), sidebarScreenSpace.BR, Gui::GetColorU32(ImGuiCol_Separator, 0.35f));
-					const BranchType rowBranch = TimelineRowToBranchType(rowIt.RowType);
-					if (rowBranch != BranchType::Count)
-					{
-						Gui::PushID(static_cast<i32>(EnumToIndex(rowIt.RowType)));
-						Gui::SetCursorScreenPos(sidebarScreenSpace.TL);
-						const b8 clicked = Gui::InvisibleButton("##SelectBranch", sidebarScreenSpace.GetSize());
-						const b8 hovered = Gui::IsItemHovered();
-						Gui::PopID();
-						if (rowBranch == context.ChartSelectedBranch)
-							DrawListSidebar->AddRectFilled(sidebarScreenSpace.TL, sidebarScreenSpace.BR, Gui::GetColorU32(ImGuiCol_HeaderActive, 0.65f));
-						else if (hovered)
-							DrawListSidebar->AddRectFilled(sidebarScreenSpace.TL, sidebarScreenSpace.BR, Gui::GetColorU32(ImGuiCol_HeaderHovered, 0.45f));
-						if (clicked)
-							context.SetSelectedChart(context.ChartSelectedCourse, rowBranch);
-					}
-
-					const f32 textHeight = Gui::GetFontSize();
-					const vec2 screenSpaceTextPosition = sidebarScreenSpace.TL + vec2((Gui::GetStyle().FramePadding.x * 2.0f), Floor((rowIt.LocalHeight * 0.5f) - (textHeight * 0.5f)));
-
-					Gui::DisableFontPixelSnap(true);
-
-					Gui::SetCursorScreenPos(screenSpaceTextPosition);
-
-					Gui::TextEx(Gui::StringViewStart(rowIt.Label), Gui::StringViewEnd(rowIt.Label));
-
-					switch (rowIt.RowType) {
-					default:
-						break;
-					case TimelineRowType::ScrollSpeed:
-						break;
-					case TimelineRowType::JPOSScroll:
-						{
-							Gui::SameLine();
-							vec2 padding = Gui::GetStyle().FramePadding;
-							Gui::SetCursorScreenPos(vec2{ Gui::GetCursorScreenPos().x, sidebarScreenSpace.TL.y + padding.y });
-							Gui::SetNextItemWidth(Gui::GetContentRegionAvail().x - padding.x);
-							Gui::ComboEnum("##ScrollDistance4BeatsType", &context.Chart.ScrollDistance4BeatsType, strScrollDistanceViewType);
-
-							Gui::SetItemTooltip(UI_Str("EVENT_SCROLL_DISTANCE_4_BEATS_TOOLTIP"));
-						}
-						break;
-					}
-
-					Gui::DisableFontPixelSnap(false);
-				});
+				DrawSidebarRows(context, DrawListSidebar);
 			});
 			DrawListSidebar->PushClipRect(Regions.Sidebar.TL, Regions.Sidebar.BR);
 
